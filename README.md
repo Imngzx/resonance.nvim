@@ -20,9 +20,8 @@ Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is do
 -- =====================================================================
 -- 🎵 Bootstrap Resonance.nvim
 -- =====================================================================
-local plugin_url = "https://github.com/Imngzx/resonance.nvim" 
--- Clone to `opt` so native vim.pack can track it without downloading a duplicate
-local pack_path = vim.fn.stdpath("data") .. "/site/pack/deps/opt/resonance.nvim"
+local plugin_url = "https://github.com/Imngzx/resonance.nvim"
+local pack_path = vim.fn.stdpath("data") .. "/site/pack/core/opt/resonance.nvim"
 
 if not vim.uv.fs_stat(pack_path) then
   vim.notify("🎵 Resonating (Downloading resonance.nvim)...", vim.log.levels.INFO)
@@ -36,11 +35,9 @@ if not vim.uv.fs_stat(pack_path) then
   })
 end
 
--- Add to runtime
 vim.opt.rtp:prepend(pack_path)
 
--- Register to Neovim's native package manager so `U` (update) works
-vim.pack.add(plugin_url)
+vim.pack.add({ plugin_url })
 
 -- =====================================================================
 -- 🚀 Configuration

@@ -17,11 +17,8 @@
 Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is downloaded and prepended to your runtime path on the first run.
 
 ```lua
--- =====================================================================
--- 🎵 Bootstrap Resonance.nvim
--- =====================================================================
 local pack_path = vim.fn.stdpath("data") .. "/site/pack/resonance/start/resonance.nvim"
-local plugin_url = "https://github.com/Imngzx/resonance.nvim" 
+local plugin_url = "https://github.com/Imngzx/resonance.nvim"
 
 if not vim.uv.fs_stat(pack_path) then
   vim.notify("🎵 Resonating (Downloading resonance.nvim)...", vim.log.levels.INFO)
@@ -29,7 +26,7 @@ if not vim.uv.fs_stat(pack_path) then
     "git",
     "clone",
     "--filter=blob:none",
-    plugin_url,
+    "https://github.com/Imngzx/resonance.nvim.git",
     "--branch=main",
     pack_path
   })
@@ -38,7 +35,7 @@ end
 vim.opt.rtp:prepend(pack_path)
 
 -- 👇 add this for updating resonance.nvim
-vim.pack.add(plugin_url)
+vim.pack.add({ plugin_url })
 
 -- =====================================================================
 -- 🚀 Configuration

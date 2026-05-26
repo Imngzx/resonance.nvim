@@ -1,49 +1,50 @@
 local M = {}
-local scanner = require("resonance.scanner")
-local utils = require("resonance.utils")
+local scanner = require('resonance.scanner')
+local utils = require('resonance.utils')
 
 local function build_content()
   local info = scanner.get_info()
-  local lines, extmarks, cur_line, cur_col, line_idx = {}, {}, "", 0, 0
+  local lines, extmarks, cur_line, cur_col, line_idx = {}, {}, '', 0, 0
 
   local function new_line()
     if line_idx > 0 then table.insert(lines, cur_line) end
-    cur_line, cur_col, line_idx = "", 0, line_idx + 1
+    cur_line, cur_col, line_idx = '', 0, line_idx + 1
   end
 
   local function append(text, hl)
-    if text == "" then return end
+    if text == '' then return end
     if hl then
-      table.insert(extmarks, { line = line_idx - 1, start_col = cur_col, end_col = cur_col + #text, hl_group = hl })
+      table.insert(extmarks,
+        { line = line_idx - 1, start_col = cur_col, end_col = cur_col + #text, hl_group = hl })
     end
     cur_line, cur_col = cur_line .. text, cur_col + #text
   end
 
   new_line(); new_line()
-  append("  Home(H) ", "CursorLine")
-  append("  Update(U) ", "CursorLine")
-  append("  Search(S) ", "CursorLine")
-  append("  Dir(D) ", "CursorLine")
-  append("  Quit(q) ", "CursorLine")
+  append('  Home(H) ', 'CursorLine')
+  append('  Update(U) ', 'CursorLine')
+  append('  Search(S) ', 'CursorLine')
+  append('  Dir(D) ', 'CursorLine')
+  append('  Quit(q) ', 'CursorLine')
   new_line(); new_line()
 
   local ms = (_G.start_time and _G.end_time) and ((_G.end_time - _G.start_time) / 1e6) or 0
-  append("  Startuptime: ", "Title")
-  append(string.format("%.2fms", ms), "WarningMsg")
-  append(" (Till UIEnter)", "Comment")
+  append('  Startuptime: ', 'Title')
+  append(string.format('%.2fms', ms), 'WarningMsg')
+  append(' (Till UIEnter)', 'Comment')
   new_line(); new_line()
-  append(string.format("  Total: %d plugins  Loaded: %d", info.total, info.loaded), "Comment")
+  append(string.format('  Total: %d plugins  Loaded: %d', info.total, info.loaded), 'Comment')
   new_line(); new_line()
 
   for _, p in ipairs(info.plugins) do
     new_line()
-    append("  ")
+    append('  ')
     if p.loaded then
-      append("● 󰏗 ", "Statement"); append(p.name, "Normal")
+      append('● 󰏗 ', 'Statement'); append(p.name, 'Normal')
     else
-      append("○ 󰏗 ", "Comment"); append(p.name, "Comment")
+      append('○ 󰏗 ', 'Comment'); append(p.name, 'Comment')
     end
-    append(string.format(" [%s]", p.type), "Comment")
+    append(string.format(' [%s]', p.type), 'Comment')
   end
   table.insert(lines, cur_line)
 
@@ -51,37 +52,37 @@ local function build_content()
 end
 
 local function bind_keys(buf, win_close_fn, pack_dir)
-  vim.keymap.set("n", "q", win_close_fn, { buf = buf, nowait = true })
-  vim.keymap.set("n", "<Esc>", win_close_fn, { buf = buf, nowait = true })
-  vim.keymap.set("n", "H", "gg", { buf = buf })
+  vim.keymap.set('n', 'q', win_close_fn, { buf = buf, nowait = true })
+  vim.keymap.set('n', '<Esc>', win_close_fn, { buf = buf, nowait = true })
+  vim.keymap.set('n', 'H', 'gg', { buf = buf })
 
-  vim.keymap.set("n", "U", function()
+  vim.keymap.set('n', 'U', function()
     win_close_fn()
     vim.pack.update()
-    utils.notify("Triggering DIY plugin update...", vim.log.levels.INFO)
-  end, { buf = buf, desc = "Update Plugins" })
+    utils.notify('Triggering DIY plugin update...', vim.log.levels.INFO)
+  end, { buf = buf, desc = 'Update Plugins' })
 
-  vim.keymap.set("n", "S", function()
+  vim.keymap.set('n', 'S', function()
     win_close_fn()
-    local has_snacks, snacks = pcall(require, "snacks")
-    local has_tele, tele = pcall(require, "telescope.builtin")
+    local has_snacks, snacks = pcall(require, 'snacks')
+    local has_tele, tele = pcall(require, 'telescope.builtin')
     if has_snacks then
-      snacks.picker.grep({ dirs = { pack_dir }, title = "  Plugins Source " })
+      snacks.picker.grep({ dirs = { pack_dir }, title = '  Plugins Source ' })
     elseif has_tele then
       tele.live_grep({ cwd = pack_dir })
     else
-      vim.cmd("vimgrep /.*/j " .. pack_dir .. "/**/* | copen")
+      vim.cmd('vimgrep /.*/j ' .. pack_dir .. '/**/* | copen')
     end
-  end, { buf = buf, desc = "Search in Plugins Source" })
+  end, { buf = buf, desc = 'Search in Plugins Source' })
 
-  vim.keymap.set("n", "D", function()
+  vim.keymap.set('n', 'D', function()
     win_close_fn()
-    if pcall(require, "snacks") then
-      require("snacks").explorer({ cwd = pack_dir })
+    if pcall(require, 'snacks') then
+      require('snacks').explorer({ cwd = pack_dir })
     else
-      vim.cmd("Explore " .. pack_dir)
+      vim.cmd('Explore ' .. pack_dir)
     end
-  end, { buf = buf, desc = "Open Plugin Directory" })
+  end, { buf = buf, desc = 'Open Plugin Directory' })
 end
 
 function M.open(ui_config)
@@ -89,24 +90,27 @@ function M.open(ui_config)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
-  local ns = vim.api.nvim_create_namespace("resonance_ui")
+  vim.bo[buf].bufhidden = 'wipe'
+
+  local ns = vim.api.nvim_create_namespace('resonance_ui')
   for _, em in ipairs(extmarks) do
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, em.line, em.start_col, { end_col = em.end_col, hl_group = em.hl_group })
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, em.line, em.start_col,
+      { end_col = em.end_col, hl_group = em.hl_group })
   end
 
-  local ok_snacks, snacks = pcall(require, "snacks")
-  local ok_nui, Popup = pcall(require, "nui.popup")
+  local ok_snacks, snacks = pcall(require, 'snacks')
+  local ok_nui, Popup = pcall(require, 'nui.popup')
 
   if ok_snacks then
     local win = snacks.win({
       buf = buf,
-      position = "float",
+      position = 'float',
       width = ui_config.width,
       height = ui_config.height,
       border = ui_config.border,
       backdrop = ui_config.backdrop,
       title = ui_config.title,
-      title_pos = "center",
+      title_pos = 'center',
       enter = true,
       wo = { cursorline = true }
     })
@@ -116,8 +120,8 @@ function M.open(ui_config)
       bufnr = buf,
       enter = true,
       focusable = true,
-      border = { style = ui_config.border, text = { top = ui_config.title, top_align = "center" } },
-      position = "50%",
+      border = { style = ui_config.border, text = { top = ui_config.title, top_align = 'center' } },
+      position = '50%',
       size = { width = math.floor(vim.o.columns * ui_config.width), height = math.floor(vim.o.lines * ui_config.height) },
       win_options = { cursorline = true }
     })
@@ -127,15 +131,15 @@ function M.open(ui_config)
     local w = math.floor(vim.o.columns * ui_config.width)
     local h = math.floor(vim.o.lines * ui_config.height)
     local win = vim.api.nvim_open_win(buf, true, {
-      relative = "editor",
+      relative = 'editor',
       row = math.floor((vim.o.lines - h) / 2),
       col = math.floor((vim.o.columns - w) / 2),
       width = w,
       height = h,
-      style = "minimal",
+      style = 'minimal',
       border = ui_config.border,
       title = ui_config.title,
-      title_pos = "center",
+      title_pos = 'center',
       zindex = 50
     })
     vim.wo[win].cursorline = true
@@ -143,7 +147,7 @@ function M.open(ui_config)
   end
 
   vim.bo[buf].modifiable = false
-  vim.bo[buf].filetype = "resonance"
+  vim.bo[buf].filetype = 'resonance'
 end
 
 return M

@@ -59,7 +59,7 @@ local function bind_keys(buf, win_close_fn, pack_dir)
   vim.keymap.set('n', 'U', function()
     win_close_fn()
     vim.pack.update()
-    utils.notify('Triggering DIY plugin update...', vim.log.levels.INFO)
+    utils.notify('Triggering plugin update...', vim.log.levels.INFO)
   end, { buf = buf, desc = 'Update Plugins' })
 
   vim.keymap.set('n', 'S', function()

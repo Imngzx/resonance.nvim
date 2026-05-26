@@ -49,7 +49,13 @@ vim.pack.add({ plugin_url })
 local resonance = require("resonance")
 
 resonance.setup({
-  ui = { border = "rounded", width = 0.65 }
+  ui = {
+    border = 'rounded',
+    title = ' 󱑽 Resonance 󱑽 ',
+    width = 0.65,
+    height = 0.75,
+    backdrop = 60, -- only for snacks
+  }
 })
 
 -- example: snacks

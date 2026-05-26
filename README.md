@@ -146,6 +146,10 @@ resonance.load({
 - `D` : Open plugin directory
 - `q` / Esc : Quit
 
+## Configuration examples
+
+[example](https://github.com/Imngzx/resonance-demo-nvim-config)
+
 ## License
 
 This project is licensed under the MIT License.

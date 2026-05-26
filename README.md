@@ -12,6 +12,10 @@
 - **Automatic Build Hooks:** Intercepts `PackChanged` events to automatically run `make`, `cargo`, or custom lua functions when a plugin is installed/updated.
 - **Blazing Fast:** Built entirely on Neovim's native `vim.pack` and modern `vim.system` APIs.
 
+## Preview Image
+
+![Preview Image](https://github.com/user-attachments/assets/88428b80-17b0-4d29-a391-2ad9a763a9b1)
+
 ## 📦 Installation & Configuration
 
 Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is downloaded and prepended to your runtime path on the first run.

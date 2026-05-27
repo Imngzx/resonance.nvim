@@ -20,9 +20,13 @@ vim.api.nvim_create_autocmd('PackChanged', {
       if #found > 0 then dir = found[1] end
     end
 
-    if not dir or dir == '' then return end
+    if not dir or dir == '' then
+      vim.notify('[Resonance] Build failed: Cannot resolve directory for ' .. name,
+        vim.log.levels.ERROR)
+      return
+    end
 
-    utils.notify('Building ' .. name .. '...', vim.log.levels.INFO)
+    utils.notify('[Resonance] Building ' .. name .. '...', vim.log.levels.INFO)
 
     if type(build_task) == 'string' then
       local shell = utils.is_windows() and 'cmd' or 'sh'
@@ -31,9 +35,10 @@ vim.api.nvim_create_autocmd('PackChanged', {
       vim.system({ shell, flag, build_task }, { cwd = dir, text = true }, function(out)
         vim.schedule(function()
           if out.code == 0 then
-            utils.notify('Build success: ' .. name, vim.log.levels.INFO)
+            utils.notify('[Resonance] Build success: ' .. name, vim.log.levels.INFO)
           else
-            utils.notify('Build failed: ' .. name .. '\n' .. (out.stderr or ''), vim.log.levels
+            utils.notify('[Resonance] Build failed: ' .. name .. '\n' .. (out.stderr or ''),
+              vim.log.levels
               .ERROR)
           end
         end)
@@ -42,9 +47,10 @@ vim.api.nvim_create_autocmd('PackChanged', {
       vim.schedule(function()
         local ok, err = pcall(build_task, dir)
         if ok then
-          utils.notify('Build function executed: ' .. name, vim.log.levels.INFO)
+          utils.notify('[Resonance] Build function executed: ' .. name, vim.log.levels.INFO)
         else
-          utils.notify('Build failed: ' .. name .. '\n' .. tostring(err), vim.log.levels.ERROR)
+          utils.notify('[Resonance] Build failed: ' .. name .. '\n' .. tostring(err),
+            vim.log.levels.ERROR)
         end
       end)
     end

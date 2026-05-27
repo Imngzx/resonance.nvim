@@ -20,7 +20,6 @@ local function build_content()
     cur_line, cur_col = cur_line .. text, cur_col + #text
   end
 
-  -- [完美还原] 顶部按钮间的切割与间距
   new_line(); new_line()
   append('  ')
   append(' Home (H) ', 'CursorLine')
@@ -49,7 +48,6 @@ local function build_content()
     new_line()
     append('  ')
     if p.loaded then
-      -- [完美还原] 恢复原版多彩的 Icon 与文字高亮组合
       append('● ', 'Statement')
       append('󰏗 ', 'Function')
       append(p.name, 'Normal')
@@ -76,7 +74,6 @@ local function bind_keys(buf, win_close_fn, pack_dir)
     utils.notify('Triggering DIY plugin update...', vim.log.levels.INFO)
   end, { buf = buf, desc = 'Update Plugins' })
 
-  -- [完美还原] 加上了丢失的 nowait = true，保证按键零延迟响应
   vim.keymap.set('n', 'S', function()
     win_close_fn()
     local has_snacks, snacks = pcall(require, 'snacks')
@@ -125,7 +122,6 @@ function M.open(ui_config)
       title = ui_config.title,
       title_pos = 'center',
       enter = true,
-      -- [完美还原] 补全所有防御性配置，和原版 lazy-ui 一模一样
       bo = {
         buftype = 'nofile',
         filetype = 'resonance',
@@ -179,7 +175,6 @@ function M.open(ui_config)
   end
 
   vim.bo[buf].modifiable = false
-  -- 防止回退方案漏绑，统一在这里再绑一次
   vim.bo[buf].filetype = 'resonance'
 end
 

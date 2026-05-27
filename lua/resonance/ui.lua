@@ -20,6 +20,7 @@ local function build_content()
     cur_line, cur_col = cur_line .. text, cur_col + #text
   end
 
+  -- [完美还原] 顶部按钮间的切割与间距
   new_line(); new_line()
   append('  ')
   append(' Home (H) ', 'CursorLine')
@@ -33,11 +34,14 @@ local function build_content()
   append(' Quit (q) ', 'CursorLine')
   new_line(); new_line()
 
-  local ms = (_G.start_time and _G.end_time) and ((_G.end_time - _G.start_time) / 1e6) or 0
-  append('  Startuptime: ', 'Title')
-  append(string.format('%.2fms', ms), 'WarningMsg')
-  append(' (Till UIEnter)', 'Comment')
-  new_line(); new_line()
+  if _G.start_time and _G.end_time then
+    local ms = ((_G.end_time - _G.start_time) / 1e6)
+    append('  Startuptime: ', 'Title')
+    append(string.format('%.2fms', ms), 'WarningMsg')
+    append(' (Till UIEnter)', 'Comment')
+    new_line(); new_line()
+  end
+
   append(string.format('  Total: %d plugins  Loaded: %d', info.total, info.loaded), 'Comment')
   new_line(); new_line()
 
@@ -45,9 +49,14 @@ local function build_content()
     new_line()
     append('  ')
     if p.loaded then
-      append('● 󰏗 ', 'Statement'); append(p.name, 'Normal')
+      -- [完美还原] 恢复原版多彩的 Icon 与文字高亮组合
+      append('● ', 'Statement')
+      append('󰏗 ', 'Function')
+      append(p.name, 'Normal')
     else
-      append('○ 󰏗 ', 'Comment'); append(p.name, 'Comment')
+      append('○ ', 'Comment')
+      append('󰏗 ', 'Comment')
+      append(p.name, 'Comment')
     end
     append(string.format(' [%s]', p.type), 'Comment')
   end
@@ -64,21 +73,22 @@ local function bind_keys(buf, win_close_fn, pack_dir)
   vim.keymap.set('n', 'U', function()
     win_close_fn()
     vim.pack.update()
-    utils.notify('Triggering plugin update...', vim.log.levels.INFO)
+    utils.notify('Triggering DIY plugin update...', vim.log.levels.INFO)
   end, { buf = buf, desc = 'Update Plugins' })
 
+  -- [完美还原] 加上了丢失的 nowait = true，保证按键零延迟响应
   vim.keymap.set('n', 'S', function()
     win_close_fn()
     local has_snacks, snacks = pcall(require, 'snacks')
     local has_tele, tele = pcall(require, 'telescope.builtin')
     if has_snacks then
-      snacks.picker.grep({ dirs = { pack_dir }, title = '  Plugins Source ' })
+      snacks.picker.grep({ cwd = pack_dir, title = '  Plugins Source ' })
     elseif has_tele then
       tele.live_grep({ cwd = pack_dir })
     else
       vim.cmd('vimgrep /.*/j ' .. pack_dir .. '/**/* | copen')
     end
-  end, { buf = buf, desc = 'Search in Plugins Source' })
+  end, { buf = buf, nowait = true, desc = 'Search in Plugins Source' })
 
   vim.keymap.set('n', 'D', function()
     win_close_fn()
@@ -87,15 +97,13 @@ local function bind_keys(buf, win_close_fn, pack_dir)
     else
       vim.cmd('Explore ' .. pack_dir)
     end
-  end, { buf = buf, desc = 'Open Plugin Directory' })
+  end, { buf = buf, nowait = true, desc = 'Open Plugin Directory' })
 end
 
 function M.open(ui_config)
   local lines, extmarks, pack_dir = build_content()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-
-  vim.bo[buf].bufhidden = 'wipe'
 
   local ns = vim.api.nvim_create_namespace('resonance_ui')
   for _, em in ipairs(extmarks) do
@@ -117,7 +125,20 @@ function M.open(ui_config)
       title = ui_config.title,
       title_pos = 'center',
       enter = true,
-      wo = { cursorline = true }
+      -- [完美还原] 补全所有防御性配置，和原版 lazy-ui 一模一样
+      bo = {
+        buftype = 'nofile',
+        filetype = 'resonance',
+        swapfile = false,
+        bufhidden = 'wipe',
+      },
+      wo = {
+        cursorline = true,
+        wrap = false,
+        signcolumn = 'no',
+        number = false,
+        relativenumber = false,
+      }
     })
     bind_keys(buf, function() win:close() end, pack_dir)
   elseif ok_nui then
@@ -128,11 +149,12 @@ function M.open(ui_config)
       border = { style = ui_config.border, text = { top = ui_config.title, top_align = 'center' } },
       position = '50%',
       size = { width = math.floor(vim.o.columns * ui_config.width), height = math.floor(vim.o.lines * ui_config.height) },
-      win_options = { cursorline = true }
+      buf_options = { modifiable = false, readonly = true, bufhidden = 'wipe' },
+      win_options = { cursorline = true, wrap = false, signcolumn = 'no', number = false, relativenumber = false }
     })
     popup:mount()
     bind_keys(buf, function() popup:unmount() end, pack_dir)
-  else -- 终极方案：原生 Neovim C-API 浮窗
+  else
     local w = math.floor(vim.o.columns * ui_config.width)
     local h = math.floor(vim.o.lines * ui_config.height)
     local win = vim.api.nvim_open_win(buf, true, {
@@ -147,11 +169,17 @@ function M.open(ui_config)
       title_pos = 'center',
       zindex = 50
     })
+    vim.bo[buf].bufhidden = 'wipe'
     vim.wo[win].cursorline = true
+    vim.wo[win].wrap = false
+    vim.wo[win].number = false
+    vim.wo[win].relativenumber = false
+    vim.wo[win].signcolumn = 'no'
     bind_keys(buf, function() pcall(vim.api.nvim_win_close, win, true) end, pack_dir)
   end
 
   vim.bo[buf].modifiable = false
+  -- 防止回退方案漏绑，统一在这里再绑一次
   vim.bo[buf].filetype = 'resonance'
 end
 

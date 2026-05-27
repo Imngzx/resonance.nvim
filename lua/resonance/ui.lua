@@ -104,8 +104,11 @@ function M.open(ui_config)
 
   local ns = vim.api.nvim_create_namespace('resonance_ui')
   for _, em in ipairs(extmarks) do
-    pcall(vim.api.nvim_buf_set_extmark, buf, ns, em.line, em.start_col,
-      { end_col = em.end_col, hl_group = em.hl_group })
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, em.line, em.start_col, {
+      end_col = em.end_col,
+      hl_group = em.hl_group,
+      priority = 100
+    })
   end
 
   local ok_snacks, snacks = pcall(require, 'snacks')

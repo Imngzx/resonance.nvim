@@ -21,11 +21,16 @@ local function build_content()
   end
 
   new_line(); new_line()
-  append('  Home(H) ', 'CursorLine')
-  append('  Update(U) ', 'CursorLine')
-  append('  Search(S) ', 'CursorLine')
-  append('  Dir(D) ', 'CursorLine')
-  append('  Quit(q) ', 'CursorLine')
+  append('  ')
+  append(' Home (H) ', 'CursorLine')
+  append('  ', 'NONE')
+  append(' Update (U) ', 'CursorLine')
+  append('  ', 'NONE')
+  append(' Search (S) ', 'CursorLine')
+  append('  ', 'NONE')
+  append(' Dir (D) ', 'CursorLine')
+  append('  ', 'NONE')
+  append(' Quit (q) ', 'CursorLine')
   new_line(); new_line()
 
   local ms = (_G.start_time and _G.end_time) and ((_G.end_time - _G.start_time) / 1e6) or 0

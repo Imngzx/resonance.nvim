@@ -78,8 +78,27 @@ function M.load(config)
   local function load_now()
     if loaded then return end
     loaded = true
+
+    -- 开始毫秒级计时
+    local start_ms = vim.uv.hrtime()
+
     if #plugins > 0 then vim.pack.add(plugins) end
     if config.setup then config.setup() end
+
+    -- 结算耗时
+    local end_ms = vim.uv.hrtime()
+    local duration = (end_ms - start_ms) / 1e6
+
+    -- 将耗时存入 scanner，供 UI 读取
+    for _, plugin in ipairs(plugins) do
+      local target_url = type(plugin) == 'string' and plugin or
+        (plugin.src or plugin.url or plugin[1])
+      local name = (type(plugin) == 'table' and plugin.name) or
+        (target_url and vim.fn.fnamemodify(target_url, ':t'):gsub('%.git$', ''))
+      if name then
+        require('resonance.scanner').load_times[name] = duration
+      end
+    end
   end
 
   -- Event 触发

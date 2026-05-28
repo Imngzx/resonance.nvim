@@ -33,16 +33,22 @@ local function build_content()
   append(' Quit (q) ', 'CursorLine')
   new_line(); new_line()
 
-  if _G.start_time and _G.end_time then
-    local ms = ((_G.end_time - _G.start_time) / 1e6)
+  if _G.start_time then
+    local calc_end = _G.end_time or vim.uv.hrtime()
+    local ms = ((calc_end - _G.start_time) / 1e6)
     append('  Startuptime: ', 'Title')
-    append(string.format('%.2fms', ms), 'WarningMsg')
-    append(' (Till UIEnter)', 'Comment')
+    append(string.format('%.2f ms', ms), 'WarningMsg')
+    append(_G.end_time and ' (Till UIEnter)' or ' (Till Now)', 'Comment')
     new_line(); new_line()
   end
 
   append(string.format('  Total: %d plugins  Loaded: %d', info.total, info.loaded), 'Comment')
   new_line(); new_line()
+
+  local max_len = 0
+  for _, p in ipairs(info.plugins) do
+    if #p.name > max_len then max_len = #p.name end
+  end
 
   for _, p in ipairs(info.plugins) do
     new_line()
@@ -56,7 +62,23 @@ local function build_content()
       append('󰏗 ', 'Comment')
       append(p.name, 'Comment')
     end
-    append(string.format(' [%s]', p.type), 'Comment')
+
+    -- 填充空格以对齐
+    local name_pad = max_len - #p.name + 2
+    append(string.rep(' ', name_pad > 0 and name_pad or 2), 'NONE')
+
+    -- 输出分类 (start/opt)
+    append(string.format('[%s]', p.type), 'Comment')
+
+    -- 如果有探针数据，输出耗时
+    if p.loaded then
+      local ms = info.load_times[p.name]
+      if ms then
+        local type_pad = 7 - #p.type
+        append(string.rep(' ', type_pad > 0 and type_pad or 1), 'NONE')
+        append(string.format('%.2f ms', ms), 'WarningMsg')
+      end
+    end
   end
   table.insert(lines, cur_line)
 

@@ -27,7 +27,7 @@ function M.trigger_verylazy()
   vim.api.nvim_create_autocmd('UIEnter', {
     once = true,
     callback = function()
-      _G.end_time = vim.uv.hrtime()
+      _G.end_time = _G.end_time or vim.uv.hrtime()
       vim.cmd('redrawstatus')
 
       vim.schedule(function()
@@ -41,7 +41,7 @@ function M.trigger_verylazy()
     once = true,
     callback = function()
       if #vim.api.nvim_list_uis() == 0 then
-        _G.end_time = vim.uv.hrtime()
+        _G.end_time = _G.end_time or vim.uv.hrtime()
         vim.schedule(function()
           vim.api.nvim_exec_autocmds('User', { pattern = 'VeryLazy' })
         end)

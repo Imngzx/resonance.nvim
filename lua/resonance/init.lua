@@ -17,6 +17,9 @@ M.config = {
 
 function M.setup(opts)
   M.config = vim.tbl_deep_extend('force', M.config, opts or {})
+  vim.api.nvim_create_user_command('Resonance', function()
+    M.open_ui()
+  end, { desc = 'Open Resonance UI' })
 end
 
 function M.load(spec)

@@ -125,6 +125,8 @@ resonance.load({
 
 ## 📊 Dashboard Resonance.stats integration
 
+![Preview Image](https://github.com/user-attachments/assets/7b09a0be-6c3d-40a5-900a-ac0e116d7731)
+
 Resonance provides a clean, zero-hack API to retrieve plugin statistics and exact startup times, heavily inspired by `lazy.nvim`.
 
 Because Resonance locks the "Time to UI" exactly at the first moment `require('resonance').stats()` is called, placing this in your dashboard's render function guarantees the most accurate startup time measurement.

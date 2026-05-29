@@ -118,7 +118,13 @@ function M.load(config)
       vim.api.nvim_create_user_command(cmd, function(args)
         vim.api.nvim_del_user_command(cmd)
         load_now()
-        local cmd_opts = { cmd = cmd, args = args.fargs, bang = args.bang }
+
+        local cmd_opts = {
+          cmd = cmd,
+          args = args.fargs,
+          bang = args.bang,
+          mods = args.mods,
+        }
 
         if args.range == 1 then
           cmd_opts.range = { args.line1 }
@@ -128,7 +134,7 @@ function M.load(config)
           cmd_opts.count = args.count
         end
 
-        vim.cmd(cmd_opts)
+        vim.api.nvim_cmd(cmd_opts, {})
       end, { nargs = '*', bang = true, range = true, complete = 'file' })
     end
   end

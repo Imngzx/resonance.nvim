@@ -33,12 +33,11 @@ local function build_content()
   append(' Quit (q) ', 'CursorLine')
   new_line(); new_line()
 
-  if _G.start_time then
-    local calc_end = _G.end_time or vim.uv.hrtime()
-    local ms = ((calc_end - _G.start_time) / 1e6)
+  local stats = require('resonance').stats()
+  if stats.startuptime > 0 then
     append('  Startuptime: ', 'Title')
-    append(string.format('%.2f ms', ms), 'WarningMsg')
-    append(_G.end_time and ' (Till UIEnter)' or ' (Till Now)', 'Comment')
+    append(string.format('%.2f ms', stats.startuptime), 'WarningMsg')
+    append(' (Till UIEnter/Dashboard)', 'Comment')
     new_line(); new_line()
   end
 

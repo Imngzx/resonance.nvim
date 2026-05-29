@@ -58,14 +58,6 @@ resonance.setup({
   }
 })
 
--- example: snacks
-resonance.load({
-  plugin = "https://github.com/folke/snacks.nvim",
-  event = { 'User', pattern = 'VeryLazy' },
-  setup = function()
-  end
-})
-
 -- UI keymap binding 
 vim.keymap.set("n", "<leader>pL", resonance.open_ui, { desc = "Resonance UI" })
 
@@ -73,22 +65,6 @@ vim.keymap.set("n", "<leader>pL", resonance.open_ui, { desc = "Resonance UI" })
 resonance.trigger_verylazy()
 
 ```
-
-Then add code below on the very top of your init.lua (* Optional)
-
-```lua
-_G.start_time = vim.uv.hrtime()
-_G.end_time = nil
-
-vim.api.nvim_create_autocmd('UIEnter', {
-  once = true,
-  callback = function()
-    _G.end_time = vim.uv.hrtime()
-  end
-})
- ```
-
-The code above can helps you to calculate your loading time.
 
 ## ⚡ Lazy Loading by Events
 
@@ -135,12 +111,96 @@ event = { "User", pattern = "MasonLoaded" }
 ### 📝 Complete Example
 
 ```lua
+local resonance = require('resonance')
+
 resonance.load({
   plugin = "https://github.com/nvim-treesitter/nvim-treesitter",
   -- Multiple native events stacked together
   event = { "BufReadPre", "BufNewFile" },
   setup = function()
     -- Config here...
+  end
+})
+```
+
+## 📊 Dashboard Resonance.stats integration
+
+Resonance provides a clean, zero-hack API to retrieve plugin statistics and exact startup times, heavily inspired by `lazy.nvim`.
+
+Because Resonance locks the "Time to UI" exactly at the first moment `require('resonance').stats()` is called, placing this in your dashboard's render function guarantees the most accurate startup time measurement.
+
+### The `stats()` API
+
+```lua
+local stats = require("resonance").stats()
+-- returns:
+-- {
+--   count = 37,        -- Total number of plugins managed
+--   loaded = 20,       -- Plugins loaded at startup
+--   startuptime = 24.5,-- Startup time in milliseconds (Time to UI)
+--   times = { ... }    -- Table containing load times for individual plugins
+-- }
+```
+
+For snacks.nvim:
+
+```lua
+require("snacks").setup({
+  dashboard = {
+    sections = {
+      { section = 'header' },
+      { section = 'keys', gap = 1, padding = 1 },
+      function()
+        local stats = require("resonance").stats()
+        local ms = string.format("%.2f ms", stats.startuptime)
+        return {
+          align = 'center',
+          text = {
+            { "󱐋 ", hl = "Special" },
+            { stats.loaded .. " / " .. stats.count, hl = "Special" },
+            { " plugins loaded in ", hl = "Comment" },
+            { ms, hl = "Special" },
+          },
+          padding = 1,
+        }
+      end,
+    }
+  }
+})
+```
+
+For alpha.nvim:
+
+```lua
+local alpha = require("alpha")
+local dashboard = require("alpha.themes.dashboard")
+
+-- ... (your header and buttons configuration) ...
+
+-- Dynamically generate the footer
+dashboard.section.footer.val = function()
+  local stats = require("resonance").stats()
+  local ms = string.format("%.2f ms", stats.startuptime)
+  return "󱐋 " .. stats.loaded .. " / " .. stats.count .. " plugins loaded in " .. ms
+end
+-- Optional: apply highlight group to footer
+dashboard.section.footer.opts.hl = "Comment"
+
+alpha.setup(dashboard.opts)
+```
+
+For mini.starter
+
+```lua
+local starter = require("mini.starter")
+
+starter.setup({
+  -- ... (your items and hooks) ...
+  
+  footer = function()
+    local stats = require("resonance").stats()
+    local ms = string.format("%.2f ms", stats.startuptime)
+    return "󱐋 " .. stats.loaded .. " / " .. stats.count .. " plugins loaded in " .. ms
   end
 })
 ```
@@ -156,7 +216,7 @@ resonance.load({
 - `D` : Open plugin directory
 - `q` / Esc : Quit
 
-## Configuration examples
+## Simple Configuration examples
 
 [example](https://github.com/Imngzx/resonance-demo-nvim-config)
 

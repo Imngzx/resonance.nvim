@@ -181,7 +181,9 @@ function M.load(config)
 
       if lhs then
         vim.keymap.set(mode, lhs, function()
-          vim.keymap.del(mode, lhs)
+          local del_opts = opts.buffer and { buffer = opts.buffer } or {}
+          pcall(vim.keymap.del, mode, lhs, del_opts)
+
           load_now()
           if rhs then
             if type(rhs) == 'function' then

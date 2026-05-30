@@ -17,7 +17,15 @@ vim.api.nvim_create_autocmd('PackChanged', {
     local dir = (data.spec and data.spec.dir) or data.dir
     if not dir or dir == '' then
       local found = vim.api.nvim_get_runtime_file('pack/*/*/' .. name, false)
-      if #found > 0 then dir = found[1] end
+      if #found > 0 then
+        dir = found[1]
+      else
+        local pack_dir = vim.fn.stdpath('data') .. '/site/pack'
+        local fs_found = vim.fs.find(name, { path = pack_dir, type = 'directory', limit = 1 })
+        if fs_found and #fs_found > 0 then
+          dir = fs_found[1]
+        end
+      end
     end
 
     if not dir or dir == '' then
@@ -70,7 +78,13 @@ function M.load(config)
         (plugin.src or plugin.url or plugin[1])
       local name = (type(plugin) == 'table' and plugin.name) or
         (target_url and vim.fn.fnamemodify(target_url, ':t'):gsub('%.git$', ''))
-      if name then M.build_hooks[name] = config.build end
+
+      local specific_build = type(plugin) == 'table' and plugin.build
+      local build_cmd = specific_build or config.build
+
+      if name and build_cmd then
+        M.build_hooks[name] = build_cmd
+      end
     end
   end
 

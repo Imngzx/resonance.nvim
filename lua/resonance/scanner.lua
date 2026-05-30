@@ -9,12 +9,13 @@ function M.get_info()
   local loaded_set = {}
   local loaded_count, total_count = 0, 0
   local sub_dirs = { 'start', 'opt' }
+  local pack_stat = vim.uv.fs_stat(pack_dir)
 
   for _, p in ipairs(vim.api.nvim_list_runtime_paths()) do
     loaded_set[vim.fs.normalize(p)] = true
   end
 
-  if vim.fn.isdirectory(pack_dir) == 1 then
+  if pack_stat and pack_stat.type == 'directory' then
     for pkg_name, pkg_type in vim.fs.dir(pack_dir) do
       if pkg_type == 'directory' then
         for _, sub in ipairs(sub_dirs) do

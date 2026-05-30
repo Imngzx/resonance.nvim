@@ -1,5 +1,6 @@
 local M = {}
 local utils = require('resonance.utils')
+local SUB_DIRS = { 'opt', 'start' }
 
 M.build_hooks = {}
 
@@ -12,7 +13,7 @@ local function get_plugin_dir(name)
 
   for group_name, type in vim.fs.dir(pack_dir) do
     if type == 'directory' then
-      for _, sub in ipairs({ 'opt', 'start' }) do
+      for _, sub in ipairs(SUB_DIRS) do
         local target = pack_dir .. '/' .. group_name .. '/' .. sub .. '/' .. name
         if vim.uv.fs_stat(target) then return target end
       end

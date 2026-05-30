@@ -21,9 +21,9 @@ vim.api.nvim_create_autocmd('PackChanged', {
         dir = found[1]
       else
         local pack_dir = vim.fn.stdpath('data') .. '/site/pack'
-        local fs_found = vim.fs.find(name, { path = pack_dir, type = 'directory', limit = 1 })
-        if fs_found and #fs_found > 0 then
-          dir = fs_found[1]
+        local glob_res = vim.fn.globpath(pack_dir, '*/*/' .. name, false, true)
+        if glob_res and #glob_res > 0 then
+          dir = glob_res[1]
         end
       end
     end
@@ -71,20 +71,18 @@ function M.load(config)
   if type(plugins) == 'string' then plugins = { plugins } end
   plugins = plugins or {}
 
-  -- 注册 Build Hook
-  if config.build then
-    for _, plugin in ipairs(plugins) do
-      local target_url = type(plugin) == 'string' and plugin or
-        (plugin.src or plugin.url or plugin[1])
-      local name = (type(plugin) == 'table' and plugin.name) or
-        (target_url and vim.fn.fnamemodify(target_url, ':t'):gsub('%.git$', ''))
+  for _, plugin in ipairs(plugins) do
+    local target_url = type(plugin) == 'string' and plugin or
+      (plugin.src or plugin.url or plugin[1])
+    local name = (type(plugin) == 'table' and plugin.name) or
+      (target_url and vim.fn.fnamemodify(target_url, ':t'):gsub('%.git$', ''))
 
-      local specific_build = type(plugin) == 'table' and plugin.build
-      local build_cmd = specific_build or config.build
+    -- 优先读取插件自己 table 里的 build，没有则降级使用外部共用的 config.build
+    local specific_build = type(plugin) == 'table' and plugin.build
+    local build_cmd = specific_build or config.build
 
-      if name and build_cmd then
-        M.build_hooks[name] = build_cmd
-      end
+    if name and build_cmd then
+      M.build_hooks[name] = build_cmd
     end
   end
 

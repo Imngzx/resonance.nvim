@@ -4,6 +4,8 @@
 
 `Resonance.nvim` is born out of a desire for extreme performance and simplicity. It strips away the bloat of traditional package managers while keeping the most powerful features: **lazy-loading**, **automatic build hooks**, and an **elegant UI**.
 
+**❤️Special Thanks to: [CWorld1](https://github.com/cworld1)**
+
 ## ✨ Features
 
 - **Zero Dependencies:** Works out of the box. Native UI fallback is provided if you prefer a minimalist setup.
@@ -220,7 +222,8 @@ starter.setup({
 
 ## Simple Configuration examples
 
-[example](https://github.com/Imngzx/resonance-demo-nvim-config)
+[Complex example](https://github.com/Imngzx/nvim-config-rice-.ver-)
+[Simple example](https://github.com/Imngzx/resonance-demo-nvim-config)
 
 ## License
 

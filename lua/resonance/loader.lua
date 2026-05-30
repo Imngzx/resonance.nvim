@@ -96,7 +96,7 @@ function M.load(config)
   for _, plugin in ipairs(plugins) do
     local target_url = type(plugin) == 'string' and plugin or (plugin.src or plugin.url or plugin[1])
     local name = (type(plugin) == 'table' and plugin.name) or
-      (target_url and vim.fn.fnamemodify(target_url, ':t'):gsub('%.git$', ''))
+      (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
 
     local specific_build = type(plugin) == 'table' and plugin.build
     local build_cmd = specific_build or config.build

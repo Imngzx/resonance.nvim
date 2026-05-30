@@ -199,6 +199,7 @@ function M.open(ui_config)
   end
 
   vim.bo[buf].modifiable = false
+  vim.bo[buf].readonly = true
   vim.bo[buf].filetype = 'resonance'
 end
 

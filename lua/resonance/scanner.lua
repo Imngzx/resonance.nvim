@@ -8,6 +8,7 @@ function M.get_info()
   local plugins = {}
   local loaded_set = {}
   local loaded_count, total_count = 0, 0
+  local sub_dirs = { 'start', 'opt' }
 
   for _, p in ipairs(vim.api.nvim_list_runtime_paths()) do
     loaded_set[vim.fs.normalize(p)] = true
@@ -16,9 +17,10 @@ function M.get_info()
   if vim.fn.isdirectory(pack_dir) == 1 then
     for pkg_name, pkg_type in vim.fs.dir(pack_dir) do
       if pkg_type == 'directory' then
-        for _, sub in ipairs({ 'start', 'opt' }) do
+        for _, sub in ipairs(sub_dirs) do
           local target_dir = pack_dir .. '/' .. pkg_name .. '/' .. sub
-          if vim.fn.isdirectory(target_dir) == 1 then
+          local stat = vim.uv.fs_stat(target_dir)
+          if stat and stat.type == 'directory' then
             for plugin_name, p_type in vim.fs.dir(target_dir) do
               if p_type == 'directory' then
                 total_count = total_count + 1
@@ -41,8 +43,13 @@ function M.get_info()
   end)
 
   -- 把 load_times 也一并返回给 UI
-  return { plugins = plugins, total = total_count, loaded = loaded_count, pack_dir = pack_dir, load_times =
-  M.load_times }
+  return {
+    plugins = plugins,
+    total = total_count,
+    loaded = loaded_count,
+    pack_dir = pack_dir,
+    load_times = M.load_times
+  }
 end
 
 return M

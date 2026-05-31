@@ -182,7 +182,13 @@ function M.load(config)
 
       if lhs then
         vim.keymap.set(mode, lhs, function()
-          local del_opts = opts.buffer and { buffer = opts.buffer } or {}
+          local target_buf = opts.buf or opts.buffer
+          local del_opts = target_buf and { buf = target_buf } or {}
+
+          if opts.buffer then
+            opts.buf = opts.buffer
+            opts.buffer = nil
+          end
           pcall(vim.keymap.del, mode, lhs, del_opts)
 
           load_now()

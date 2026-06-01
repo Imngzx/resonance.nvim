@@ -23,6 +23,7 @@ local state = {
   checking = false,
   line_to_name = {},
   name_to_line = {},
+  restore_cursor_name = nil,
 }
 
 local render_scheduled = false
@@ -47,6 +48,9 @@ local function plugin_at_cursor()
 end
 
 local function build_content()
+  state.line_to_name = {}
+  state.name_to_line = {}
+
   local lines, hls = {}, {}
   local line_parts = {}
   local line_idx, cur_col = 0, 0
@@ -67,9 +71,11 @@ local function build_content()
     cur_col = 0
   end
 
-  local function mark_row(name)
+  local function mark_row(name, is_detail)
     state.line_to_name[line_idx + 1] = name
-    state.name_to_line[name] = line_idx + 1
+    if not is_detail then
+      state.name_to_line[name] = line_idx + 1
+    end
   end
 
   local function btn(key, text)
@@ -114,7 +120,7 @@ local function build_content()
 
   add(
     string.format('  Total: %d plugins  Loaded: %d  Updates: ', state.info.total, state.info
-      .loaded),
+    .loaded),
     'Comment')
   add(tostring(update_count), update_count > 0 and 'DiagnosticWarn' or 'Comment')
 
@@ -131,7 +137,7 @@ local function build_content()
 
   for i = 1, #state.info.plugins do
     local p = state.info.plugins[i]
-    mark_row(p.name)
+    mark_row(p.name, false)
     local is_pending = state.updates[p.name]
 
     if p.loaded then add('  ● ', 'Statement') else add('  ○ ', 'Comment') end
@@ -161,25 +167,25 @@ local function build_content()
     nl()
 
     if state.expanded[p.name] then
-      mark_row(p.name)
+      mark_row(p.name, true)
       add('      status: ', 'Comment')
       if p.loaded then add('active', 'String') else add('inactive', 'Comment') end
       nl()
 
-      mark_row(p.name)
+      mark_row(p.name, true)
       add('      path:   ', 'Comment')
       add(p.path, 'Normal')
       nl()
 
       if state.commits[p.name] then
-        mark_row(p.name)
+        mark_row(p.name, true)
         add('      commit: ', 'Comment')
         add(state.commits[p.name], 'Number')
         nl()
       end
 
       if is_pending then
-        mark_row(p.name)
+        mark_row(p.name, true)
         add('      update: ', 'Comment')
         add('Updates available in remote', 'DiagnosticWarn')
         nl()
@@ -213,6 +219,16 @@ local function render()
       hl_group = hl[4],
       priority = 100
     })
+  end
+
+  if state.restore_cursor_name and state.win and win_is_valid(state.win) then
+    local target_line = state.name_to_line[state.restore_cursor_name]
+    if target_line then
+      local line_count = api.nvim_buf_line_count(state.buf)
+      target_line = math.max(1, math.min(target_line, line_count))
+      pcall(api.nvim_win_set_cursor, state.win, { target_line, 0 })
+    end
+    state.restore_cursor_name = nil
   end
 end
 
@@ -267,10 +283,8 @@ local function toggle_details()
   local name = plugin_at_cursor()
   if not name then return end
   state.expanded[name] = not state.expanded[name]
+  state.restore_cursor_name = name
   schedule_render()
-  if state.win and win_is_valid(state.win) and state.name_to_line[name] then
-    api.nvim_win_set_cursor(state.win, { state.name_to_line[name], 0 })
-  end
 end
 
 local function update_plugin(name)
@@ -343,8 +357,6 @@ function M.open(ui_config)
 
   init_hls()
   state.info = scanner.get_info()
-  state.line_to_name = {}
-  state.name_to_line = {}
   state.buf = api.nvim_create_buf(false, true)
 
   vim.bo[state.buf].buftype = 'nofile'

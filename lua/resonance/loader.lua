@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-field
 local M = {}
 local utils = require('resonance.utils')
 local SUB_DIRS = { 'opt', 'start' }
@@ -128,7 +129,7 @@ function M.load(config)
 
     for _, plugin in ipairs(plugins) do
       local target_url = type(plugin) == 'string' and plugin or
-      (plugin.src or plugin.url or plugin[1])
+        (plugin.src or plugin.url or plugin[1])
       local name = (type(plugin) == 'table' and plugin.name) or
         (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
       if name then require('resonance.scanner').load_times[name] = duration end

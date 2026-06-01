@@ -3,6 +3,34 @@ local api = vim.api
 
 M.ns = api.nvim_create_namespace('resonance_ui')
 
+---@class ResonancePluginSOA
+---@field name string[]
+---@field type string[]
+---@field path string[]
+---@field loaded boolean[]
+
+---@class ResonanceScannerInfo
+---@field plugins ResonancePluginSOA
+---@field total integer
+---@field loaded integer
+---@field pack_dir string
+---@field load_times table<string, number>
+
+---@class ResonanceUIState
+---@field buf? integer
+---@field win? integer
+---@field win_width integer
+---@field info? ResonanceScannerInfo
+---@field commits table<string, string>
+---@field updates table<string, string[]>
+---@field urls table<string, string>
+---@field expanded table<string, boolean>
+---@field checking boolean
+---@field line_to_name table<number, string>
+---@field name_to_line table<string, number>
+---@field restore_cursor_name? string
+
+---@type ResonanceUIState
 M.state = {
   buf = nil,
   win = nil,

@@ -58,7 +58,6 @@ local function build_content()
   local pending_idx, clean_idx = {}, {}
   local max_name_len = 0
 
-  -- 利用 SOA 读取，降低闭包和表分配
   local names, types, paths, loadeds = st.state.info.plugins.name, st.state.info.plugins.type,
     st.state.info.plugins.path, st.state.info.plugins.loaded
 
@@ -119,7 +118,7 @@ local function build_content()
 
     if st.state.expanded[p_name] then
       mark_row(p_name, true); add('      status: ', 'Comment'); add(
-      is_loaded and 'active' or 'inactive', is_loaded and 'String' or 'Comment'); nl()
+        is_loaded and 'active' or 'inactive', is_loaded and 'String' or 'Comment'); nl()
       mark_row(p_name, true); add('      path:   ', 'Comment'); add(p_path, 'Normal'); nl()
       mark_row(p_name, true); add('      src:    ', 'Comment')
       if not st.state.urls[p_name] then st.state.urls[p_name] = st.get_src_url(p_path) end
@@ -144,7 +143,12 @@ local function build_content()
     for i = 1, #pending_idx do draw_plugin(pending_idx[i], true) end
   end
 
-  nl(); add(string.format('  Up to date (%d)', #clean_idx), 'Title'); nl()
+  nl()
+  add(string.format('  Up to date (%d)', #clean_idx), 'Title')
+  add('    ● ', 'Statement')
+  add(string.format('Loaded: %d', st.state.info.loaded), 'Comment')
+  nl()
+
   for i = 1, #clean_idx do draw_plugin(clean_idx[i], false) end
 
   return lines, hls
@@ -152,8 +156,10 @@ end
 
 function M.render()
   if not st.is_valid() then return end
-  if st.state.win and api.nvim_win_is_valid(st.state.win) then st.state.win_width = api
-    .nvim_win_get_width(st.state.win) end
+  if st.state.win and api.nvim_win_is_valid(st.state.win) then
+    st.state.win_width = api
+      .nvim_win_get_width(st.state.win)
+  end
 
   local lines, hls = build_content()
 

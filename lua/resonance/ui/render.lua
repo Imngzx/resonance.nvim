@@ -31,7 +31,7 @@ local function build_content()
   end
 
   nl()
-  local buttons = { { 'H', 'Home' }, { 'u', 'Update' }, { 'U', 'Update All' }, { 'dd', 'Uninstall' }, { 'r', 'Fetch' }, { 'S', 'Search' }, { 'D', 'Dir' }, { 'q', 'Quit' } }
+  local buttons = { { 'H', 'Home' }, { 'u', 'Update' }, { 'U', 'Update All' }, { 'dd', 'Uninstall' }, { 'r', 'Resonate' }, { 'S', 'Search' }, { 'D', 'Dir' }, { 'q', 'Quit' } }
   local cur_w = 2
   add('  ')
   for i = 1, #buttons do
@@ -132,7 +132,7 @@ local function build_content()
   end
 
   add(string.format('  Updates (%d)', #pending_idx), 'Title')
-  if st.state.checking then add(' (checking...)', 'DiagnosticInfo') end
+  if st.state.checking then add(' (Resonating...)', 'DiagnosticInfo') end
   nl()
 
   if #pending_idx == 0 then

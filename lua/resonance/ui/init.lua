@@ -18,7 +18,7 @@ local function bind_keys(win_close_fn)
 
   map('r', function()
     actions.check_updates_network()
-    utils.notify('Fetching remotes in background...', vim.log.levels.INFO)
+    utils.notify('Resonating in background...', vim.log.levels.INFO)
   end, 'Fetch Updates')
 
   map('u', function()

@@ -5,6 +5,7 @@ local SUB_DIRS = { 'opt', 'start' }
 local pack_dir_base = vim.fs.normalize(vim.fn.stdpath('data') .. '/site/pack')
 
 M.build_hooks = {}
+M.plugin_triggers = {}
 
 local function get_plugin_dir(name)
   if not vim.uv.fs_stat(pack_dir_base) then return nil end
@@ -80,15 +81,52 @@ vim.api.nvim_create_autocmd('PackChanged', {
   end,
 })
 
+local function parse_trigger(config)
+  if config.event then
+    if type(config.event) == 'table' then
+      if config.event[1] == 'User' then
+        return '󱐋 ' .. tostring(config.event.pattern or config.event[2] or 'User')
+      end
+      return '󱐋 ' .. table.concat(config.event, ', ')
+    end
+    return '󱐋 ' .. tostring(config.event)
+  elseif config.cmd then
+    if type(config.cmd) == 'table' then
+      return ' ' .. table.concat(config.cmd, ', ')
+    end
+    return ' ' .. tostring(config.cmd)
+  elseif config.keys then
+    if type(config.keys) == 'table' and config.keys[1] then
+      local ks = {}
+      for _, k in ipairs(config.keys) do
+        local lhs = k[2] or k.lhs
+        if lhs then ks[#ks + 1] = tostring(lhs) end
+      end
+      if #ks > 0 then return ' ' .. table.concat(ks, ', ') end
+    end
+    return ' key'
+  elseif config.ft then
+    if type(config.ft) == 'table' then
+      return ' ' .. table.concat(config.ft, ', ')
+    end
+    return ' ' .. tostring(config.ft)
+  end
+  return nil
+end
+
 function M.load(config)
   local plugins = config.plugin
   if type(plugins) == 'string' then plugins = { plugins } end
   plugins = plugins or {}
 
+  local trig_str = parse_trigger(config)
+
   for _, plugin in ipairs(plugins) do
     local target_url = type(plugin) == 'string' and plugin or (plugin.src or plugin.url or plugin[1])
     local name = (type(plugin) == 'table' and plugin.name) or
       (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
+
+    if name and trig_str then M.plugin_triggers[name] = trig_str end
 
     local specific_build = type(plugin) == 'table' and plugin.build
     local build_cmd = specific_build or config.build

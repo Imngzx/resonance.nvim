@@ -6,7 +6,10 @@ local pack_dir_base = vim.fs.normalize(vim.fn.stdpath('data') .. '/site/pack')
 local sub_dirs = { 'start', 'opt' }
 
 function M.get_info()
-  local plugins = { name = {}, type = {}, path = {}, loaded = {} }
+  local loader = require('resonance.loader')
+  local plugin_triggers = loader.plugin_triggers or {}
+
+  local plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {} }
   local loaded_set = {}
   local loaded_count, total_count = 0, 0
 
@@ -36,6 +39,8 @@ function M.get_info()
                 plugins.type[total_count] = sub
                 plugins.path[total_count] = p_path
                 plugins.loaded[total_count] = is_loaded
+                plugins.trigger[total_count] = plugin_triggers[p_name] or
+                  (sub == 'start' and '󰜎 start' or '󰢱 opt')
               end
             end
           end
@@ -51,13 +56,14 @@ function M.get_info()
     return plugins.name[a]:lower() < plugins.name[b]:lower()
   end)
 
-  local sorted_plugins = { name = {}, type = {}, path = {}, loaded = {} }
+  local sorted_plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {} }
   for i = 1, total_count do
     local idx = indices[i]
     sorted_plugins.name[i] = plugins.name[idx]
     sorted_plugins.type[i] = plugins.type[idx]
     sorted_plugins.path[i] = plugins.path[idx]
     sorted_plugins.loaded[i] = plugins.loaded[idx]
+    sorted_plugins.trigger[i] = plugins.trigger[idx]
   end
 
   return {

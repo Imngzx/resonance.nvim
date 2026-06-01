@@ -58,8 +58,9 @@ local function build_content()
   local pending_idx, clean_idx = {}, {}
   local max_name_len = 0
 
-  local names, types, paths, loadeds = st.state.info.plugins.name, st.state.info.plugins.type,
-    st.state.info.plugins.path, st.state.info.plugins.loaded
+  local names, types, paths, loadeds, triggers = st.state.info.plugins.name,
+    st.state.info.plugins.type,
+    st.state.info.plugins.path, st.state.info.plugins.loaded, st.state.info.plugins.trigger
 
   for i = 1, st.state.info.total do
     local n = names[i]
@@ -68,7 +69,8 @@ local function build_content()
   end
 
   local function draw_plugin(idx, is_pending)
-    local p_name, p_type, p_path, is_loaded = names[idx], types[idx], paths[idx], loadeds[idx]
+    local p_name, p_type, p_path, is_loaded, p_trigger = names[idx], types[idx], paths[idx],
+      loadeds[idx], triggers[idx]
     mark_row(p_name, false)
     add(is_loaded and '  ● ' or '  ○ ', is_loaded and 'Statement' or 'Comment')
     add('󰏗 ', is_loaded and 'Function' or 'Comment')
@@ -89,8 +91,8 @@ local function build_content()
 
     if is_pending then
       add('󰚰 pending', 'DiagnosticWarn')
-    elseif st.state.commits[p_name] then
-      add(st.state.commits[p_name], 'Number')
+    else
+      add(p_trigger, 'Special')
     end
     nl()
 
@@ -123,6 +125,7 @@ local function build_content()
       mark_row(p_name, true); add('      src:    ', 'Comment')
       if not st.state.urls[p_name] then st.state.urls[p_name] = st.get_src_url(p_path) end
       add(st.state.urls[p_name], 'Underlined'); nl()
+
       if st.state.commits[p_name] then
         mark_row(p_name, true); add('      commit: ', 'Comment'); add(st.state.commits[p_name],
           'Number'); nl()

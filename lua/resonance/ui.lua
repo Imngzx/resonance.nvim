@@ -16,14 +16,16 @@ local state = {
   buf = nil,
   win = nil,
   win_width = 80,
-  info = nil, -- { plugins, total, loaded, pack_dir, load_times }
-  commits = {}, -- SOA: [name] -> Git Hash string
-  updates = {}, -- SOA: [name] -> boolean (pending update)
-  expanded = {}, -- SOA: [name] -> boolean (is expanded)
+  info = nil,
+  commits = {},
+  updates = {},
+  expanded = {},
   checking = false,
   line_to_name = {},
   name_to_line = {},
 }
+
+local render_scheduled = false
 
 local function init_hls()
   local cl = api.nvim_get_hl(0, { name = 'CursorLine' })
@@ -112,7 +114,7 @@ local function build_content()
 
   add(
     string.format('  Total: %d plugins  Loaded: %d  Updates: ', state.info.total, state.info
-    .loaded),
+      .loaded),
     'Comment')
   add(tostring(update_count), update_count > 0 and 'DiagnosticWarn' or 'Comment')
 
@@ -206,7 +208,7 @@ local function render()
   buf_clear_namespace(state.buf, ns, 0, -1)
   for i = 1, #hls do
     local hl = hls[i]
-    pcall(buf_set_extmark, state.buf, ns, hl[1], hl[2], {
+    buf_set_extmark(state.buf, ns, hl[1], hl[2], {
       end_col = hl[3],
       hl_group = hl[4],
       priority = 100
@@ -214,6 +216,14 @@ local function render()
   end
 end
 
+local function schedule_render()
+  if render_scheduled then return end
+  render_scheduled = true
+  vim.schedule(function()
+    render()
+    render_scheduled = false
+  end)
+end
 
 local function fetch_local_commits()
   for i = 1, #state.info.plugins do
@@ -222,7 +232,7 @@ local function fetch_local_commits()
       function(out)
         if out.code == 0 and out.stdout then
           state.commits[p.name] = vim.trim(out.stdout)
-          vim.schedule(render)
+          schedule_render()
         end
       end)
   end
@@ -231,7 +241,7 @@ end
 local function check_updates()
   if state.checking then return end
   state.checking = true
-  render()
+  schedule_render()
 
   local completed = 0
   local total = #state.info.plugins
@@ -247,18 +257,17 @@ local function check_updates()
           end
           completed = completed + 1
           if completed >= total then state.checking = false end
-          vim.schedule(render)
+          schedule_render()
         end)
     end)
   end
 end
 
-
 local function toggle_details()
   local name = plugin_at_cursor()
   if not name then return end
   state.expanded[name] = not state.expanded[name]
-  render()
+  schedule_render()
   if state.win and win_is_valid(state.win) and state.name_to_line[name] then
     api.nvim_win_set_cursor(state.win, { state.name_to_line[name], 0 })
   end
@@ -267,8 +276,9 @@ end
 local function update_plugin(name)
   if not name then return end
   if vim.pack and vim.pack.update then
-    vim.notify('[Resonance] Updating ' .. name .. '...', vim.log.levels.INFO)
-    pcall(vim.pack.update, { name })
+    utils.notify('Updating ' .. name .. '...', vim.log.levels.INFO)
+    local ok, err = pcall(vim.pack.update, { name })
+    if not ok then utils.notify('Pack update failed: ' .. tostring(err), vim.log.levels.ERROR) end
   else
     utils.notify('Triggering DIY plugin update for ' .. name, vim.log.levels.INFO)
   end
@@ -293,7 +303,8 @@ local function bind_keys(win_close_fn)
 
   map('U', function()
     if vim.pack and vim.pack.update then
-      pcall(vim.pack.update)
+      local ok, err = pcall(vim.pack.update)
+      if not ok then utils.notify('Pack update failed: ' .. tostring(err), vim.log.levels.ERROR) end
     else
       utils.notify('Triggering Global Update...', vim.log.levels.INFO)
     end
@@ -408,7 +419,7 @@ function M.open(ui_config)
     bind_keys(on_close)
   end
 
-  vim.schedule(render)
+  schedule_render()
 end
 
 return M

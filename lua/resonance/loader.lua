@@ -1,20 +1,16 @@
 local M = {}
 local utils = require('resonance.utils')
 local SUB_DIRS = { 'opt', 'start' }
+local pack_dir_base = vim.fs.normalize(vim.fn.stdpath('data') .. '/site/pack')
 
 M.build_hooks = {}
 
 local function get_plugin_dir(name)
-  local found = vim.api.nvim_get_runtime_file('pack/*/*/' .. name, false)
-  if #found > 0 then return vim.fs.normalize(found[1]) end
-
-  local pack_dir = vim.fs.normalize(vim.fn.stdpath('data') .. '/site/pack')
-  if not vim.uv.fs_stat(pack_dir) then return nil end
-
-  for group_name, type in vim.fs.dir(pack_dir) do
+  if not vim.uv.fs_stat(pack_dir_base) then return nil end
+  for group_name, type in vim.fs.dir(pack_dir_base) do
     if type == 'directory' then
-      for _, sub in ipairs(SUB_DIRS) do
-        local target = pack_dir .. '/' .. group_name .. '/' .. sub .. '/' .. name
+      for i = 1, #SUB_DIRS do
+        local target = pack_dir_base .. '/' .. group_name .. '/' .. SUB_DIRS[i] .. '/' .. name
         if vim.uv.fs_stat(target) then return target end
       end
     end
@@ -30,7 +26,6 @@ local function mark_build_success(dir, hash)
   end
 end
 
--- 🚀 核心 Build 执行器
 function M.run_build(name, dir, build_task, curr_hash)
   if not dir or dir == '' then return end
   utils.notify('[Resonance] Building ' .. name .. '...', vim.log.levels.INFO)
@@ -64,7 +59,6 @@ function M.run_build(name, dir, build_task, curr_hash)
   end
 end
 
--- 🛠️ 底层 PackChanged 监听器 (负责兜底未来用户手动执行 :PackUpdate 的场景)
 vim.api.nvim_create_autocmd('PackChanged', {
   group = vim.api.nvim_create_augroup('ResonanceBuilder', { clear = true }),
   callback = function(args)
@@ -87,13 +81,11 @@ vim.api.nvim_create_autocmd('PackChanged', {
   end,
 })
 
--- 核心加载触发逻辑
 function M.load(config)
   local plugins = config.plugin
   if type(plugins) == 'string' then plugins = { plugins } end
   plugins = plugins or {}
 
-  -- 注册并检查状态机
   for _, plugin in ipairs(plugins) do
     local target_url = type(plugin) == 'string' and plugin or (plugin.src or plugin.url or plugin[1])
     local name = (type(plugin) == 'table' and plugin.name) or
@@ -109,9 +101,15 @@ function M.load(config)
         local dir = get_plugin_dir(name)
         if not dir then return end
 
-        local f = io.open(dir .. '/.resonance_built', 'r')
-        local last_hash = f and f:read('*a') or ''
-        if f then f:close() end
+        local last_hash = ''
+        local fd = vim.uv.fs_open(dir .. '/.resonance_built', 'r', 438)
+        if fd then
+          local stat = vim.uv.fs_fstat(fd)
+          if stat then
+            last_hash = vim.uv.fs_read(fd, stat.size, 0) or ''
+          end
+          vim.uv.fs_close(fd)
+        end
 
         vim.system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
           local curr_hash = (obj.code == 0 and obj.stdout) and vim.trim(obj.stdout) or 'done'
@@ -140,7 +138,7 @@ function M.load(config)
       local target_url = type(plugin) == 'string' and plugin or
         (plugin.src or plugin.url or plugin[1])
       local name = (type(plugin) == 'table' and plugin.name) or
-        (target_url and vim.fn.fnamemodify(target_url, ':t'):gsub('%.git$', ''))
+        (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
       if name then require('resonance.scanner').load_times[name] = duration end
     end
   end

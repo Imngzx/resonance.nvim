@@ -91,8 +91,10 @@ function M.open(ui_config)
   render_mod.render()
 
   local function on_close()
-    if st.state.win and api.nvim_win_is_valid(st.state.win) then pcall(api.nvim_win_close,
-        st.state.win, true) end
+    if st.state.win and api.nvim_win_is_valid(st.state.win) then
+      pcall(api.nvim_win_close,
+        st.state.win, true)
+    end
     st.state.win, st.state.buf = nil, nil
   end
 

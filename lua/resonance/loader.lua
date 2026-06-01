@@ -8,7 +8,7 @@ M.build_hooks = {}
 local function get_plugin_dir(name)
   if not vim.uv.fs_stat(pack_dir_base) then return nil end
   for group_name, type in vim.fs.dir(pack_dir_base) do
-    if type == 'directory' then
+    if type == 'directory' or type == 'link' then
       for i = 1, #SUB_DIRS do
         local target = pack_dir_base .. '/' .. group_name .. '/' .. SUB_DIRS[i] .. '/' .. name
         if vim.uv.fs_stat(target) then return target end
@@ -19,10 +19,10 @@ local function get_plugin_dir(name)
 end
 
 local function mark_build_success(dir, hash)
-  local f = io.open(dir .. '/.resonance_built', 'w')
-  if f then
-    f:write(hash or 'done')
-    f:close()
+  local fd = vim.uv.fs_open(dir .. '/.resonance_built', 'w', 438)
+  if fd then
+    vim.uv.fs_write(fd, hash or 'done', 0)
+    vim.uv.fs_close(fd)
   end
 end
 
@@ -50,7 +50,7 @@ function M.run_build(name, dir, build_task, curr_hash)
       local ok, err = pcall(build_task, dir)
       if ok then
         mark_build_success(dir, curr_hash)
-        utils.notify('[Resonance] Build function executed: ' .. name, vim.log.levels.INFO)
+        utils.notify('[Resonance] Build executed: ' .. name, vim.log.levels.INFO)
       else
         utils.notify('[Resonance] Build failed: ' .. name .. '\n' .. tostring(err),
           vim.log.levels.ERROR)
@@ -74,9 +74,7 @@ vim.api.nvim_create_autocmd('PackChanged', {
 
     vim.system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
       local curr_hash = (obj.code == 0 and obj.stdout) and vim.trim(obj.stdout) or 'done'
-      vim.schedule(function()
-        M.run_build(name, dir, build_task, curr_hash)
-      end)
+      vim.schedule(function() M.run_build(name, dir, build_task, curr_hash) end)
     end)
   end,
 })
@@ -96,7 +94,6 @@ function M.load(config)
 
     if name and build_cmd then
       M.build_hooks[name] = build_cmd
-
       vim.schedule(function()
         local dir = get_plugin_dir(name)
         if not dir then return end
@@ -105,18 +102,14 @@ function M.load(config)
         local fd = vim.uv.fs_open(dir .. '/.resonance_built', 'r', 438)
         if fd then
           local stat = vim.uv.fs_fstat(fd)
-          if stat then
-            last_hash = vim.uv.fs_read(fd, stat.size, 0) or ''
-          end
+          if stat then last_hash = vim.uv.fs_read(fd, stat.size, 0) or '' end
           vim.uv.fs_close(fd)
         end
 
         vim.system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
           local curr_hash = (obj.code == 0 and obj.stdout) and vim.trim(obj.stdout) or 'done'
           if last_hash ~= curr_hash then
-            vim.schedule(function()
-              M.run_build(name, dir, build_cmd, curr_hash)
-            end)
+            vim.schedule(function() M.run_build(name, dir, build_cmd, curr_hash) end)
           end
         end)
       end)
@@ -131,12 +124,11 @@ function M.load(config)
     local start_ms = vim.uv.hrtime()
     if #plugins > 0 then vim.pack.add(plugins) end
     if config.setup then config.setup() end
-    local end_ms = vim.uv.hrtime()
-    local duration = (end_ms - start_ms) / 1e6
+    local duration = (vim.uv.hrtime() - start_ms) / 1e6
 
     for _, plugin in ipairs(plugins) do
       local target_url = type(plugin) == 'string' and plugin or
-        (plugin.src or plugin.url or plugin[1])
+      (plugin.src or plugin.url or plugin[1])
       local name = (type(plugin) == 'table' and plugin.name) or
         (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
       if name then require('resonance.scanner').load_times[name] = duration end
@@ -182,14 +174,13 @@ function M.load(config)
         vim.keymap.set(mode, lhs, function()
           local target_buf = opts.buf or opts.buffer
           local del_opts = target_buf and { buf = target_buf } or {}
-
           if opts.buffer then
-            opts.buf = opts.buffer
-            opts.buffer = nil
+            opts.buf = opts.buffer; opts.buffer = nil
           end
-          pcall(vim.keymap.del, mode, lhs, del_opts)
 
+          pcall(vim.keymap.del, mode, lhs, del_opts)
           load_now()
+
           if rhs then
             if type(rhs) == 'function' then
               rhs()

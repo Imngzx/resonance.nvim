@@ -57,6 +57,40 @@ local function get_src_url(path)
   return url and vim.trim(url) or 'unknown'
 end
 
+local function get_local_hash(path)
+  local git_dir = path .. '/.git'
+  local head_file = io.open(git_dir .. '/HEAD', 'r')
+  if not head_file then return nil end
+  local head = head_file:read('*l')
+  head_file:close()
+  if not head then return nil end
+
+  local ref = head:match('ref: (.*)')
+  if ref then
+    local ref_file = io.open(git_dir .. '/' .. ref, 'r')
+    if ref_file then
+      local hash = ref_file:read('*l')
+      ref_file:close()
+      return hash and hash:sub(1, 7) or nil
+    else
+      -- Fallback to packed-refs if branch is packed
+      local packed = io.open(git_dir .. '/packed-refs', 'r')
+      if packed then
+        for line in packed:lines() do
+          if line:find(ref, 1, true) then
+            packed:close()
+            return line:sub(1, 7)
+          end
+        end
+        packed:close()
+      end
+    end
+  else
+    return head:sub(1, 7)
+  end
+  return nil
+end
+
 local function build_content()
   state.line_to_name = {}
   state.name_to_line = {}
@@ -158,6 +192,7 @@ local function build_content()
     end
     nl()
 
+    -- 渲染 Updates 提交信息，附带 semantic 高亮
     if is_pending and type(state.updates[p.name]) == 'table' then
       local commits = state.updates[p.name]
       for c = 1, math.min(#commits, 12) do
@@ -276,40 +311,6 @@ local function schedule_render()
   end)
 end
 
-local function sync_local_state()
-  for i = 1, #state.info.plugins do
-    local p = state.info.plugins[i]
-    vim.system({ 'git', 'rev-parse', '--short', 'HEAD' }, { cwd = p.path, text = true },
-      function(out)
-        if out.code == 0 and out.stdout then
-          state.commits[p.name] = vim.trim(out.stdout)
-          schedule_render()
-        end
-      end)
-  end
-
-  if vim.pack and vim.pack.get then
-    local ok, packs = pcall(vim.pack.get, nil, { offline = true })
-    if ok and type(packs) == 'table' then
-      for _, pk in ipairs(packs) do
-        local name = pk.spec.name
-        if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
-          vim.system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
-            { cwd = pk.path, text = true },
-            function(out)
-              if out.code == 0 and out.stdout and vim.trim(out.stdout) ~= '' then
-                local lines = {}
-                for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
-                state.updates[name] = lines
-                schedule_render()
-              end
-            end)
-        end
-      end
-    end
-  end
-end
-
 local function check_updates_network()
   if state.checking then return end
   state.checking = true
@@ -323,8 +324,43 @@ local function check_updates_network()
     vim.system({ 'git', 'fetch', '--quiet' }, { cwd = p.path }, function(_)
       completed = completed + 1
       if completed >= total then
-        state.checking = false
-        sync_local_state()
+        vim.schedule(function()
+          if vim.pack and vim.pack.get then
+            local ok, packs = pcall(vim.pack.get, nil, { offline = true })
+            if ok and type(packs) == 'table' then
+              local pending_count = 0
+              local log_completed = 0
+
+              for _, pk in ipairs(packs) do
+                if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
+                  pending_count = pending_count + 1
+                  local name = pk.spec.name
+                  vim.system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
+                    { cwd = pk.path, text = true },
+                    function(out)
+                      if out.code == 0 and out.stdout and vim.trim(out.stdout) ~= '' then
+                        local lines = {}
+                        for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
+                        state.updates[name] = lines
+                      end
+                      log_completed = log_completed + 1
+                      if log_completed >= pending_count then
+                        state.checking = false
+                        schedule_render()
+                      end
+                    end)
+                end
+              end
+              if pending_count == 0 then
+                state.checking = false
+                schedule_render()
+              end
+            else
+              state.checking = false
+              schedule_render()
+            end
+          end
+        end)
       end
     end)
   end
@@ -347,7 +383,12 @@ local function update_plugins(names)
       if not ok then
         utils.notify('Pack update failed: ' .. tostring(err), vim.log.levels.ERROR)
       else
-        for _, n in ipairs(names) do state.updates[n] = nil end
+        for _, n in ipairs(names) do
+          state.updates[n] = nil
+          for _, p in ipairs(state.info.plugins) do
+            if p.name == n then state.commits[n] = get_local_hash(p.path) end
+          end
+        end
         schedule_render()
       end
     end)
@@ -430,8 +471,12 @@ function M.open(ui_config)
 
   state.updates = {}
   state.commits = {}
+  for i = 1, #state.info.plugins do
+    local p = state.info.plugins[i]
+    state.commits[p.name] = get_local_hash(p.path)
+  end
+
   render()
-  sync_local_state()
 
   local ok_snacks, snacks = pcall(require, 'snacks')
   local ok_nui, Popup = pcall(require, 'nui.popup')

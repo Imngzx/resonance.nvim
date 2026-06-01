@@ -388,6 +388,7 @@ local function update_plugins(names)
           end
         end
         schedule_render()
+        utils.notify('Update complete. Please restart Nvim to apply changes.', vim.log.levels.INFO)
       end
     end)
   else
@@ -414,7 +415,8 @@ local function uninstall_plugin(name)
         state.urls[name] = nil
         state.info = scanner.get_info()
         schedule_render()
-        utils.notify('Uninstalled ' .. name, vim.log.levels.INFO)
+        utils.notify('Uninstalled ' .. name .. '. Please restart Nvim to apply changes.',
+          vim.log.levels.WARN)
       end
     end)
   else

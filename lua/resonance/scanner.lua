@@ -6,7 +6,6 @@ local pack_dir_base = vim.fs.normalize(vim.fn.stdpath('data') .. '/site/pack')
 local sub_dirs = { 'start', 'opt' }
 
 function M.get_info()
-  -- 【SOA 优化保留】: 只创建 4 个 Table，极低 GC 压力
   local plugins = { name = {}, type = {}, path = {}, loaded = {} }
   local loaded_set = {}
   local loaded_count, total_count = 0, 0
@@ -17,7 +16,6 @@ function M.get_info()
 
   local stat = vim.uv.fs_stat(pack_dir_base)
   if stat and stat.type == 'directory' then
-    -- 换回安全的 vim.fs.dir，完美解决底层 d_type 丢失导致的插件不可见问题
     for pkg_name, pkg_type in vim.fs.dir(pack_dir_base) do
       if pkg_type == 'directory' or pkg_type == 'link' then
         for i = 1, #sub_dirs do
@@ -31,7 +29,6 @@ function M.get_info()
                 total_count = total_count + 1
                 local p_path = target_dir .. '/' .. p_name
 
-                -- 严格校验路径匹配
                 local is_loaded = loaded_set[p_path] or loaded_set[vim.fs.normalize(p_path)] or false
                 if is_loaded then loaded_count = loaded_count + 1 end
 

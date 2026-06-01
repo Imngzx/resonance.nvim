@@ -18,7 +18,7 @@
 
 ![Preview Video](https://github.com/user-attachments/assets/f37b574f-6061-493b-95cb-9e9478616b05)
 
-![Preview Image](https://github.com/user-attachments/assets/74066963-255f-4010-9006-9e95eb71612f)
+![Preview Image](https://github.com/user-attachments/assets/7c99bbba-3476-4383-8cfb-cd8248a21eaa)
 
 ## 📦 Installation & Configuration
 

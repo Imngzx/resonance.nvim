@@ -19,6 +19,7 @@ local state = {
   info = nil,
   commits = {},
   updates = {},
+  urls = {},
   expanded = {},
   checking = false,
   line_to_name = {},
@@ -47,6 +48,15 @@ local function plugin_at_cursor()
   return state.line_to_name[row]
 end
 
+local function get_src_url(path)
+  local file = io.open(path .. '/.git/config', 'r')
+  if not file then return 'unknown' end
+  local content = file:read('*a')
+  file:close()
+  local url = content:match('%[remote%s+"origin"%][^%[]-url%s*=%s*([^\n]+)')
+  return url and vim.trim(url) or 'unknown'
+end
+
 local function build_content()
   state.line_to_name = {}
   state.name_to_line = {}
@@ -57,9 +67,7 @@ local function build_content()
 
   local function add(text, hl)
     if not text or text == '' then return end
-    if hl then
-      hls[#hls + 1] = { line_idx, cur_col, cur_col + #text, hl }
-    end
+    if hl then hls[#hls + 1] = { line_idx, cur_col, cur_col + #text, hl } end
     line_parts[#line_parts + 1] = text
     cur_col = cur_col + #text
   end
@@ -73,9 +81,7 @@ local function build_content()
 
   local function mark_row(name, is_detail)
     state.line_to_name[line_idx + 1] = name
-    if not is_detail then
-      state.name_to_line[name] = line_idx + 1
-    end
+    if not is_detail then state.name_to_line[name] = line_idx + 1 end
   end
 
   local function btn(key, text)
@@ -96,10 +102,7 @@ local function build_content()
     local k, t = b[1], b[2]
     local b_len = 8 + #t
     if cur_w + b_len > state.win_width - 2 then
-      nl()
-      nl()
-      add('  ')
-      cur_w = 2
+      nl(); nl(); add('  '); cur_w = 2
     end
     btn(k, t)
     add('  ')
@@ -115,31 +118,20 @@ local function build_content()
     nl(); nl()
   end
 
-  local update_count = 0
-  for _, v in pairs(state.updates) do if v then update_count = update_count + 1 end end
-
-  add(
-    string.format('  Total: %d plugins  Loaded: %d  Updates: ', state.info.total, state.info
-    .loaded),
-    'Comment')
-  add(tostring(update_count), update_count > 0 and 'DiagnosticWarn' or 'Comment')
-
-  if state.checking then
-    add(' (checking...)', 'DiagnosticInfo')
-  end
-  nl(); nl()
-
+  local pending_list, clean_list = {}, {}
   local max_name_len = 0
   for i = 1, #state.info.plugins do
-    local n_len = #state.info.plugins[i].name
-    if n_len > max_name_len then max_name_len = n_len end
+    local p = state.info.plugins[i]
+    if #p.name > max_name_len then max_name_len = #p.name end
+    if state.updates[p.name] then
+      pending_list[#pending_list + 1] = p
+    else
+      clean_list[#clean_list + 1] = p
+    end
   end
 
-  for i = 1, #state.info.plugins do
-    local p = state.info.plugins[i]
+  local function draw_plugin(p, is_pending)
     mark_row(p.name, false)
-    local is_pending = state.updates[p.name]
-
     if p.loaded then add('  ● ', 'Statement') else add('  ○ ', 'Comment') end
     add('󰏗 ', p.loaded and 'Function' or 'Comment')
 
@@ -166,6 +158,30 @@ local function build_content()
     end
     nl()
 
+    if is_pending and type(state.updates[p.name]) == 'table' then
+      local commits = state.updates[p.name]
+      for c = 1, math.min(#commits, 12) do
+        local hash, msg = commits[c]:match('^(%x+)%s+(.*)$')
+        if hash then
+          mark_row(p.name, true)
+          add('      ' .. hash .. ' ', 'Number')
+          local c_type, c_rest = msg:match('^([%w_-]+!?:)(.*)$')
+          if c_type then
+            add(c_type, 'Function')
+            add(c_rest, 'Comment')
+          else
+            add(msg, 'Comment')
+          end
+          nl()
+        end
+      end
+      if #commits > 12 then
+        mark_row(p.name, true)
+        add('      ... ' .. tostring(#commits - 12) .. ' more commits', 'Comment')
+        nl()
+      end
+    end
+
     if state.expanded[p.name] then
       mark_row(p.name, true)
       add('      status: ', 'Comment')
@@ -177,22 +193,41 @@ local function build_content()
       add(p.path, 'Normal')
       nl()
 
+      mark_row(p.name, true)
+      add('      src:    ', 'Comment')
+      if not state.urls[p.name] then state.urls[p.name] = get_src_url(p.path) end
+      add(state.urls[p.name], 'Underlined')
+      nl()
+
       if state.commits[p.name] then
         mark_row(p.name, true)
         add('      commit: ', 'Comment')
         add(state.commits[p.name], 'Number')
         nl()
       end
-
-      if is_pending then
-        mark_row(p.name, true)
-        add('      update: ', 'Comment')
-        add('Updates available in remote', 'DiagnosticWarn')
-        nl()
-      end
       nl()
     end
   end
+
+  add(string.format('  Updates (%d)', #pending_list), 'Title')
+  if state.checking then
+    add(' (checking...)', 'DiagnosticInfo')
+  end
+  nl()
+
+  if #pending_list == 0 then
+    if not state.checking then
+      add('    no pending updates', 'Comment')
+      nl()
+    end
+  else
+    for i = 1, #pending_list do draw_plugin(pending_list[i], true) end
+  end
+
+  nl()
+  add(string.format('  Up to date (%d)', #clean_list), 'Title')
+  nl()
+  for i = 1, #clean_list do draw_plugin(clean_list[i], false) end
 
   return lines, hls
 end
@@ -241,7 +276,7 @@ local function schedule_render()
   end)
 end
 
-local function fetch_local_commits()
+local function sync_local_state()
   for i = 1, #state.info.plugins do
     local p = state.info.plugins[i]
     vim.system({ 'git', 'rev-parse', '--short', 'HEAD' }, { cwd = p.path, text = true },
@@ -252,9 +287,30 @@ local function fetch_local_commits()
         end
       end)
   end
+
+  if vim.pack and vim.pack.get then
+    local ok, packs = pcall(vim.pack.get, nil, { offline = true })
+    if ok and type(packs) == 'table' then
+      for _, pk in ipairs(packs) do
+        local name = pk.spec.name
+        if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
+          vim.system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
+            { cwd = pk.path, text = true },
+            function(out)
+              if out.code == 0 and out.stdout and vim.trim(out.stdout) ~= '' then
+                local lines = {}
+                for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
+                state.updates[name] = lines
+                schedule_render()
+              end
+            end)
+        end
+      end
+    end
+  end
 end
 
-local function check_updates()
+local function check_updates_network()
   if state.checking then return end
   state.checking = true
   schedule_render()
@@ -265,16 +321,11 @@ local function check_updates()
   for i = 1, total do
     local p = state.info.plugins[i]
     vim.system({ 'git', 'fetch', '--quiet' }, { cwd = p.path }, function(_)
-      vim.system({ 'git', 'rev-list', 'HEAD..@{u}', '--count' }, { cwd = p.path, text = true },
-        function(out)
-          if out.code == 0 and out.stdout then
-            local count = tonumber(vim.trim(out.stdout)) or 0
-            if count > 0 then state.updates[p.name] = true end
-          end
-          completed = completed + 1
-          if completed >= total then state.checking = false end
-          schedule_render()
-        end)
+      completed = completed + 1
+      if completed >= total then
+        state.checking = false
+        sync_local_state()
+      end
     end)
   end
 end
@@ -287,14 +338,21 @@ local function toggle_details()
   schedule_render()
 end
 
-local function update_plugin(name)
-  if not name then return end
+local function update_plugins(names)
+  if #names == 0 then return end
   if vim.pack and vim.pack.update then
-    utils.notify('Updating ' .. name .. '...', vim.log.levels.INFO)
-    local ok, err = pcall(vim.pack.update, { name })
-    if not ok then utils.notify('Pack update failed: ' .. tostring(err), vim.log.levels.ERROR) end
+    utils.notify('Updating ' .. table.concat(names, ', ') .. '...', vim.log.levels.INFO)
+    vim.schedule(function()
+      local ok, err = pcall(vim.pack.update, names, { force = true, offline = true })
+      if not ok then
+        utils.notify('Pack update failed: ' .. tostring(err), vim.log.levels.ERROR)
+      else
+        for _, n in ipairs(names) do state.updates[n] = nil end
+        schedule_render()
+      end
+    end)
   else
-    utils.notify('Triggering DIY plugin update for ' .. name, vim.log.levels.INFO)
+    utils.notify('Triggering DIY plugin update for ' .. names[1], vim.log.levels.INFO)
   end
 end
 
@@ -309,20 +367,24 @@ local function bind_keys(win_close_fn)
   map('H', 'gg', 'Home')
 
   map('r', function()
-    check_updates()
+    check_updates_network()
     utils.notify('Fetching remotes in background...', vim.log.levels.INFO)
   end, 'Fetch Updates')
 
-  map('u', function() update_plugin(plugin_at_cursor()) end, 'Update Current Plugin')
+  map('u', function()
+    local name = plugin_at_cursor()
+    if name then update_plugins({ name }) end
+  end, 'Update Current Plugin')
 
   map('U', function()
-    if vim.pack and vim.pack.update then
-      local ok, err = pcall(vim.pack.update)
-      if not ok then utils.notify('Pack update failed: ' .. tostring(err), vim.log.levels.ERROR) end
+    local names = {}
+    for name, _ in pairs(state.updates) do names[#names + 1] = name end
+    if #names > 0 then
+      update_plugins(names)
     else
-      utils.notify('Triggering Global Update...', vim.log.levels.INFO)
+      utils.notify('No pending updates.', vim.log.levels.INFO)
     end
-  end, 'Update All Plugins')
+  end, 'Update All Pending')
 
   map('S', function()
     win_close_fn()
@@ -366,8 +428,10 @@ function M.open(ui_config)
 
   state.win_width = math.floor(vim.o.columns * ui_config.width)
 
+  state.updates = {}
+  state.commits = {}
   render()
-  fetch_local_commits()
+  sync_local_state()
 
   local ok_snacks, snacks = pcall(require, 'snacks')
   local ok_nui, Popup = pcall(require, 'nui.popup')
@@ -425,9 +489,8 @@ function M.open(ui_config)
       title_pos = 'center',
       zindex = 50
     })
-    vim.wo[state.win].cursorline = true
-    vim.wo[state.win].wrap = false
-    vim.wo[state.win].signcolumn = 'no'
+    vim.wo[state.win].cursorline = true; vim.wo[state.win].wrap = false; vim.wo[state.win].signcolumn =
+    'no'
     bind_keys(on_close)
   end
 

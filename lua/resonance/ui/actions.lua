@@ -88,7 +88,7 @@ function M.update_plugins(names)
       end
     end)
   else
-    utils.notify('Triggering DIY plugin update for ' .. names[1], vim.log.levels.INFO)
+    utils.notify('Triggering plugin update for ' .. names[1], vim.log.levels.INFO)
   end
 end
 
@@ -115,7 +115,7 @@ function M.uninstall_plugin(name)
       end
     end)
   else
-    utils.notify('Triggering DIY plugin uninstall for ' .. name, vim.log.levels.INFO)
+    utils.notify('Triggering plugin uninstall for ' .. name, vim.log.levels.INFO)
   end
 end
 

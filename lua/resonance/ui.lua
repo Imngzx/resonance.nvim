@@ -73,7 +73,6 @@ local function get_local_hash(path)
       ref_file:close()
       return hash and hash:sub(1, 7) or nil
     else
-      -- Fallback to packed-refs if branch is packed
       local packed = io.open(git_dir .. '/packed-refs', 'r')
       if packed then
         for line in packed:lines() do
@@ -125,7 +124,7 @@ local function build_content()
 
   nl()
   local buttons = {
-    { 'H', 'Home' }, { 'u', 'Update' }, { 'U', 'Update All' },
+    { 'H', 'Home' }, { 'u', 'Update' }, { 'U', 'Update All' }, { 'dd', 'Uninstall' },
     { 'r', 'Fetch' }, { 'S', 'Search' }, { 'D', 'Dir' }, { 'q', 'Quit' }
   }
 
@@ -192,7 +191,6 @@ local function build_content()
     end
     nl()
 
-    -- 渲染 Updates 提交信息，附带 semantic 高亮
     if is_pending and type(state.updates[p.name]) == 'table' then
       local commits = state.updates[p.name]
       for c = 1, math.min(#commits, 12) do
@@ -397,6 +395,33 @@ local function update_plugins(names)
   end
 end
 
+local function uninstall_plugin(name)
+  if not name then return end
+
+  local choice = vim.fn.confirm('Uninstall ' .. name .. ' from disk?', '&Yes\n&No', 2)
+  if choice ~= 1 then return end
+
+  if vim.pack and vim.pack.del then
+    utils.notify('Uninstalling ' .. name .. '...', vim.log.levels.INFO)
+    vim.schedule(function()
+      local ok, err = pcall(vim.pack.del, { name }, { force = true })
+      if not ok then
+        utils.notify('Uninstall failed: ' .. tostring(err), vim.log.levels.ERROR)
+      else
+        state.updates[name] = nil
+        state.commits[name] = nil
+        state.expanded[name] = nil
+        state.urls[name] = nil
+        state.info = scanner.get_info()
+        schedule_render()
+        utils.notify('Uninstalled ' .. name, vim.log.levels.INFO)
+      end
+    end)
+  else
+    utils.notify('Triggering DIY plugin uninstall for ' .. name, vim.log.levels.INFO)
+  end
+end
+
 local function bind_keys(win_close_fn)
   local map = function(lhs, rhs, desc)
     vim.keymap.set('n', lhs, rhs, { buf = state.buf, nowait = true, silent = true, desc = desc })
@@ -426,6 +451,11 @@ local function bind_keys(win_close_fn)
       utils.notify('No pending updates.', vim.log.levels.INFO)
     end
   end, 'Update All Pending')
+
+  map('dd', function()
+    local name = plugin_at_cursor()
+    if name then uninstall_plugin(name) end
+  end, 'Uninstall Current Plugin')
 
   map('S', function()
     win_close_fn()

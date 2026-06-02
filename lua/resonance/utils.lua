@@ -6,7 +6,10 @@ end
 
 M.fast_normalize = function(path)
   if not path then return path end
-  return M.is_windows() and string.gsub(path, '\\', '/') or path
+  if M.is_windows() then
+    return string.gsub(path, '\\', '/'):lower()
+  end
+  return path
 end
 
 ---@param msg string

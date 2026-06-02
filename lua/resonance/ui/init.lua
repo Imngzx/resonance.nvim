@@ -4,7 +4,6 @@ local st = require('resonance.ui.state')
 local render_mod = require('resonance.ui.render')
 local actions = require('resonance.ui.actions')
 local utils = require('resonance.utils')
-local scanner = require('resonance.scanner')
 
 local function bind_keys(win_close_fn)
   local map = function(lhs, rhs, desc)
@@ -66,7 +65,7 @@ function M.open(ui_config)
   end
 
   st.init_hls()
-  st.state.info = scanner.get_info()
+  st.state.info = require('resonance.scanner').get_info()
   st.state.buf = api.nvim_create_buf(false, true)
 
   vim.bo[st.state.buf].buftype = 'nofile'

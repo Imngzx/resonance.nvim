@@ -18,7 +18,7 @@ function M.check_updates_network()
   local queue = {}
 
   local function on_all_completed()
-    vim.schedule(function()
+    schedule(function()
       if vim.pack and vim.pack.get then
         local ok, packs = pcall(vim.pack.get, nil, { offline = true })
         if ok and type(packs) == 'table' then
@@ -28,7 +28,7 @@ function M.check_updates_network()
             if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
               pending_count = pending_count + 1
               local name = pk.spec.name
-              vim.system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
+              system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
                 { cwd = pk.path, text = true },
                 function(out)
                   if out.code == 0 and out.stdout and vim.trim(out.stdout) ~= '' then
@@ -58,7 +58,7 @@ function M.check_updates_network()
     while running < MAX_CONCURRENT and #queue > 0 do
       local p_path = table.remove(queue, 1)
       running = running + 1
-      vim.system({ 'git', 'fetch', '--quiet' }, { cwd = p_path }, function(_)
+      system({ 'git', 'fetch', '--quiet' }, { cwd = p_path }, function(_)
         running = running - 1
         completed = completed + 1
         if completed >= total then
@@ -108,7 +108,7 @@ function M.update_plugins(names)
     st.state.updating = true
     utils.notify('Updating ' .. table.concat(names, ', ') .. '...', vim.log.levels.INFO)
 
-    vim.schedule(function()
+    schedule(function()
       local ok, err = pcall(vim.pack.update, names, { force = true, offline = true })
       st.state.updating = false
 
@@ -140,7 +140,7 @@ function M.uninstall_plugin(name)
 
   if vim.pack and vim.pack.del then
     utils.notify('Uninstalling ' .. name .. '...', vim.log.levels.INFO)
-    vim.schedule(function()
+    schedule(function()
       local ok, err = pcall(vim.pack.del, { name }, { force = true })
       if not ok then
         utils.notify('Uninstall failed: ' .. tostring(err), vim.log.levels.ERROR)

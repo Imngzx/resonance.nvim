@@ -20,6 +20,8 @@
 
 ![Preview Image](https://github.com/user-attachments/assets/8084072f-fb96-4226-b589-b4d33225f46e)
 
+![Preview Image](https://github.com/user-attachments/assets/36ec5afb-23c4-4c3f-a1ae-88eaac56a88f)
+
 ## 📦 Installation & Configuration
 
 Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is downloaded and prepended to your runtime path on the first run.

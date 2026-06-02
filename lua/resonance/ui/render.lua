@@ -44,7 +44,7 @@ local function build_content()
   end
 
   nl()
-  local buttons = { { 'H', 'Home' }, { 'u', 'Update' }, { 'U', 'Update All' }, { 's', 'Skip' }, { 'C', 'Review' }, { 'dd', 'Uninstall' }, { 'r', '󱑽 Resonate' }, { 'S', 'Search' }, { 'D', 'Dir' }, { 'q', 'Quit' } }
+  local buttons = { { 'H', 'Home' }, { 'u', 'Update' }, { 'U', 'Update All' }, { 's', 'Skip' }, { 'c', 'Checkout' }, { 'C', 'Review' }, { 'dd', 'Uninstall' }, { 'r', '󱑽 Resonate' }, { 'S', 'Search' }, { 'D', 'Dir' }, { 'q', 'Quit' } }
   local cur_w = 2
   add('  ')
   for i = 1, #buttons do

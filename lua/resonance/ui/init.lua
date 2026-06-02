@@ -73,6 +73,10 @@ local function bind_keys(win_close_fn)
       utils.notify('Native vim.pack is not available.', vim.log.levels.WARN)
     end
   end, 'Native Update Review')
+  map('c', function()
+    local name = st.plugin_at_cursor()
+    if name then actions.checkout_plugin(name) end
+  end, 'Checkout Plugin')
 end
 
 function M.open(ui_config)

@@ -211,6 +211,14 @@ starter.setup({
 })
 ```
 
+> [!TIP]
+> If you want a very "honest" startuptime, please add this on top of your init.lua
+
+```lua
+-- enable this for a "very" honest startuptime :)
+_G.start_time = vim.uv.hrtime()
+```
+
 ## ⌨️ UI Keymaps
 
 > [!TIP]

@@ -65,6 +65,14 @@ local function bind_keys(win_close_fn)
       vim.cmd('Explore ' .. dir)
     end
   end, 'Open Dir')
+  map('C', function()
+    if vim.pack and vim.pack.update then
+      win_close_fn()
+      vim.pack.update(nil, { offline = true })
+    else
+      utils.notify('Native vim.pack is not available.', vim.log.levels.WARN)
+    end
+  end, 'Native Update Review')
 end
 
 function M.open(ui_config)

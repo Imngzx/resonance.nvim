@@ -27,6 +27,7 @@ M.ns = api.nvim_create_namespace('resonance_ui')
 ---@field urls table<string, string>
 ---@field expanded table<string, boolean>
 ---@field checking boolean
+---@field pack_details table<string, table>
 ---@field updating boolean
 ---@field line_to_name table<number, string>
 ---@field name_to_line table<string, number>
@@ -42,6 +43,7 @@ M.state = {
   updates = {},
   urls = {},
   expanded = {},
+  pack_details = {},
   checking = false,
   line_to_name = {},
   updating = false,

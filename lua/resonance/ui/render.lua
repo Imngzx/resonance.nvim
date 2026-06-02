@@ -44,7 +44,7 @@ local function build_content()
   end
 
   nl()
-  local buttons = { { 'H', 'Home' }, { 'u', 'Update' }, { 'U', 'Update All' }, { 's', 'Skip' }, { 'dd', 'Uninstall' }, { 'r', '󱑽 Resonate' }, { 'S', 'Search' }, { 'D', 'Dir' }, { 'q', 'Quit' } }
+  local buttons = { { 'H', 'Home' }, { 'u', 'Update' }, { 'U', 'Update All' }, { 's', 'Skip' }, { 'C', 'Review' }, { 'dd', 'Uninstall' }, { 'r', '󱑽 Resonate' }, { 'S', 'Search' }, { 'D', 'Dir' }, { 'q', 'Quit' } }
   local cur_w = 2
   add('  ')
   for i = 1, #buttons do
@@ -134,6 +134,20 @@ local function build_content()
     if st.state.expanded[p_name] then
       mark_row(p_name, true); add('      status: ', 'Comment'); add(
         is_loaded and 'active' or 'inactive', is_loaded and 'String' or 'Comment'); nl()
+      local pk = st.state.pack_details[p_name]
+      if pk then
+        if pk.branches and #pk.branches > 0 then
+          mark_row(p_name, true); add('      branch: ', 'Comment'); add(
+            table.concat(pk.branches, ', '), 'String'); nl()
+        end
+        if pk.tags and #pk.tags > 0 then
+          local display_tags = #pk.tags > 5
+            and (table.concat(vim.list_slice(pk.tags, 1, 5), ', ') .. ' ...')
+            or table.concat(pk.tags, ', ')
+          mark_row(p_name, true); add('      tags:   ', 'Comment'); add(display_tags, 'Type'); nl()
+        end
+      end
+
       mark_row(p_name, true); add('      path:   ', 'Comment'); add(p_path, 'Normal'); nl()
       mark_row(p_name, true); add('      src:    ', 'Comment')
       if not st.state.urls[p_name] then st.state.urls[p_name] = st.get_src_url(p_path) end

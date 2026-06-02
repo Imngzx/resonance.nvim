@@ -71,7 +71,12 @@ function M.check_updates_network()
   end
 
   for i = 1, total do
-    queue[#queue + 1] = st.state.info.plugins.path[i]
+    local p_path = st.state.info.plugins.path[i]
+    if vim.uv.fs_stat(p_path .. '/.git') then
+      queue[#queue + 1] = p_path
+    else
+      completed = completed + 1
+    end
   end
 
   if #queue > 0 then

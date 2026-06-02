@@ -229,14 +229,18 @@ _G.start_time = vim.uv.hrtime()
 - `H` : Jump to home (top)
 - `U` : Trigger plugin updates (vim.pack.update())
 - `u` : Trigger plugin updates (vim.pack.update()) *single plugin
+- `dd`: Delete plugin
+- `c` : Checkout specific plugin's available branch/commit/tag
 - `r` : Resonate (refresh and fetch plugin updates)
 - `S` : Search inside plugins source code (Powered by Snacks.picker / Telescope / Native vimgrep)
+- `s` : Skip plugin update
 - `D` : Open plugin directory
 - `q` / Esc : Quit
 
 ## Simple Configuration examples
 
-[Complex example](https://github.com/Imngzx/nvim-config-rice-.ver-)
+[Complex example](https://github.com/Imngzx/nvim-config-rice-.ver-/blob/nvim-native/lua/config/resonance.lua)
+
 [Simple example](https://github.com/Imngzx/resonance-demo-nvim-config)
 
 ## License

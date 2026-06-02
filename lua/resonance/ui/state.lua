@@ -43,6 +43,7 @@ M.state = {
   expanded = {},
   checking = false,
   line_to_name = {},
+  updating = false,
   name_to_line = {},
   restore_cursor_name = nil,
 }

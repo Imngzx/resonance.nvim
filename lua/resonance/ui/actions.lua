@@ -87,11 +87,16 @@ function M.toggle_details()
 end
 
 function M.update_plugins(names)
-  if #names == 0 then return end
+  if #names == 0 or st.state.updating then return end
+
   if vim.pack and vim.pack.update then
+    st.state.updating = true
     utils.notify('Updating ' .. table.concat(names, ', ') .. '...', vim.log.levels.INFO)
+
     vim.schedule(function()
       local ok, err = pcall(vim.pack.update, names, { force = true, offline = true })
+      st.state.updating = false
+
       if not ok then
         utils.notify('Pack update failed: ' .. tostring(err), vim.log.levels.ERROR)
       else

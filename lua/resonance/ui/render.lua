@@ -147,7 +147,7 @@ local function build_content()
     end
   end
 
-  add(string.format('  Updates (%d)', #pending_idx), 'Title')
+  add(string.format('  Updates Available (%d)', #pending_idx), 'Title')
   if st.state.checking then add(' (󱑽 Resonating...)', 'DiagnosticInfo') end
   nl()
 
@@ -160,7 +160,7 @@ local function build_content()
   end
 
   nl()
-  add(string.format('  Up to date (%d)', #clean_idx), 'Title')
+  add(string.format('  Up To Date (%d)', #clean_idx), 'Title')
   add('    ● ', 'Statement')
   add(string.format('Loaded: %d', st.state.info.loaded), 'Comment')
   nl()

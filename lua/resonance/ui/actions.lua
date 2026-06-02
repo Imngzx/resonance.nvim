@@ -3,6 +3,8 @@ local st = require('resonance.ui.state')
 local render_mod = require('resonance.ui.render')
 local utils = require('resonance.utils')
 local last_toggle_time = 0
+local schedule = vim.schedule
+local system = vim.system
 
 function M.check_updates_network()
   if st.state.checking then return end
@@ -156,6 +158,55 @@ function M.uninstall_plugin(name)
   else
     utils.notify('Triggering plugin uninstall for ' .. name, vim.log.levels.INFO)
   end
+end
+
+function M.checkout_plugin(name)
+  if type(name) ~= 'string' then return end
+  local state = st.state
+  local info = state.info
+  if not info or not info.plugins then return end
+  local names = info.plugins.name
+  local paths = info.plugins.path
+  local total = info.total
+  local path = nil
+  for i = 1, total do
+    if names[i] == name then
+      path = paths[i]
+      break
+    end
+  end
+  if not path then
+    utils.notify('Cannot find path for ' .. name, 3)
+    return
+  end
+  if not vim.uv.fs_stat(path .. '/.git') then
+    utils.notify("Plugin '" .. name .. "' is not a Git repository!", 3)
+    return
+  end
+  vim.ui.input({ prompt = 'Checkout (Branch/Tag/Commit) for ' .. name .. ': ' }, function(input)
+    if not input then return end
+    local target = input:match('^%s*(.-)%s*$')
+    if target == '' then return end
+    utils.notify('Checking out ' .. name .. ' -> ' .. target, 2)
+    system({ 'git', 'checkout', target }, { cwd = path, text = true }, function(out)
+      schedule(function()
+        if out.code == 0 then
+          state.commits[name] = st.get_local_hash(path)
+          state.updates[name] = nil
+          render_mod.schedule_render()
+          utils.notify(
+            string.format("Checked out '%s' to '%s'.\nUpdate 'version' in config to persist.", name,
+              target),
+            2
+          )
+        else
+          local err_msg = out.stderr and out.stderr ~= '' and out.stderr or
+            (out.stdout or 'Unknown Git Error')
+          utils.notify('Checkout failed for ' .. name .. ':\n' .. err_msg, 3)
+        end
+      end)
+    end)
+  end)
 end
 
 return M

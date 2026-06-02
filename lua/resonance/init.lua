@@ -69,10 +69,6 @@ end
 
 ---@return table
 function M.stats()
-  if M._cached_stats then
-    return M._cached_stats
-  end
-
   local info = require('resonance.scanner').get_info()
   local ms = 0
 
@@ -81,14 +77,16 @@ function M.stats()
     ms = (M._end_time - M._start_time) / 1e6
   end
 
-  M._cached_stats = {
+  if not M._cached_stats then
+    M._cached_stats = { startuptime = ms }
+  end
+
+  return {
     count = info.total,
     loaded = info.loaded,
-    startuptime = ms,
+    startuptime = M._cached_stats.startuptime,
     times = info.load_times,
   }
-
-  return M._cached_stats
 end
 
 function M.trigger_verylazy()

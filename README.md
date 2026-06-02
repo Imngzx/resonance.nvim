@@ -242,3 +242,5 @@ _G.start_time = vim.uv.hrtime()
 ## License
 
 This project is licensed under the MIT License.
+
+“Powered by Solaris-3 Terminal and Resonator of NVIM.”

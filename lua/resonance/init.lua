@@ -1,7 +1,4 @@
 local M = {}
-local loader = require('resonance.loader')
-local ui = require('resonance.ui')
-local scanner = require('resonance.scanner')
 
 ---@diagnostic disable-next-line: undefined-field
 M._start_time = _G.start_time or vim.uv.hrtime()
@@ -67,7 +64,7 @@ end
 
 ---@param spec ResonanceLoadSpec
 function M.load(spec)
-  loader.load(spec)
+  require('resonance.loader').load(spec)
 end
 
 ---@return table
@@ -76,7 +73,7 @@ function M.stats()
     return M._cached_stats
   end
 
-  local info = scanner.get_info()
+  local info = require('resonance.scanner').get_info()
   local ms = 0
 
   if M._start_time then
@@ -120,7 +117,7 @@ function M.trigger_verylazy()
 end
 
 function M.open_ui()
-  ui.open(M.config.ui)
+  require('resonance.ui').open(M.config.ui)
 end
 
 return M

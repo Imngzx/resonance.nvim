@@ -2,6 +2,7 @@ local M = {}
 local st = require('resonance.ui.state')
 local render_mod = require('resonance.ui.render')
 local utils = require('resonance.utils')
+local last_toggle_time = 0
 
 function M.check_updates_network()
   if st.state.checking then return end
@@ -79,6 +80,10 @@ function M.check_updates_network()
 end
 
 function M.toggle_details()
+  local now = vim.uv.hrtime() / 1e6
+  if now - last_toggle_time < 200 then return end
+  last_toggle_time = now
+
   local name = st.plugin_at_cursor()
   if not name then return end
   st.state.expanded[name] = not st.state.expanded[name]

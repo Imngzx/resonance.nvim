@@ -31,6 +31,14 @@ local function bind_keys(win_close_fn)
       utils.notify('No pending updates.', vim.log.levels.INFO)
     end
   end, 'Update All Pending')
+  map('s', function()
+    local name = st.plugin_at_cursor()
+    if name and st.state.updates[name] then
+      st.state.updates[name] = nil
+      render_mod.schedule_render()
+      utils.notify('Skipped update for ' .. name, vim.log.levels.INFO)
+    end
+  end, 'Skip Update')
   map('dd', function()
     local name = st.plugin_at_cursor()
     if name then actions.uninstall_plugin(name) end

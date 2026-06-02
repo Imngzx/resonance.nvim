@@ -140,7 +140,13 @@ end
 
 function M.load(config)
   local plugins = config.plugin
-  if type(plugins) == 'string' then plugins = { plugins } end
+  if type(plugins) == 'string' then
+    plugins = { plugins }
+  elseif type(plugins) == 'table' then
+    if plugins[1] == nil and (plugins.src or plugins.url or plugins.name) then
+      plugins = { plugins }
+    end
+  end
   plugins = plugins or {}
   local trig_str = parse_trigger(config)
 

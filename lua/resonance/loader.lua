@@ -183,13 +183,22 @@ function M.load(config)
     loaded = true
 
     local start_ms = vim.uv.hrtime()
-    if #plugins > 0 then vim.pack.add(plugins) end
-    if config.setup then config.setup() end
+
+    if #plugins > 0 then
+      local ok, err = pcall(vim.pack.add, plugins)
+      if not ok then utils.notify('Failed to load plugin: ' .. tostring(err), vim.log.levels.WARN) end
+    end
+
+    if config.setup then
+      local ok, err = pcall(config.setup)
+      if not ok then utils.notify('Setup error: ' .. tostring(err), vim.log.levels.ERROR) end
+    end
+
     local duration = (vim.uv.hrtime() - start_ms) / 1e6
 
     for _, plugin in ipairs(plugins) do
       local target_url = type(plugin) == 'string' and plugin or
-      (plugin.src or plugin.url or plugin[1])
+        (plugin.src or plugin.url or plugin[1])
       local name = (type(plugin) == 'table' and plugin.name) or
         (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
       if name then require('resonance.scanner').load_times[name] = duration end

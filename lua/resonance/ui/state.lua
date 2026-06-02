@@ -27,6 +27,7 @@ M.ns = api.nvim_create_namespace('resonance_ui')
 ---@field urls table<string, string>
 ---@field expanded table<string, boolean>
 ---@field checking boolean
+---@field updating boolean
 ---@field line_to_name table<number, string>
 ---@field name_to_line table<string, number>
 ---@field restore_cursor_name? string

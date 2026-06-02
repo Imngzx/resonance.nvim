@@ -4,6 +4,11 @@ M.is_windows = function()
   return jit.os == 'Windows'
 end
 
+M.fast_normalize = function(path)
+  if not path then return path end
+  return M.is_windows() and string.gsub(path, '\\', '/') or path
+end
+
 ---@param msg string
 ---@param level integer
 ---@param opts table|nil

@@ -4,16 +4,29 @@ local api = vim.api
 
 M.render_scheduled = false
 
+local _spaces_cache = setmetatable({}, {
+  __index = function(t, k)
+    local v = string.rep(' ', k)
+    rawset(t, k, v)
+    return v
+  end
+})
+
 local function build_content()
   st.state.line_to_name = {}
   st.state.name_to_line = {}
-
   local lines, hls = {}, {}
   local line_parts, line_idx, cur_col = {}, 0, 0
 
   local function add(text, hl)
     if not text or text == '' then return end
-    if hl then hls[#hls + 1] = { line_idx, cur_col, cur_col + #text, hl } end
+    if hl then
+      local idx = #hls
+      hls[idx + 1] = line_idx
+      hls[idx + 2] = cur_col
+      hls[idx + 3] = cur_col + #text
+      hls[idx + 4] = hl
+    end
     line_parts[#line_parts + 1] = text
     cur_col = cur_col + #text
   end
@@ -76,16 +89,16 @@ local function build_content()
     add('󰏗 ', is_loaded and 'Function' or 'Comment')
 
     add(p_name, is_pending and 'DiagnosticWarn' or (is_loaded and 'Normal' or 'Comment'))
-    add(string.rep(' ', max_name_len - #p_name + 2))
+    add(_spaces_cache[math.max(0, max_name_len - #p_name + 2)])
     add(string.format('[%s]', p_type), 'Comment')
-    add(string.rep(' ', 7 - #p_type))
+    add(_spaces_cache[math.max(0, 7 - #p_type)])
 
     local ms = st.state.info.load_times[p_name]
     if ms then
       local t_str = string.format('%.2f ms', ms)
-      add(string.rep(' ', 10 - #t_str)); add(t_str, 'WarningMsg')
+      add(_spaces_cache[math.max(0, 10 - #t_str)]); add(t_str, 'WarningMsg')
     else
-      add(string.rep(' ', 10))
+      add(_spaces_cache[10])
     end
     add('   ')
 
@@ -160,8 +173,7 @@ end
 function M.render()
   if not st.is_valid() then return end
   if st.state.win and api.nvim_win_is_valid(st.state.win) then
-    st.state.win_width = api
-      .nvim_win_get_width(st.state.win)
+    st.state.win_width = api.nvim_win_get_width(st.state.win)
   end
 
   local lines, hls = build_content()
@@ -172,10 +184,9 @@ function M.render()
   vim.bo[st.state.buf].modified = false
 
   api.nvim_buf_clear_namespace(st.state.buf, st.ns, 0, -1)
-  for i = 1, #hls do
-    local hl = hls[i]
-    api.nvim_buf_set_extmark(st.state.buf, st.ns, hl[1], hl[2],
-      { end_col = hl[3], hl_group = hl[4], priority = 100 })
+  for i = 1, #hls, 4 do
+    api.nvim_buf_set_extmark(st.state.buf, st.ns, hls[i], hls[i + 1],
+      { end_col = hls[i + 2], hl_group = hls[i + 3], priority = 100 })
   end
 
   if st.state.restore_cursor_name and st.state.win and api.nvim_win_is_valid(st.state.win) then

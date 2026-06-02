@@ -1,40 +1,42 @@
 local M = {}
+local utils = require('resonance.utils')
 
 M.load_times = {}
 
-local pack_dir_base = vim.fs.normalize(vim.fn.stdpath('data') .. '/site/pack')
+local pack_dir_base = utils.fast_normalize(vim.fn.stdpath('data') .. '/site/pack')
 local sub_dirs = { 'start', 'opt' }
 
 function M.get_info()
   local loader = require('resonance.loader')
   local plugin_triggers = loader.plugin_triggers or {}
-
   local plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {} }
   local loaded_set = {}
   local loaded_count, total_count = 0, 0
 
   for _, p in ipairs(vim.api.nvim_list_runtime_paths()) do
-    loaded_set[vim.fs.normalize(p)] = true
+    loaded_set[utils.fast_normalize(p)] = true
   end
 
-  local stat = vim.uv.fs_stat(pack_dir_base)
-  if stat and stat.type == 'directory' then
-    for pkg_name, pkg_type in vim.fs.dir(pack_dir_base) do
+  local req = vim.uv.fs_scandir(pack_dir_base)
+  if req then
+    while true do
+      local pkg_name, pkg_type = vim.uv.fs_scandir_next(req)
+      if not pkg_name then break end
       if pkg_type == 'directory' or pkg_type == 'link' then
         for i = 1, #sub_dirs do
           local sub = sub_dirs[i]
           local target_dir = pack_dir_base .. '/' .. pkg_name .. '/' .. sub
-          local t_stat = vim.uv.fs_stat(target_dir)
-
-          if t_stat and (t_stat.type == 'directory' or t_stat.type == 'link') then
-            for p_name, p_type in vim.fs.dir(target_dir) do
+          local t_req = vim.uv.fs_scandir(target_dir)
+          if t_req then
+            while true do
+              local p_name, p_type = vim.uv.fs_scandir_next(t_req)
+              if not p_name then break end
               if p_type == 'directory' or p_type == 'link' then
                 total_count = total_count + 1
                 local p_path = target_dir .. '/' .. p_name
-
-                local is_loaded = loaded_set[p_path] or loaded_set[vim.fs.normalize(p_path)] or false
+                local is_loaded = loaded_set[p_path] or loaded_set[utils.fast_normalize(p_path)] or
+                false
                 if is_loaded then loaded_count = loaded_count + 1 end
-
                 plugins.name[total_count] = p_name
                 plugins.type[total_count] = sub
                 plugins.path[total_count] = p_path

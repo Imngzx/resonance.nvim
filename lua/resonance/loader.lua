@@ -2,22 +2,39 @@
 local M = {}
 local utils = require('resonance.utils')
 local SUB_DIRS = { 'opt', 'start' }
-local pack_dir_base = vim.fs.normalize(vim.fn.stdpath('data') .. '/site/pack')
+local pack_dir_base = utils.fast_normalize(vim.fn.stdpath('data') .. '/site/pack')
 
 M.build_hooks = {}
 M.plugin_triggers = {}
 
+local _plugin_dir_cache = nil
+
 local function get_plugin_dir(name)
-  if not vim.uv.fs_stat(pack_dir_base) then return nil end
-  for group_name, type in vim.fs.dir(pack_dir_base) do
-    if type == 'directory' or type == 'link' then
-      for i = 1, #SUB_DIRS do
-        local target = pack_dir_base .. '/' .. group_name .. '/' .. SUB_DIRS[i] .. '/' .. name
-        if vim.uv.fs_stat(target) then return target end
+  if _plugin_dir_cache then return _plugin_dir_cache[name] end
+  _plugin_dir_cache = {}
+  local req = vim.uv.fs_scandir(pack_dir_base)
+  if req then
+    while true do
+      local group_name, type = vim.uv.fs_scandir_next(req)
+      if not group_name then break end
+      if type == 'directory' or type == 'link' then
+        for i = 1, #SUB_DIRS do
+          local target_dir = pack_dir_base .. '/' .. group_name .. '/' .. SUB_DIRS[i]
+          local t_req = vim.uv.fs_scandir(target_dir)
+          if t_req then
+            while true do
+              local p_name, p_type = vim.uv.fs_scandir_next(t_req)
+              if not p_name then break end
+              if p_type == 'directory' or p_type == 'link' then
+                _plugin_dir_cache[p_name] = target_dir .. '/' .. p_name
+              end
+            end
+          end
+        end
       end
     end
   end
-  return nil
+  return _plugin_dir_cache[name]
 end
 
 local function mark_build_success(dir, hash)
@@ -31,11 +48,9 @@ end
 function M.run_build(name, dir, build_task, curr_hash)
   if not dir or dir == '' then return end
   utils.notify('[Resonance] Building ' .. name .. '...', vim.log.levels.INFO)
-
   if type(build_task) == 'string' then
     local shell = utils.is_windows() and 'cmd' or 'sh'
     local flag = utils.is_windows() and '/c' or '-c'
-
     vim.system({ shell, flag, build_task }, { cwd = dir, text = true }, function(out)
       vim.schedule(function()
         if out.code == 0 then
@@ -61,19 +76,23 @@ function M.run_build(name, dir, build_task, curr_hash)
   end
 end
 
-vim.api.nvim_create_autocmd('PackChanged', {
+local vim_api_create_autocmd = vim.api.nvim_create_autocmd
+local vim_api_create_user_command = vim.api.nvim_create_user_command
+local vim_api_del_user_command = vim.api.nvim_del_user_command
+local vim_api_cmd = vim.api.nvim_cmd
+local vim_keymap_set = vim.keymap.set
+local vim_keymap_del = vim.keymap.del
+
+vim_api_create_autocmd('PackChanged', {
   group = vim.api.nvim_create_augroup('ResonanceBuilder', { clear = true }),
   callback = function(args)
     local data = args.data
     if not data or (data.kind ~= 'install' and data.kind ~= 'update') then return end
-
     local name = (data.spec and data.spec.name) or data.name or args.match
     local build_task = M.build_hooks[name]
     if not build_task then return end
-
     local dir = (data.spec and data.spec.dir) or data.dir or get_plugin_dir(name)
     if not dir then return end
-
     vim.system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
       local curr_hash = (obj.code == 0 and obj.stdout) and vim.trim(obj.stdout) or 'done'
       vim.schedule(function() M.run_build(name, dir, build_task, curr_hash) end)
@@ -85,9 +104,14 @@ local function parse_trigger(config)
   if config.event then
     if type(config.event) == 'table' then
       if config.event[1] == 'User' then
-        return '󱐋 ' .. tostring(config.event.pattern or config.event[2] or 'User')
+        return '󱐋 ' .. (config.event.pattern or config.event[2] or 'User')
+      else
+        local evs = {}
+        for _, v in ipairs(config.event) do
+          if type(v) == 'string' then evs[#evs + 1] = v end
+        end
+        return '󱐋 ' .. table.concat(evs, ', ')
       end
-      return '󱐋 ' .. table.concat(config.event, ', ')
     end
     return '󱐋 ' .. tostring(config.event)
   elseif config.cmd then
@@ -96,13 +120,13 @@ local function parse_trigger(config)
     end
     return ' ' .. tostring(config.cmd)
   elseif config.keys then
-    if type(config.keys) == 'table' and config.keys[1] then
-      local ks = {}
+    if type(config.keys) == 'table' then
+      local keys = {}
       for _, k in ipairs(config.keys) do
-        local lhs = k[2] or k.lhs
-        if lhs then ks[#ks + 1] = tostring(lhs) end
+        local val = k[2] or k.lhs
+        if val then keys[#keys + 1] = val end
       end
-      if #ks > 0 then return ' ' .. table.concat(ks, ', ') end
+      if #keys > 0 then return ' ' .. table.concat(keys, ', ') end
     end
     return ' key'
   elseif config.ft then
@@ -118,14 +142,12 @@ function M.load(config)
   local plugins = config.plugin
   if type(plugins) == 'string' then plugins = { plugins } end
   plugins = plugins or {}
-
   local trig_str = parse_trigger(config)
 
   for _, plugin in ipairs(plugins) do
     local target_url = type(plugin) == 'string' and plugin or (plugin.src or plugin.url or plugin[1])
     local name = (type(plugin) == 'table' and plugin.name) or
       (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
-
     if name and trig_str then M.plugin_triggers[name] = trig_str end
 
     local specific_build = type(plugin) == 'table' and plugin.build
@@ -167,7 +189,7 @@ function M.load(config)
 
     for _, plugin in ipairs(plugins) do
       local target_url = type(plugin) == 'string' and plugin or
-        (plugin.src or plugin.url or plugin[1])
+      (plugin.src or plugin.url or plugin[1])
       local name = (type(plugin) == 'table' and plugin.name) or
         (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
       if name then require('resonance.scanner').load_times[name] = duration end
@@ -180,14 +202,14 @@ function M.load(config)
     local pattern = ev[2] or ev.pattern
     local opts = { once = true, callback = load_now }
     if event_name == 'User' and pattern then opts.pattern = pattern end
-    vim.api.nvim_create_autocmd(event_name == 'User' and 'User' or ev, opts)
+    vim_api_create_autocmd(event_name == 'User' and 'User' or ev, opts)
   end
 
   if config.cmd then
     local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd
     for _, cmd in ipairs(cmds) do
-      vim.api.nvim_create_user_command(cmd, function(args)
-        vim.api.nvim_del_user_command(cmd)
+      vim_api_create_user_command(cmd, function(args)
+        vim_api_del_user_command(cmd)
         load_now()
         local cmd_opts = { cmd = cmd, args = args.fargs, bang = args.bang, mods = args.mods }
         if args.range == 1 then
@@ -197,7 +219,7 @@ function M.load(config)
         elseif args.count and args.count >= 0 then
           cmd_opts.count = args.count
         end
-        vim.api.nvim_cmd(cmd_opts, {})
+        vim_api_cmd(cmd_opts, {})
       end, { nargs = '*', bang = true, range = true, complete = 'file' })
     end
   end
@@ -210,14 +232,14 @@ function M.load(config)
       local opts = key_cfg[4] or key_cfg.opts or {}
 
       if lhs then
-        vim.keymap.set(mode, lhs, function()
+        vim_keymap_set(mode, lhs, function()
           local target_buf = opts.buf or opts.buffer
           local del_opts = target_buf and { buf = target_buf } or {}
           if opts.buffer then
             opts.buf = opts.buffer; opts.buffer = nil
           end
 
-          pcall(vim.keymap.del, mode, lhs, del_opts)
+          pcall(vim_keymap_del, mode, lhs, del_opts)
           load_now()
 
           if rhs then
@@ -227,7 +249,7 @@ function M.load(config)
               local k = vim.api.nvim_replace_termcodes(rhs, true, false, true)
               vim.api.nvim_feedkeys(k, 'm', false)
             end
-            if config.restore_keys ~= false then vim.keymap.set(mode, lhs, rhs, opts) end
+            if config.restore_keys ~= false then vim_keymap_set(mode, lhs, rhs, opts) end
           else
             local k = vim.api.nvim_replace_termcodes(lhs, true, false, true)
             vim.api.nvim_feedkeys(k, 'i', false)
@@ -239,7 +261,7 @@ function M.load(config)
 
   if config.ft then
     local fts = type(config.ft) == 'string' and { config.ft } or config.ft
-    vim.api.nvim_create_autocmd('FileType', { pattern = fts, once = true, callback = load_now })
+    vim_api_create_autocmd('FileType', { pattern = fts, once = true, callback = load_now })
   end
 end
 

@@ -51,7 +51,6 @@ function M.init_hls()
   local cl = api.nvim_get_hl(0, { name = 'CursorLine' })
   local fn = api.nvim_get_hl(0, { name = 'Function' })
   local cm = api.nvim_get_hl(0, { name = 'Comment' })
-
   api.nvim_set_hl(0, 'ResoBtnKey', { fg = fn.fg, bg = cl.bg, default = true })
   api.nvim_set_hl(0, 'ResoBtnText', { fg = cm.fg, bg = cl.bg, default = true })
 end

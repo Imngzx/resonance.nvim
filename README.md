@@ -219,7 +219,7 @@ starter.setup({
 - `H` : Jump to home (top)
 - `U` : Trigger plugin updates (vim.pack.update())
 - `u` : Trigger plugin updates (vim.pack.update()) *single plugin
-- `r` : Fetch
+- `r` : Resonate (refresh and fetch plugin updates)
 - `S` : Search inside plugins source code (Powered by Snacks.picker / Telescope / Native vimgrep)
 - `D` : Open plugin directory
 - `q` / Esc : Quit

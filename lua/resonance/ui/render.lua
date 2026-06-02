@@ -148,7 +148,7 @@ local function build_content()
   end
 
   add(string.format('  Updates (%d)', #pending_idx), 'Title')
-  if st.state.checking then add(' (Resonating...)', 'DiagnosticInfo') end
+  if st.state.checking then add(' (󱑽 Resonating...)', 'DiagnosticInfo') end
   nl()
 
   if #pending_idx == 0 then

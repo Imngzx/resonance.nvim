@@ -1,5 +1,8 @@
 local M = {}
 
+local _snacks_checked = false
+local _snacks_notifier = nil
+
 M.is_windows = function() return jit.os == 'Windows' end
 
 M.fast_normalize = function(path)
@@ -14,9 +17,16 @@ end
 ---@param level integer
 ---@param opts table|nil
 function M.notify(msg, level, opts)
-  local ok, snacks = pcall(require, 'snacks')
-  if ok and snacks.notifier then
-    snacks.notifier.notify(msg, level, opts or { title = 'Resonance' })
+  if not _snacks_checked then
+    local ok, snacks = pcall(require, 'snacks')
+    if ok and type(snacks) == 'table' and snacks.notifier then
+      _snacks_notifier = snacks.notifier
+    end
+    _snacks_checked = true
+  end
+
+  if _snacks_notifier then
+    _snacks_notifier.notify(msg, level, opts or { title = 'Resonance' })
   else
     vim.notify('[Resonance] ' .. msg, level, opts)
   end

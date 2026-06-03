@@ -52,10 +52,15 @@ function M.get_info()
   end
 
   local indices = {}
-  for i = 1, total_count do indices[i] = i end
+  local lower_names = {}
+  for i = 1, total_count do
+    indices[i] = i
+    lower_names[i] = plugins.name[i]:lower()
+  end
+
   table.sort(indices, function(a, b)
     if plugins.loaded[a] ~= plugins.loaded[b] then return plugins.loaded[a] end
-    return plugins.name[a]:lower() < plugins.name[b]:lower()
+    return lower_names[a] < lower_names[b]
   end)
 
   local sorted_plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {} }

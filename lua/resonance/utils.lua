@@ -1,8 +1,6 @@
 local M = {}
 
-M.is_windows = function()
-  return jit.os == 'Windows'
-end
+M.is_windows = function() return jit.os == 'Windows' end
 
 M.fast_normalize = function(path)
   if not path then return path end

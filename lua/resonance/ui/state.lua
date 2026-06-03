@@ -86,7 +86,7 @@ function M.get_local_hash(path)
   head_file:close()
   if not head then return nil end
 
-  local ref = head:match('ref: (.*)')
+  local ref = head:match('ref:%s*(%S+)')
   if ref then
     local ref_file = io.open(git_dir .. '/' .. ref, 'r')
     if ref_file then
@@ -96,13 +96,13 @@ function M.get_local_hash(path)
     else
       local packed = io.open(git_dir .. '/packed-refs', 'r')
       if packed then
-        for line in packed:lines() do
-          if line:find(ref, 1, true) then
-            packed:close()
-            return line:sub(1, 7)
-          end
-        end
+        local content = packed:read('*a')
         packed:close()
+        local escaped_ref = ref:gsub('[%-%.%+%[%]%(%)%$%^%%%?%*]', '%%%1')
+        local hash = content:match('(%x+)%s+' .. escaped_ref)
+        if hash then
+          return hash:sub(1, 7)
+        end
       end
     end
   else

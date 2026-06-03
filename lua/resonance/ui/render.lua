@@ -191,22 +191,27 @@ function M.render()
   end
 
   local lines, hls = build_content()
+  local buf = st.state.buf
+  if not buf then return end
+  local ns = st.ns
 
-  vim.bo[st.state.buf].modifiable = true
-  api.nvim_buf_set_lines(st.state.buf, 0, -1, false, lines)
-  vim.bo[st.state.buf].modifiable = false
-  vim.bo[st.state.buf].modified = false
+  vim.bo[buf].modifiable = true
+  api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].modified = false
 
-  api.nvim_buf_clear_namespace(st.state.buf, st.ns, 0, -1)
+  api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+
+  local set_extmark = api.nvim_buf_set_extmark
   for i = 1, #hls, 4 do
-    api.nvim_buf_set_extmark(st.state.buf, st.ns, hls[i], hls[i + 1],
+    set_extmark(buf, ns, hls[i], hls[i + 1],
       { end_col = hls[i + 2], hl_group = hls[i + 3], priority = 100 })
   end
 
   if st.state.restore_cursor_name and st.state.win and api.nvim_win_is_valid(st.state.win) then
     local target_line = st.state.name_to_line[st.state.restore_cursor_name]
     if target_line then
-      local line_count = api.nvim_buf_line_count(st.state.buf)
+      local line_count = api.nvim_buf_line_count(buf)
       target_line = math.max(1, math.min(target_line, line_count))
       pcall(api.nvim_win_set_cursor, st.state.win, { target_line, 0 })
     end

@@ -19,6 +19,7 @@ local feedkeys = api.nvim_feedkeys
 
 local SUB_DIRS = { 'opt', 'start' }
 local pack_dir_base = utils.fast_normalize(vim.fn.stdpath('data') .. '/site/pack')
+local core_opt_base = pack_dir_base .. '/core/opt/'
 
 M.build_hooks = {}
 M.plugin_triggers = {}
@@ -26,8 +27,18 @@ M.plugin_triggers = {}
 local _plugin_dir_cache = nil
 
 local function get_plugin_dir(name)
-  if _plugin_dir_cache then return _plugin_dir_cache[name] end
-  _plugin_dir_cache = {}
+  if _plugin_dir_cache then
+    if _plugin_dir_cache[name] then return _plugin_dir_cache[name] end
+  else
+    _plugin_dir_cache = {}
+  end
+
+  local fast_path = core_opt_base .. name
+  if uv.fs_stat(fast_path) then
+    _plugin_dir_cache[name] = fast_path
+    return fast_path
+  end
+
   local req = uv.fs_scandir(pack_dir_base)
   if req then
     while true do
@@ -215,7 +226,7 @@ function M.load(config)
 
     for _, plugin in ipairs(plugins) do
       local target_url = type(plugin) == 'string' and plugin or
-        (plugin.src or plugin.url or plugin[1])
+      (plugin.src or plugin.url or plugin[1])
       local name = (type(plugin) == 'table' and plugin.name) or
         (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
       if name then require('resonance.scanner').load_times[name] = duration end

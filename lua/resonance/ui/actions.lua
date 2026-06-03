@@ -2,6 +2,7 @@ local M = {}
 local st = require('resonance.ui.state')
 local render_mod = require('resonance.ui.render')
 local utils = require('resonance.utils')
+
 local last_toggle_time = 0
 local schedule = vim.schedule
 local system = vim.system
@@ -54,9 +55,11 @@ function M.check_updates_network()
     end)
   end
 
+  local queue_idx = 1
   local function process_queue()
-    while running < MAX_CONCURRENT and #queue > 0 do
-      local p_path = table.remove(queue, 1)
+    while running < MAX_CONCURRENT and queue_idx <= #queue do
+      local p_path = queue[queue_idx]
+      queue_idx = queue_idx + 1
       running = running + 1
       system({ 'git', 'fetch', '--quiet' }, { cwd = p_path }, function(_)
         running = running - 1
@@ -167,32 +170,40 @@ end
 
 function M.checkout_plugin(name)
   if type(name) ~= 'string' then return end
+
   local state = st.state
   local info = state.info
   if not info or not info.plugins then return end
+
   local names = info.plugins.name
   local paths = info.plugins.path
   local total = info.total
   local path = nil
+
   for i = 1, total do
     if names[i] == name then
       path = paths[i]
       break
     end
   end
+
   if not path then
     utils.notify('Cannot find path for ' .. name, 3)
     return
   end
+
   if not vim.uv.fs_stat(path .. '/.git') then
     utils.notify("Plugin '" .. name .. "' is not a Git repository!", 3)
     return
   end
+
   vim.ui.input({ prompt = 'Checkout (Branch/Tag/Commit) for ' .. name .. ': ' }, function(input)
     if not input then return end
     local target = input:match('^%s*(.-)%s*$')
     if target == '' then return end
+
     utils.notify('Checking out ' .. name .. ' -> ' .. target, 2)
+
     system({ 'git', 'checkout', target }, { cwd = path, text = true }, function(out)
       schedule(function()
         if out.code == 0 then
@@ -201,9 +212,7 @@ function M.checkout_plugin(name)
           render_mod.schedule_render()
           utils.notify(
             string.format("Checked out '%s' to '%s'.\nUpdate 'version' in config to persist.", name,
-              target),
-            2
-          )
+              target), 2)
         else
           local err_msg = out.stderr and out.stderr ~= '' and out.stderr or
             (out.stdout or 'Unknown Git Error')

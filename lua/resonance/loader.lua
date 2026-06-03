@@ -1,6 +1,22 @@
 ---@diagnostic disable: undefined-field
 local M = {}
 local utils = require('resonance.utils')
+
+local api = vim.api
+local uv = vim.uv
+local system = vim.system
+local schedule = vim.schedule
+local pack_add = vim.pack.add
+
+local create_autocmd = api.nvim_create_autocmd
+local create_user_command = api.nvim_create_user_command
+local del_user_command = api.nvim_del_user_command
+local nvim_cmd = api.nvim_cmd
+local set_keymap = vim.keymap.set
+local del_keymap = vim.keymap.del
+local replace_termcodes = api.nvim_replace_termcodes
+local feedkeys = api.nvim_feedkeys
+
 local SUB_DIRS = { 'opt', 'start' }
 local pack_dir_base = utils.fast_normalize(vim.fn.stdpath('data') .. '/site/pack')
 
@@ -12,18 +28,18 @@ local _plugin_dir_cache = nil
 local function get_plugin_dir(name)
   if _plugin_dir_cache then return _plugin_dir_cache[name] end
   _plugin_dir_cache = {}
-  local req = vim.uv.fs_scandir(pack_dir_base)
+  local req = uv.fs_scandir(pack_dir_base)
   if req then
     while true do
-      local group_name, type = vim.uv.fs_scandir_next(req)
+      local group_name, f_type = uv.fs_scandir_next(req)
       if not group_name then break end
-      if type == 'directory' or type == 'link' then
+      if f_type == 'directory' or f_type == 'link' then
         for i = 1, #SUB_DIRS do
           local target_dir = pack_dir_base .. '/' .. group_name .. '/' .. SUB_DIRS[i]
-          local t_req = vim.uv.fs_scandir(target_dir)
+          local t_req = uv.fs_scandir(target_dir)
           if t_req then
             while true do
-              local p_name, p_type = vim.uv.fs_scandir_next(t_req)
+              local p_name, p_type = uv.fs_scandir_next(t_req)
               if not p_name then break end
               if p_type == 'directory' or p_type == 'link' then
                 _plugin_dir_cache[p_name] = target_dir .. '/' .. p_name
@@ -38,10 +54,10 @@ local function get_plugin_dir(name)
 end
 
 local function mark_build_success(dir, hash)
-  local fd = vim.uv.fs_open(dir .. '/.resonance_built', 'w', 438)
+  local fd = uv.fs_open(dir .. '/.resonance_built', 'w', 438)
   if fd then
-    vim.uv.fs_write(fd, hash or 'done', 0)
-    vim.uv.fs_close(fd)
+    uv.fs_write(fd, hash or 'done', 0)
+    uv.fs_close(fd)
   end
 end
 
@@ -51,8 +67,8 @@ function M.run_build(name, dir, build_task, curr_hash)
   if type(build_task) == 'string' then
     local shell = utils.is_windows() and 'cmd' or 'sh'
     local flag = utils.is_windows() and '/c' or '-c'
-    vim.system({ shell, flag, build_task }, { cwd = dir, text = true }, function(out)
-      vim.schedule(function()
+    system({ shell, flag, build_task }, { cwd = dir, text = true }, function(out)
+      schedule(function()
         if out.code == 0 then
           mark_build_success(dir, curr_hash)
           utils.notify('[Resonance] Build success: ' .. name, vim.log.levels.INFO)
@@ -63,7 +79,7 @@ function M.run_build(name, dir, build_task, curr_hash)
       end)
     end)
   elseif type(build_task) == 'function' then
-    vim.schedule(function()
+    schedule(function()
       local ok, err = pcall(build_task, dir)
       if ok then
         mark_build_success(dir, curr_hash)
@@ -76,26 +92,21 @@ function M.run_build(name, dir, build_task, curr_hash)
   end
 end
 
-local vim_api_create_autocmd = vim.api.nvim_create_autocmd
-local vim_api_create_user_command = vim.api.nvim_create_user_command
-local vim_api_del_user_command = vim.api.nvim_del_user_command
-local vim_api_cmd = vim.api.nvim_cmd
-local vim_keymap_set = vim.keymap.set
-local vim_keymap_del = vim.keymap.del
-
-vim_api_create_autocmd('PackChanged', {
-  group = vim.api.nvim_create_augroup('ResonanceBuilder', { clear = true }),
+create_autocmd('PackChanged', {
+  group = api.nvim_create_augroup('ResonanceBuilder', { clear = true }),
   callback = function(args)
     local data = args.data
     if not data or (data.kind ~= 'install' and data.kind ~= 'update') then return end
     local name = (data.spec and data.spec.name) or data.name or args.match
     local build_task = M.build_hooks[name]
     if not build_task then return end
-    local dir = (data.spec and data.spec.dir) or data.dir or get_plugin_dir(name)
+
+    local dir = data.path or get_plugin_dir(name)
     if not dir then return end
-    vim.system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
+
+    system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
       local curr_hash = (obj.code == 0 and obj.stdout) and vim.trim(obj.stdout) or 'done'
-      vim.schedule(function() M.run_build(name, dir, build_task, curr_hash) end)
+      schedule(function() M.run_build(name, dir, build_task, curr_hash) end)
     end)
   end,
 })
@@ -161,22 +172,22 @@ function M.load(config)
 
     if name and build_cmd then
       M.build_hooks[name] = build_cmd
-      vim.schedule(function()
+      schedule(function()
         local dir = get_plugin_dir(name)
         if not dir then return end
 
         local last_hash = ''
-        local fd = vim.uv.fs_open(dir .. '/.resonance_built', 'r', 438)
+        local fd = uv.fs_open(dir .. '/.resonance_built', 'r', 438)
         if fd then
-          local stat = vim.uv.fs_fstat(fd)
-          if stat then last_hash = vim.uv.fs_read(fd, stat.size, 0) or '' end
-          vim.uv.fs_close(fd)
+          local stat = uv.fs_fstat(fd)
+          if stat then last_hash = uv.fs_read(fd, stat.size, 0) or '' end
+          uv.fs_close(fd)
         end
 
-        vim.system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
+        system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
           local curr_hash = (obj.code == 0 and obj.stdout) and vim.trim(obj.stdout) or 'done'
           if last_hash ~= curr_hash then
-            vim.schedule(function() M.run_build(name, dir, build_cmd, curr_hash) end)
+            schedule(function() M.run_build(name, dir, build_cmd, curr_hash) end)
           end
         end)
       end)
@@ -188,10 +199,10 @@ function M.load(config)
     if loaded then return end
     loaded = true
 
-    local start_ms = vim.uv.hrtime()
+    local start_ms = uv.hrtime()
 
     if #plugins > 0 then
-      local ok, err = pcall(vim.pack.add, plugins)
+      local ok, err = pcall(pack_add, plugins)
       if not ok then utils.notify('Failed to load plugin: ' .. tostring(err), vim.log.levels.WARN) end
     end
 
@@ -200,7 +211,7 @@ function M.load(config)
       if not ok then utils.notify('Setup error: ' .. tostring(err), vim.log.levels.ERROR) end
     end
 
-    local duration = (vim.uv.hrtime() - start_ms) / 1e6
+    local duration = (uv.hrtime() - start_ms) / 1e6
 
     for _, plugin in ipairs(plugins) do
       local target_url = type(plugin) == 'string' and plugin or
@@ -217,14 +228,14 @@ function M.load(config)
     local pattern = ev[2] or ev.pattern
     local opts = { once = true, callback = load_now }
     if event_name == 'User' and pattern then opts.pattern = pattern end
-    vim_api_create_autocmd(event_name == 'User' and 'User' or ev, opts)
+    create_autocmd(event_name == 'User' and 'User' or ev, opts)
   end
 
   if config.cmd then
     local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd
     for _, cmd in ipairs(cmds) do
-      vim_api_create_user_command(cmd, function(args)
-        vim_api_del_user_command(cmd)
+      create_user_command(cmd, function(args)
+        del_user_command(cmd)
         load_now()
         local cmd_opts = { cmd = cmd, args = args.fargs, bang = args.bang, mods = args.mods }
         if args.range == 1 then
@@ -234,7 +245,7 @@ function M.load(config)
         elseif args.count and args.count >= 0 then
           cmd_opts.count = args.count
         end
-        vim_api_cmd(cmd_opts, {})
+        nvim_cmd(cmd_opts, {})
       end, { nargs = '*', bang = true, range = true, complete = 'file' })
     end
   end
@@ -247,27 +258,27 @@ function M.load(config)
       local opts = key_cfg[4] or key_cfg.opts or {}
 
       if lhs then
-        vim_keymap_set(mode, lhs, function()
+        set_keymap(mode, lhs, function()
           local target_buf = opts.buf or opts.buffer
           local del_opts = target_buf and { buf = target_buf } or {}
           if opts.buffer then
             opts.buf = opts.buffer; opts.buffer = nil
           end
 
-          pcall(vim_keymap_del, mode, lhs, del_opts)
+          pcall(del_keymap, mode, lhs, del_opts)
           load_now()
 
           if rhs then
             if type(rhs) == 'function' then
               rhs()
             elseif type(rhs) == 'string' then
-              local k = vim.api.nvim_replace_termcodes(rhs, true, false, true)
-              vim.api.nvim_feedkeys(k, 'm', false)
+              local k = replace_termcodes(rhs, true, false, true)
+              feedkeys(k, 'm', false)
             end
-            if config.restore_keys ~= false then vim_keymap_set(mode, lhs, rhs, opts) end
+            if config.restore_keys ~= false then set_keymap(mode, lhs, rhs, opts) end
           else
-            local k = vim.api.nvim_replace_termcodes(lhs, true, false, true)
-            vim.api.nvim_feedkeys(k, 'i', false)
+            local k = replace_termcodes(lhs, true, false, true)
+            feedkeys(k, 'i', false)
           end
         end, opts)
       end
@@ -276,7 +287,7 @@ function M.load(config)
 
   if config.ft then
     local fts = type(config.ft) == 'string' and { config.ft } or config.ft
-    vim_api_create_autocmd('FileType', { pattern = fts, once = true, callback = load_now })
+    create_autocmd('FileType', { pattern = fts, once = true, callback = load_now })
   end
 end
 

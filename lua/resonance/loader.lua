@@ -6,7 +6,7 @@ local api = vim.api
 local uv = vim.uv
 local system = vim.system
 local schedule = vim.schedule
-local pack_add = vim.pack.add
+local pack_add = vim.pack and vim.pack.add or nil
 
 local create_autocmd = api.nvim_create_autocmd
 local create_user_command = api.nvim_create_user_command
@@ -16,9 +16,30 @@ local set_keymap = vim.keymap.set
 local del_keymap = vim.keymap.del
 local replace_termcodes = api.nvim_replace_termcodes
 local feedkeys = api.nvim_feedkeys
+local parse_cmd = api.nvim_parse_cmd
+
+local fs_stat = uv.fs_stat
+local fs_scandir = uv.fs_scandir
+local fs_scandir_next = uv.fs_scandir_next
+local fs_open = uv.fs_open
+local fs_read = uv.fs_read
+local fs_write = uv.fs_write
+local fs_close = uv.fs_close
+local fs_fstat = uv.fs_fstat
+local hrtime = uv.hrtime
+local fn_stdpath = vim.fn.stdpath
+
+local type = type
+local tostring = tostring
+local ipairs = ipairs
+local pcall = pcall
+local string_match = string.match
+local table_concat = table.concat
+local vim_trim = vim.trim
+local vim_log_levels = vim.log.levels
 
 local SUB_DIRS = { 'opt', 'start' }
-local pack_dir_base = utils.fast_normalize(vim.fn.stdpath('data') .. '/site/pack')
+local pack_dir_base = utils.fast_normalize(fn_stdpath('data') .. '/site/pack')
 local core_opt_base = pack_dir_base .. '/core/opt/'
 
 M.build_hooks = {}
@@ -34,23 +55,23 @@ local function get_plugin_dir(name)
   end
 
   local fast_path = core_opt_base .. name
-  if uv.fs_stat(fast_path) then
+  if fs_stat(fast_path) then
     _plugin_dir_cache[name] = fast_path
     return fast_path
   end
 
-  local req = uv.fs_scandir(pack_dir_base)
+  local req = fs_scandir(pack_dir_base)
   if req then
     while true do
-      local group_name, f_type = uv.fs_scandir_next(req)
+      local group_name, f_type = fs_scandir_next(req)
       if not group_name then break end
       if f_type == 'directory' or f_type == 'link' then
         for i = 1, #SUB_DIRS do
           local target_dir = pack_dir_base .. '/' .. group_name .. '/' .. SUB_DIRS[i]
-          local t_req = uv.fs_scandir(target_dir)
+          local t_req = fs_scandir(target_dir)
           if t_req then
             while true do
-              local p_name, p_type = uv.fs_scandir_next(t_req)
+              local p_name, p_type = fs_scandir_next(t_req)
               if not p_name then break end
               if p_type == 'directory' or p_type == 'link' then
                 _plugin_dir_cache[p_name] = target_dir .. '/' .. p_name
@@ -65,16 +86,16 @@ local function get_plugin_dir(name)
 end
 
 local function mark_build_success(dir, hash)
-  local fd = uv.fs_open(dir .. '/.resonance_built', 'w', 438)
+  local fd = fs_open(dir .. '/.resonance_built', 'w', 438)
   if fd then
-    uv.fs_write(fd, hash or 'done', 0)
-    uv.fs_close(fd)
+    fs_write(fd, hash or 'done', 0)
+    fs_close(fd)
   end
 end
 
 function M.run_build(name, dir, build_task, curr_hash)
   if not dir or dir == '' then return end
-  utils.notify('[Resonance] Building ' .. name .. '...', vim.log.levels.INFO)
+  utils.notify('[Resonance] Building ' .. name .. '...', vim_log_levels.INFO)
   if type(build_task) == 'string' then
     local shell = utils.is_windows() and 'cmd' or 'sh'
     local flag = utils.is_windows() and '/c' or '-c'
@@ -82,10 +103,10 @@ function M.run_build(name, dir, build_task, curr_hash)
       schedule(function()
         if out.code == 0 then
           mark_build_success(dir, curr_hash)
-          utils.notify('[Resonance] Build success: ' .. name, vim.log.levels.INFO)
+          utils.notify('[Resonance] Build success: ' .. name, vim_log_levels.INFO)
         else
           utils.notify('[Resonance] Build failed: ' .. name .. '\n' .. (out.stderr or ''),
-            vim.log.levels.ERROR)
+            vim_log_levels.ERROR)
         end
       end)
     end)
@@ -94,10 +115,10 @@ function M.run_build(name, dir, build_task, curr_hash)
       local ok, err = pcall(build_task, dir)
       if ok then
         mark_build_success(dir, curr_hash)
-        utils.notify('[Resonance] Build executed: ' .. name, vim.log.levels.INFO)
+        utils.notify('[Resonance] Build executed: ' .. name, vim_log_levels.INFO)
       else
         utils.notify('[Resonance] Build failed: ' .. name .. '\n' .. tostring(err),
-          vim.log.levels.ERROR)
+          vim_log_levels.ERROR)
       end
     end)
   end
@@ -116,7 +137,7 @@ create_autocmd('PackChanged', {
     if not dir then return end
 
     system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
-      local curr_hash = (obj.code == 0 and obj.stdout) and vim.trim(obj.stdout) or 'done'
+      local curr_hash = (obj.code == 0 and obj.stdout) and vim_trim(obj.stdout) or 'done'
       schedule(function() M.run_build(name, dir, build_task, curr_hash) end)
     end)
   end,
@@ -132,13 +153,13 @@ local function parse_trigger(config)
         for _, v in ipairs(config.event) do
           if type(v) == 'string' then evs[#evs + 1] = v end
         end
-        return '󱐋 ' .. table.concat(evs, ', ')
+        return '󱐋 ' .. table_concat(evs, ', ')
       end
     end
     return '󱐋 ' .. tostring(config.event)
   elseif config.cmd then
     if type(config.cmd) == 'table' then
-      return ' ' .. table.concat(config.cmd, ', ')
+      return ' ' .. table_concat(config.cmd, ', ')
     end
     return ' ' .. tostring(config.cmd)
   elseif config.keys then
@@ -148,12 +169,12 @@ local function parse_trigger(config)
         local val = k[2] or k.lhs
         if val then keys[#keys + 1] = val end
       end
-      if #keys > 0 then return ' ' .. table.concat(keys, ', ') end
+      if #keys > 0 then return ' ' .. table_concat(keys, ', ') end
     end
     return ' key'
   elseif config.ft then
     if type(config.ft) == 'table' then
-      return ' ' .. table.concat(config.ft, ', ')
+      return ' ' .. table_concat(config.ft, ', ')
     end
     return ' ' .. tostring(config.ft)
   end
@@ -175,7 +196,7 @@ function M.load(config)
   for _, plugin in ipairs(plugins) do
     local target_url = type(plugin) == 'string' and plugin or (plugin.src or plugin.url or plugin[1])
     local name = (type(plugin) == 'table' and plugin.name) or
-      (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
+      (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
     if name and trig_str then M.plugin_triggers[name] = trig_str end
 
     local specific_build = type(plugin) == 'table' and plugin.build
@@ -188,15 +209,15 @@ function M.load(config)
         if not dir then return end
 
         local last_hash = ''
-        local fd = uv.fs_open(dir .. '/.resonance_built', 'r', 438)
+        local fd = fs_open(dir .. '/.resonance_built', 'r', 438)
         if fd then
-          local stat = uv.fs_fstat(fd)
-          if stat then last_hash = uv.fs_read(fd, stat.size, 0) or '' end
-          uv.fs_close(fd)
+          local stat = fs_fstat(fd)
+          if stat then last_hash = fs_read(fd, stat.size, 0) or '' end
+          fs_close(fd)
         end
 
         system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
-          local curr_hash = (obj.code == 0 and obj.stdout) and vim.trim(obj.stdout) or 'done'
+          local curr_hash = (obj.code == 0 and obj.stdout) and vim_trim(obj.stdout) or 'done'
           if last_hash ~= curr_hash then
             schedule(function() M.run_build(name, dir, build_cmd, curr_hash) end)
           end
@@ -210,25 +231,25 @@ function M.load(config)
     if loaded then return end
     loaded = true
 
-    local start_ms = uv.hrtime()
+    local start_ms = hrtime()
 
     if #plugins > 0 then
       local ok, err = pcall(pack_add, plugins)
-      if not ok then utils.notify('Failed to load plugin: ' .. tostring(err), vim.log.levels.WARN) end
+      if not ok then utils.notify('Failed to load plugin: ' .. tostring(err), vim_log_levels.WARN) end
     end
 
     if config.setup then
       local ok, err = pcall(config.setup)
-      if not ok then utils.notify('Setup error: ' .. tostring(err), vim.log.levels.ERROR) end
+      if not ok then utils.notify('Setup error: ' .. tostring(err), vim_log_levels.ERROR) end
     end
 
-    local duration = (uv.hrtime() - start_ms) / 1e6
+    local duration = (hrtime() - start_ms) / 1e6
 
     for _, plugin in ipairs(plugins) do
       local target_url = type(plugin) == 'string' and plugin or
         (plugin.src or plugin.url or plugin[1])
       local name = (type(plugin) == 'table' and plugin.name) or
-        (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
+        (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
       if name then require('resonance.scanner').load_times[name] = duration end
     end
   end
@@ -250,7 +271,7 @@ function M.load(config)
         load_now()
         local cmd_opts = { cmd = cmd, args = args.fargs, bang = args.bang }
         if args.mods and args.mods ~= '' then
-          cmd_opts.mods = api.nvim_parse_cmd(args.mods .. ' ' .. cmd, {}).mods
+          cmd_opts.mods = parse_cmd(args.mods .. ' ' .. cmd, {}).mods
         end
         if args.range == 1 then
           cmd_opts.range = { args.line1 }

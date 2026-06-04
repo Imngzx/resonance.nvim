@@ -3,8 +3,12 @@ local M = {}
 local vim_api = vim.api
 local create_autocmd = vim_api.nvim_create_autocmd
 local exec_autocmds = vim_api.nvim_exec_autocmds
+local create_user_command = vim_api.nvim_create_user_command
+local list_uis = vim_api.nvim_list_uis
 local hrtime = vim.uv.hrtime
 local schedule = vim.schedule
+local vim_cmd = vim.cmd
+local vim_tbl_deep_extend = vim.tbl_deep_extend
 
 ---@diagnostic disable-next-line: undefined-field
 M._start_time = _G.start_time or hrtime()
@@ -64,8 +68,8 @@ M.config = {
 
 ---@param opts? ResonanceConfig
 function M.setup(opts)
-  M.config = vim.tbl_deep_extend('force', M.config, opts or {})
-  vim_api.nvim_create_user_command('Resonance', function()
+  M.config = vim_tbl_deep_extend('force', M.config, opts or {})
+  create_user_command('Resonance', function()
     M.open_ui()
   end, { desc = 'Open Resonance UI' })
 end
@@ -105,7 +109,7 @@ function M.trigger_verylazy()
     once = true,
     callback = function()
       M._end_time = M._end_time or hrtime()
-      vim.cmd('redrawstatus')
+      vim_cmd('redrawstatus')
       schedule(function()
         exec_autocmds('User', { pattern = 'VeryLazy' })
       end)
@@ -115,7 +119,7 @@ function M.trigger_verylazy()
   create_autocmd('VimEnter', {
     once = true,
     callback = function()
-      if #vim_api.nvim_list_uis() == 0 then
+      if #list_uis() == 0 then
         M._end_time = M._end_time or hrtime()
         schedule(function()
           exec_autocmds('User', { pattern = 'VeryLazy' })
@@ -131,4 +135,4 @@ end
 
 return M
 
--- “Powered by Solaris-3 Terminal and Resonator of NVIM”.
+-- "Powered by Solaris-3 Terminal and Resonator of NVIM".

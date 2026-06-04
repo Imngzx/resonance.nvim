@@ -5,9 +5,27 @@ local render_mod = require('resonance.ui.render')
 local actions = require('resonance.ui.actions')
 local utils = require('resonance.utils')
 
+local pcall = pcall
+local pairs = pairs
+local math_floor = math.floor
+local math_min = math.min
+local vim_keymap_set = vim.keymap.set
+local vim_log_levels = vim.log.levels
+local vim_cmd = vim.cmd
+local vim_defer_fn = vim.defer_fn
+local vim_bo = vim.bo
+local vim_o = vim.o
+local vim_wo = vim.wo
+
+local nvim_win_is_valid = api.nvim_win_is_valid
+local nvim_set_current_win = api.nvim_set_current_win
+local nvim_create_buf = api.nvim_create_buf
+local nvim_win_close = api.nvim_win_close
+local nvim_open_win = api.nvim_open_win
+
 local function bind_keys(win_close_fn)
   local map = function(lhs, rhs, desc)
-    vim.keymap.set('n', lhs, rhs, { buf = st.state.buf, nowait = true, silent = true, desc = desc })
+    vim_keymap_set('n', lhs, rhs, { buf = st.state.buf, nowait = true, silent = true, desc = desc })
   end
 
   map('q', win_close_fn, 'Close')
@@ -16,7 +34,7 @@ local function bind_keys(win_close_fn)
   map('H', 'gg', 'Home')
   map('r', function()
     actions.check_updates_network()
-    utils.notify('Resonating in background...', vim.log.levels.INFO)
+    utils.notify('Resonating in background...', vim_log_levels.INFO)
   end, 'Fetch Updates')
   map('u', function()
     local name = st.plugin_at_cursor()
@@ -28,7 +46,7 @@ local function bind_keys(win_close_fn)
     if #names > 0 then
       actions.update_plugins(names)
     else
-      utils.notify('No pending updates.', vim.log.levels.INFO)
+      utils.notify('No pending updates.', vim_log_levels.INFO)
     end
   end, 'Update All Pending')
   map('s', function()
@@ -36,7 +54,7 @@ local function bind_keys(win_close_fn)
     if name and st.state.updates[name] then
       st.state.updates[name] = nil
       render_mod.schedule_render()
-      utils.notify('Skipped update for ' .. name, vim.log.levels.INFO)
+      utils.notify('Skipped update for ' .. name, vim_log_levels.INFO)
     end
   end, 'Skip Update')
   map('dd', function()
@@ -53,7 +71,7 @@ local function bind_keys(win_close_fn)
     elseif ok_tele then
       tele.live_grep({ cwd = dir })
     else
-      vim.cmd('vimgrep /.*/j ' .. dir .. '/**/* | copen')
+      vim_cmd('vimgrep /.*/j ' .. dir .. '/**/* | copen')
     end
   end, 'Search Sources')
   map('D', function()
@@ -62,7 +80,7 @@ local function bind_keys(win_close_fn)
     if pcall(require, 'snacks') then
       require('snacks').explorer({ cwd = dir })
     else
-      vim.cmd('Explore ' .. dir)
+      vim_cmd('Explore ' .. dir)
     end
   end, 'Open Dir')
   map('C', function()
@@ -70,7 +88,7 @@ local function bind_keys(win_close_fn)
       win_close_fn()
       vim.pack.update(nil, { offline = true })
     else
-      utils.notify('Native vim.pack is not available.', vim.log.levels.WARN)
+      utils.notify('Native vim.pack is not available.', vim_log_levels.WARN)
     end
   end, 'Native Update Review')
   map('c', function()
@@ -80,34 +98,34 @@ local function bind_keys(win_close_fn)
 end
 
 function M.open(ui_config)
-  if st.state.win and api.nvim_win_is_valid(st.state.win) then
-    api.nvim_set_current_win(st.state.win); return
+  if st.state.win and nvim_win_is_valid(st.state.win) then
+    nvim_set_current_win(st.state.win); return
   end
 
   st.init_hls()
   st.state.info = require('resonance.scanner').get_info()
-  st.state.buf = api.nvim_create_buf(false, true)
+  st.state.buf = nvim_create_buf(false, true)
 
-  vim.bo[st.state.buf].buftype = 'nofile'
-  vim.bo[st.state.buf].filetype = 'resonance'
-  vim.bo[st.state.buf].swapfile = false
-  vim.bo[st.state.buf].bufhidden = 'wipe'
+  vim_bo[st.state.buf].buftype = 'nofile'
+  vim_bo[st.state.buf].filetype = 'resonance'
+  vim_bo[st.state.buf].swapfile = false
+  vim_bo[st.state.buf].bufhidden = 'wipe'
 
-  st.state.win_width = math.floor(vim.o.columns * ui_config.width)
+  st.state.win_width = math_floor(vim_o.columns * ui_config.width)
   st.state.updates, st.state.commits = {}, {}
 
   local function load_commits_async()
     local total = st.state.info.total
     local i = 1
     local function chunk()
-      local end_idx = math.min(i + 10, total)
+      local end_idx = math_min(i + 10, total)
       for j = i, end_idx do
         local p_name, p_path = st.state.info.plugins.name[j], st.state.info.plugins.path[j]
         st.state.commits[p_name] = st.get_local_hash(p_path)
       end
       i = end_idx + 1
       if i <= total then
-        vim.defer_fn(chunk, 5)
+        vim_defer_fn(chunk, 5)
       else
         render_mod.schedule_render()
       end
@@ -119,8 +137,8 @@ function M.open(ui_config)
   render_mod.render()
 
   local function on_close()
-    if st.state.win and api.nvim_win_is_valid(st.state.win) then
-      pcall(api.nvim_win_close, st.state.win, true)
+    if st.state.win and nvim_win_is_valid(st.state.win) then
+      pcall(nvim_win_close, st.state.win, true)
     end
     st.state.win, st.state.buf = nil, nil
   end
@@ -152,7 +170,7 @@ function M.open(ui_config)
       focusable = true,
       border = { style = ui_config.border, text = { top = ui_config.title, top_align = 'center' } },
       position = '50%',
-      size = { width = st.state.win_width, height = math.floor(vim.o.lines * ui_config.height) },
+      size = { width = st.state.win_width, height = math_floor(vim_o.lines * ui_config.height) },
       win_options = { cursorline = true, wrap = false, signcolumn = 'no' }
     })
     popup:mount()
@@ -161,11 +179,11 @@ function M.open(ui_config)
       popup:unmount(); st.state.win, st.state.buf = nil, nil
     end)
   else
-    local h = math.floor(vim.o.lines * ui_config.height)
-    st.state.win = api.nvim_open_win(st.state.buf, true, {
+    local h = math_floor(vim_o.lines * ui_config.height)
+    st.state.win = nvim_open_win(st.state.buf, true, {
       relative = 'editor',
-      row = math.floor((vim.o.lines - h) / 2),
-      col = math.floor((vim.o.columns - st.state.win_width) / 2),
+      row = math_floor((vim_o.lines - h) / 2),
+      col = math_floor((vim_o.columns - st.state.win_width) / 2),
       width = st.state.win_width,
       height = h,
       style = 'minimal',
@@ -174,7 +192,7 @@ function M.open(ui_config)
       title_pos = 'center',
       zindex = 50
     })
-    vim.wo[st.state.win].cursorline = true; vim.wo[st.state.win].wrap = false; vim.wo[st.state.win].signcolumn =
+    vim_wo[st.state.win].cursorline = true; vim_wo[st.state.win].wrap = false; vim_wo[st.state.win].signcolumn =
     'no'
     bind_keys(on_close)
   end

@@ -3,9 +3,22 @@ local st = require('resonance.ui.state')
 local render_mod = require('resonance.ui.render')
 local utils = require('resonance.utils')
 
-local last_toggle_time = 0
 local schedule = vim.schedule
 local system = vim.system
+local pcall = pcall
+local type = type
+local tostring = tostring
+local ipairs = ipairs
+local table_concat = table.concat
+local uv_hrtime = vim.uv.hrtime
+local uv_fs_stat = vim.uv.fs_stat
+local vim_trim = vim.trim
+local fn_confirm = vim.fn.confirm
+local ui_input = vim.ui.input
+local vim_log_levels = vim.log.levels
+local string_format = string.format
+
+local last_toggle_time = 0
 
 function M.check_updates_network()
   if st.state.checking then return end
@@ -32,7 +45,7 @@ function M.check_updates_network()
               system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
                 { cwd = pk.path, text = true },
                 function(out)
-                  if out.code == 0 and out.stdout and vim.trim(out.stdout) ~= '' then
+                  if out.code == 0 and out.stdout and vim_trim(out.stdout) ~= '' then
                     local lines = {}
                     for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
                     st.state.updates[name] = lines
@@ -75,7 +88,7 @@ function M.check_updates_network()
 
   for i = 1, total do
     local p_path = st.state.info.plugins.path[i]
-    if vim.uv.fs_stat(p_path .. '/.git') then
+    if uv_fs_stat(p_path .. '/.git') then
       queue[#queue + 1] = p_path
     else
       completed = completed + 1
@@ -90,7 +103,7 @@ function M.check_updates_network()
 end
 
 function M.toggle_details()
-  local now = vim.uv.hrtime() / 1e6
+  local now = uv_hrtime() / 1e6
   if now - last_toggle_time < 200 then return end
   last_toggle_time = now
 
@@ -114,14 +127,14 @@ function M.update_plugins(names)
 
   if vim.pack and vim.pack.update then
     st.state.updating = true
-    utils.notify('Updating ' .. table.concat(names, ', ') .. '...', vim.log.levels.INFO)
+    utils.notify('Updating ' .. table_concat(names, ', ') .. '...', vim_log_levels.INFO)
 
     schedule(function()
       local ok, err = pcall(vim.pack.update, names, { force = true, offline = true })
       st.state.updating = false
 
       if not ok then
-        utils.notify('Pack update failed: ' .. tostring(err), vim.log.levels.ERROR)
+        utils.notify('Pack update failed: ' .. tostring(err), vim_log_levels.ERROR)
       else
         for _, n in ipairs(names) do
           st.state.updates[n] = nil
@@ -133,25 +146,25 @@ function M.update_plugins(names)
           end
         end
         render_mod.schedule_render()
-        utils.notify('Update complete. Please restart Nvim to apply changes.', vim.log.levels.INFO)
+        utils.notify('Update complete. Please restart Nvim to apply changes.', vim_log_levels.INFO)
       end
     end)
   else
-    utils.notify('Triggering plugin update for ' .. names[1], vim.log.levels.INFO)
+    utils.notify('Triggering plugin update for ' .. names[1], vim_log_levels.INFO)
   end
 end
 
 function M.uninstall_plugin(name)
   if not name then return end
-  local choice = vim.fn.confirm('Uninstall ' .. name .. ' from disk?', '&Yes\n&No', 2)
+  local choice = fn_confirm('Uninstall ' .. name .. ' from disk?', '&Yes\n&No', 2)
   if choice ~= 1 then return end
 
   if vim.pack and vim.pack.del then
-    utils.notify('Uninstalling ' .. name .. '...', vim.log.levels.INFO)
+    utils.notify('Uninstalling ' .. name .. '...', vim_log_levels.INFO)
     schedule(function()
       local ok, err = pcall(vim.pack.del, { name }, { force = true })
       if not ok then
-        utils.notify('Uninstall failed: ' .. tostring(err), vim.log.levels.ERROR)
+        utils.notify('Uninstall failed: ' .. tostring(err), vim_log_levels.ERROR)
       else
         st.state.updates[name] = nil
         st.state.commits[name] = nil
@@ -160,11 +173,11 @@ function M.uninstall_plugin(name)
         st.state.info = require('resonance.scanner').get_info()
         render_mod.schedule_render()
         utils.notify('Uninstalled ' .. name .. '. Please restart Nvim to apply changes.',
-          vim.log.levels.WARN)
+          vim_log_levels.WARN)
       end
     end)
   else
-    utils.notify('Triggering plugin uninstall for ' .. name, vim.log.levels.INFO)
+    utils.notify('Triggering plugin uninstall for ' .. name, vim_log_levels.INFO)
   end
 end
 
@@ -192,12 +205,12 @@ function M.checkout_plugin(name)
     return
   end
 
-  if not vim.uv.fs_stat(path .. '/.git') then
+  if not uv_fs_stat(path .. '/.git') then
     utils.notify("Plugin '" .. name .. "' is not a Git repository!", 3)
     return
   end
 
-  vim.ui.input({ prompt = 'Checkout (Branch/Tag/Commit) for ' .. name .. ': ' }, function(input)
+  ui_input({ prompt = 'Checkout (Branch/Tag/Commit) for ' .. name .. ': ' }, function(input)
     if not input then return end
     local target = input:match('^%s*(.-)%s*$')
     if target == '' then return end
@@ -211,7 +224,7 @@ function M.checkout_plugin(name)
           state.updates[name] = nil
           render_mod.schedule_render()
           utils.notify(
-            string.format("Checked out '%s' to '%s'.\nUpdate 'version' in config to persist.", name,
+            string_format("Checked out '%s' to '%s'.\nUpdate 'version' in config to persist.", name,
               target), 2)
         else
           local err_msg = out.stderr and out.stderr ~= '' and out.stderr or

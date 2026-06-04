@@ -1,9 +1,18 @@
 local M = {}
 local utils = require('resonance.utils')
 
+local uv = vim.uv
+local fs_scandir = uv.fs_scandir
+local fs_scandir_next = uv.fs_scandir_next
+local fn_stdpath = vim.fn.stdpath
+local nvim_list_runtime_paths = vim.api.nvim_list_runtime_paths
+local table_sort = table.sort
+local string_lower = string.lower
+local ipairs = ipairs
+
 M.load_times = {}
 
-local pack_dir_base = utils.fast_normalize(vim.fn.stdpath('data') .. '/site/pack')
+local pack_dir_base = utils.fast_normalize(fn_stdpath('data') .. '/site/pack')
 local sub_dirs = { 'start', 'opt' }
 
 function M.get_info()
@@ -13,29 +22,29 @@ function M.get_info()
   local loaded_set = {}
   local loaded_count, total_count = 0, 0
 
-  for _, p in ipairs(vim.api.nvim_list_runtime_paths()) do
+  for _, p in ipairs(nvim_list_runtime_paths()) do
     loaded_set[utils.fast_normalize(p)] = true
   end
 
-  local req = vim.uv.fs_scandir(pack_dir_base)
+  local req = fs_scandir(pack_dir_base)
   if req then
     while true do
-      local pkg_name, pkg_type = vim.uv.fs_scandir_next(req)
+      local pkg_name, pkg_type = fs_scandir_next(req)
       if not pkg_name then break end
       if pkg_type == 'directory' or pkg_type == 'link' then
         for i = 1, #sub_dirs do
           local sub = sub_dirs[i]
           local target_dir = pack_dir_base .. '/' .. pkg_name .. '/' .. sub
-          local t_req = vim.uv.fs_scandir(target_dir)
+          local t_req = fs_scandir(target_dir)
           if t_req then
             while true do
-              local p_name, p_type = vim.uv.fs_scandir_next(t_req)
+              local p_name, p_type = fs_scandir_next(t_req)
               if not p_name then break end
               if p_type == 'directory' or p_type == 'link' then
                 total_count = total_count + 1
                 local p_path = target_dir .. '/' .. p_name
                 local is_loaded = loaded_set[p_path] or loaded_set[utils.fast_normalize(p_path)] or
-                false
+                  false
                 if is_loaded then loaded_count = loaded_count + 1 end
                 plugins.name[total_count] = p_name
                 plugins.type[total_count] = sub
@@ -55,10 +64,10 @@ function M.get_info()
   local lower_names = {}
   for i = 1, total_count do
     indices[i] = i
-    lower_names[i] = plugins.name[i]:lower()
+    lower_names[i] = string_lower(plugins.name[i])
   end
 
-  table.sort(indices, function(a, b)
+  table_sort(indices, function(a, b)
     if plugins.loaded[a] ~= plugins.loaded[b] then return plugins.loaded[a] end
     return lower_names[a] < lower_names[b]
   end)

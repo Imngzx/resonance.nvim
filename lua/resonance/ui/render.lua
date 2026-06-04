@@ -2,11 +2,31 @@ local M = {}
 local st = require('resonance.ui.state')
 local api = vim.api
 
+local string_rep = string.rep
+local table_concat = table.concat
+local math_max = math.max
+local math_min = math.min
+local string_format = string.format
+local type = type
+local tostring = tostring
+local vim_list_slice = vim.list_slice
+local vim_schedule = vim.schedule
+local vim_bo = vim.bo
+
+local nvim_win_is_valid = api.nvim_win_is_valid
+local nvim_win_get_width = api.nvim_win_get_width
+local nvim_buf_set_lines = api.nvim_buf_set_lines
+local nvim_buf_clear_namespace = api.nvim_buf_clear_namespace
+local nvim_buf_set_extmark = api.nvim_buf_set_extmark
+local nvim_buf_line_count = api.nvim_buf_line_count
+local nvim_win_set_cursor = api.nvim_win_set_cursor
+local pcall = pcall
+
 M.render_scheduled = false
 
 local _spaces_cache = setmetatable({}, {
   __index = function(t, k)
-    local v = string.rep(' ', k)
+    local v = string_rep(' ', k)
     rawset(t, k, v)
     return v
   end
@@ -32,7 +52,7 @@ local function build_content()
   end
 
   local function nl()
-    lines[#lines + 1] = table.concat(line_parts)
+    lines[#lines + 1] = table_concat(line_parts)
     line_idx = line_idx + 1
     line_parts = {}
     cur_col = 0
@@ -63,7 +83,7 @@ local function build_content()
   local stats = require('resonance').stats()
   if stats.startuptime > 0 then
     add('  Startuptime: ', 'Title')
-    add(string.format('%.2f ms', stats.startuptime), 'WarningMsg')
+    add(string_format('%.2f ms', stats.startuptime), 'WarningMsg')
     add(' (Till UIEnter/Dashboard)', 'Comment')
     nl(); nl()
   end
@@ -89,14 +109,14 @@ local function build_content()
     add('󰏗 ', is_loaded and 'Function' or 'Comment')
 
     add(p_name, is_pending and 'DiagnosticWarn' or (is_loaded and 'Normal' or 'Comment'))
-    add(_spaces_cache[math.max(0, max_name_len - #p_name + 2)])
-    add(string.format('[%s]', p_type), 'Comment')
-    add(_spaces_cache[math.max(0, 7 - #p_type)])
+    add(_spaces_cache[math_max(0, max_name_len - #p_name + 2)])
+    add(string_format('[%s]', p_type), 'Comment')
+    add(_spaces_cache[math_max(0, 7 - #p_type)])
 
     local ms = st.state.info.load_times[p_name]
     if ms then
-      local t_str = string.format('%.2f ms', ms)
-      add(_spaces_cache[math.max(0, 10 - #t_str)]); add(t_str, 'WarningMsg')
+      local t_str = string_format('%.2f ms', ms)
+      add(_spaces_cache[math_max(0, 10 - #t_str)]); add(t_str, 'WarningMsg')
     else
       add(_spaces_cache[10])
     end
@@ -111,7 +131,7 @@ local function build_content()
 
     if is_pending and type(st.state.updates[p_name]) == 'table' then
       local commits = st.state.updates[p_name]
-      for c = 1, math.min(#commits, 12) do
+      for c = 1, math_min(#commits, 12) do
         local hash, msg = commits[c]:match('^(%x+)%s+(.*)$')
         if hash then
           mark_row(p_name, true)
@@ -138,12 +158,12 @@ local function build_content()
       if pk then
         if pk.branches and #pk.branches > 0 then
           mark_row(p_name, true); add('      branch: ', 'Comment'); add(
-            table.concat(pk.branches, ', '), 'String'); nl()
+            table_concat(pk.branches, ', '), 'String'); nl()
         end
         if pk.tags and #pk.tags > 0 then
           local display_tags = #pk.tags > 5
-            and (table.concat(vim.list_slice(pk.tags, 1, 5), ', ') .. ' ...')
-            or table.concat(pk.tags, ', ')
+            and (table_concat(vim_list_slice(pk.tags, 1, 5), ', ') .. ' ...')
+            or table_concat(pk.tags, ', ')
           mark_row(p_name, true); add('      tags:   ', 'Comment'); add(display_tags, 'Type'); nl()
         end
       end
@@ -161,7 +181,7 @@ local function build_content()
     end
   end
 
-  add(string.format('  Updates Available (%d)', #pending_idx), 'Title')
+  add(string_format('  Updates Available (%d)', #pending_idx), 'Title')
   if st.state.checking then add(' (󱑽 Resonating...)', 'DiagnosticInfo') end
   nl()
 
@@ -174,9 +194,9 @@ local function build_content()
   end
 
   nl()
-  add(string.format('  Up To Date (%d)', #clean_idx), 'Title')
+  add(string_format('  Up To Date (%d)', #clean_idx), 'Title')
   add('    ● ', 'Statement')
-  add(string.format('Loaded: %d', st.state.info.loaded), 'Comment')
+  add(string_format('Loaded: %d', st.state.info.loaded), 'Comment')
   nl()
 
   for i = 1, #clean_idx do draw_plugin(clean_idx[i], false) end
@@ -186,8 +206,8 @@ end
 
 function M.render()
   if not st.is_valid() then return end
-  if st.state.win and api.nvim_win_is_valid(st.state.win) then
-    st.state.win_width = api.nvim_win_get_width(st.state.win)
+  if st.state.win and nvim_win_is_valid(st.state.win) then
+    st.state.win_width = nvim_win_get_width(st.state.win)
   end
 
   local lines, hls = build_content()
@@ -195,25 +215,24 @@ function M.render()
   if not buf then return end
   local ns = st.ns
 
-  vim.bo[buf].modifiable = true
-  api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-  vim.bo[buf].modified = false
+  vim_bo[buf].modifiable = true
+  nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim_bo[buf].modifiable = false
+  vim_bo[buf].modified = false
 
-  api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  nvim_buf_clear_namespace(buf, ns, 0, -1)
 
-  local set_extmark = api.nvim_buf_set_extmark
   for i = 1, #hls, 4 do
-    set_extmark(buf, ns, hls[i], hls[i + 1],
+    nvim_buf_set_extmark(buf, ns, hls[i], hls[i + 1],
       { end_col = hls[i + 2], hl_group = hls[i + 3], priority = 100 })
   end
 
-  if st.state.restore_cursor_name and st.state.win and api.nvim_win_is_valid(st.state.win) then
+  if st.state.restore_cursor_name and st.state.win and nvim_win_is_valid(st.state.win) then
     local target_line = st.state.name_to_line[st.state.restore_cursor_name]
     if target_line then
-      local line_count = api.nvim_buf_line_count(buf)
-      target_line = math.max(1, math.min(target_line, line_count))
-      pcall(api.nvim_win_set_cursor, st.state.win, { target_line, 0 })
+      local line_count = nvim_buf_line_count(buf)
+      target_line = math_max(1, math_min(target_line, line_count))
+      pcall(nvim_win_set_cursor, st.state.win, { target_line, 0 })
     end
     st.state.restore_cursor_name = nil
   end
@@ -222,7 +241,7 @@ end
 function M.schedule_render()
   if M.render_scheduled then return end
   M.render_scheduled = true
-  vim.schedule(function()
+  vim_schedule(function()
     M.render()
     M.render_scheduled = false
   end)

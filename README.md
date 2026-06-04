@@ -4,7 +4,7 @@
 
 `Resonance.nvim` is born out of a desire for extreme performance and simplicity. It strips away the bloat of traditional package managers while keeping the most powerful features: **lazy-loading**, **automatic build hooks**, and an **elegant UI**.
 
-**❤️Special Thanks to: [CWorld1](https://github.com/cworld1)**
+**❤️Special Thanks to: [CWorld1](https://github.com/cworld1)**.
 
 ## ✨ Features
 
@@ -246,5 +246,3 @@ _G.start_time = vim.uv.hrtime()
 ## License
 
 This project is licensed under the MIT License.
-
-“Powered by Solaris-3 Terminal and Resonator of NVIM.”

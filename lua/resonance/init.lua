@@ -35,6 +35,7 @@ local loader_mod = nil
 ---@class ResonancePluginDef
 ---@field src? string
 ---@field url? string
+---@field version? string
 ---@field name? string
 ---@field build? string|function
 ---@field [1]? string

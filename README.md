@@ -1,6 +1,6 @@
 # 🔊 Resonance.nvim
 
-> A ridiculously fast, minimalist, and zero-dependency lazy-loader & plugin manager for Neovim (0.13+).
+> A ridiculously fast, minimalist, and zero-dependency lazy-loader & vim.pack wrapper for Neovim (0.13+).
 
 `Resonance.nvim` is born out of a desire for extreme performance and simplicity. It strips away the bloat of traditional package managers while keeping the most powerful features: **lazy-loading**, **automatic build hooks**, and an **elegant UI**.
 

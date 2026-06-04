@@ -226,7 +226,7 @@ function M.load(config)
 
     for _, plugin in ipairs(plugins) do
       local target_url = type(plugin) == 'string' and plugin or
-      (plugin.src or plugin.url or plugin[1])
+        (plugin.src or plugin.url or plugin[1])
       local name = (type(plugin) == 'table' and plugin.name) or
         (target_url and (target_url:match('([^/]+)%.git$') or target_url:match('([^/]+)$')))
       if name then require('resonance.scanner').load_times[name] = duration end
@@ -248,7 +248,10 @@ function M.load(config)
       create_user_command(cmd, function(args)
         del_user_command(cmd)
         load_now()
-        local cmd_opts = { cmd = cmd, args = args.fargs, bang = args.bang, mods = args.mods }
+        local cmd_opts = { cmd = cmd, args = args.fargs, bang = args.bang }
+        if args.mods and args.mods ~= '' then
+          cmd_opts.mods = api.nvim_parse_cmd(args.mods .. ' ' .. cmd, {}).mods
+        end
         if args.range == 1 then
           cmd_opts.range = { args.line1 }
         elseif args.range == 2 then

@@ -129,3 +129,5 @@ function M.open_ui()
 end
 
 return M
+
+-- “Powered by Solaris-3 Terminal and Resonator of NVIM”.

@@ -18,6 +18,11 @@ local replace_termcodes = api.nvim_replace_termcodes
 local feedkeys = api.nvim_feedkeys
 local parse_cmd = api.nvim_parse_cmd
 
+local get_autocmds = api.nvim_get_autocmds
+local exec_autocmds = api.nvim_exec_autocmds
+local table_insert = table.insert
+local next = next
+
 local fs_stat = uv.fs_stat
 local fs_scandir = uv.fs_scandir
 local fs_scandir_next = uv.fs_scandir_next
@@ -44,6 +49,7 @@ local core_opt_base = pack_dir_base .. '/core/opt/'
 
 M.build_hooks = {}
 M.plugin_triggers = {}
+M.specs = {}
 
 local _plugin_dir_cache = nil
 
@@ -181,7 +187,27 @@ local function parse_trigger(config)
   return nil
 end
 
+local function get_event_chain(event, buf, data)
+  local chain = {}
+  local event_triggers = { FileType = 'BufReadPost', BufReadPost = 'BufReadPre' }
+  while event do
+    local groups = {}
+    if event ~= 'FileType' then
+      for _, autocmd in ipairs(get_autocmds({ event = event })) do
+        if autocmd.group_name then groups[autocmd.group_name] = true end
+      end
+    end
+    table_insert(chain, 1, { event = event, buf = buf, exclude = groups, data = data })
+    data = nil
+    event = event_triggers[event]
+  end
+  return chain
+end
+
 function M.load(config)
+  config.plugin = config.plugin or config[1] or config.url
+  config.setup = config.setup or config.config
+
   local plugins = config.plugin
   if type(plugins) == 'string' then
     plugins = { plugins }
@@ -192,12 +218,33 @@ function M.load(config)
   end
   plugins = plugins or {}
   local trig_str = parse_trigger(config)
+  local parsed_names = {}
+  local parsed_deps = {}
+
+  if config.dependencies then
+    local deps = type(config.dependencies) == 'table' and config.dependencies or
+      { config.dependencies }
+    for _, dep in ipairs(deps) do
+      local target_url = type(dep) == 'string' and dep or (dep.src or dep.url or dep[1])
+      local dep_name = (type(dep) == 'table' and dep.name) or
+        (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
+      if dep_name then
+        parsed_deps[#parsed_deps + 1] = dep_name
+      end
+    end
+  end
 
   for _, plugin in ipairs(plugins) do
     local target_url = type(plugin) == 'string' and plugin or (plugin.src or plugin.url or plugin[1])
     local name = (type(plugin) == 'table' and plugin.name) or
       (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
+
     if name and trig_str then M.plugin_triggers[name] = trig_str end
+
+    if name then
+      parsed_names[#parsed_names + 1] = name
+      M.specs[name] = config
+    end
 
     local specific_build = type(plugin) == 'table' and plugin.build
     local build_cmd = specific_build or config.build
@@ -226,10 +273,20 @@ function M.load(config)
     end
   end
 
-  local loaded = false
-  local function load_now()
-    if loaded then return end
-    loaded = true
+  local function load_now(ev)
+    if config._loaded then return end
+    config._loaded = true
+
+    for i = 1, #parsed_deps do
+      local dep_name = parsed_deps[i]
+      if M.specs[dep_name] then
+        if not M.specs[dep_name]._loaded then
+          M.specs[dep_name]._force_load()
+        end
+      else
+        pcall(pack_add, { dep_name })
+      end
+    end
 
     local start_ms = hrtime()
 
@@ -245,14 +302,35 @@ function M.load(config)
 
     local duration = (hrtime() - start_ms) / 1e6
 
-    for _, plugin in ipairs(plugins) do
-      local target_url = type(plugin) == 'string' and plugin or
-        (plugin.src or plugin.url or plugin[1])
-      local name = (type(plugin) == 'table' and plugin.name) or
-        (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
-      if name then require('resonance.scanner').load_times[name] = duration end
+    local scanner = package.loaded['resonance.scanner']
+    if not scanner then scanner = require('resonance.scanner') end
+
+    for i = 1, #parsed_names do
+      scanner.load_times[parsed_names[i]] = duration
+    end
+
+    if ev and type(ev) == 'table' and ev.event and not config._replay_done then
+      config._replay_done = true
+      local chain = ev.event ~= 'User' and get_event_chain(ev.event, ev.buf, ev.data) or {}
+      for _, opts in ipairs(chain) do
+        if next(opts.exclude) == nil then
+          exec_autocmds(opts.event, { buf = opts.buf, modeline = false, data = opts.data })
+        else
+          local done = {}
+          for _, autocmd in ipairs(get_autocmds({ event = opts.event })) do
+            local id = autocmd.event .. ':' .. tostring(autocmd.group or '')
+            if autocmd.group and not done[id] and not opts.exclude[autocmd.group_name] then
+              done[id] = true
+              exec_autocmds(opts.event,
+                { buf = opts.buf, group = autocmd.group_name, modeline = false, data = opts.data })
+            end
+          end
+        end
+      end
     end
   end
+
+  config._force_load = load_now
 
   if config.event then
     local ev = type(config.event) == 'string' and { config.event } or config.event
@@ -268,7 +346,7 @@ function M.load(config)
     for _, cmd in ipairs(cmds) do
       create_user_command(cmd, function(args)
         del_user_command(cmd)
-        load_now()
+        load_now(nil)
         local cmd_opts = { cmd = cmd, args = args.fargs, bang = args.bang }
         if args.mods and args.mods ~= '' then
           cmd_opts.mods = parse_cmd(args.mods .. ' ' .. cmd, {}).mods
@@ -301,7 +379,7 @@ function M.load(config)
           end
 
           pcall(del_keymap, mode, lhs, del_opts)
-          load_now()
+          load_now(nil)
 
           if rhs then
             if type(rhs) == 'function' then

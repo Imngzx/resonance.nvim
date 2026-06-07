@@ -27,34 +27,35 @@ local loader_mod = nil
 ---@field ui? ResonanceUIConfig
 
 ---@class ResonanceKeyDef
----@field [1]? string|string[]
----@field [2]? string
----@field [3]? string|function
----@field [4]? table
+---@field [1]? string|string[] Mode (e.g., "n", "i", {"n", "v"}). Default: "n"
+---@field [2]? string LHS (Key mapping, e.g., "<leader>ff")
+---@field [3]? string|function RHS (Command string or Lua function)
+---@field [4]? table Options (e.g., { desc = "Find files" })
 ---@field mode? string|string[]
 ---@field lhs? string
 ---@field rhs? string|function
 ---@field opts? table
 
 ---@class ResonancePluginDef
----@field src? string
----@field url? string
----@field version? string
----@field name? string
----@field build? string|function
----@field [1]? string
+---@field [1]? string Plugin Full URL (e.g., "https://github.com/user/repo")
+---@field src? string Alias for URL
+---@field url? string Alias for URL
+---@field version? string Branch, tag, or commit hash to checkout
+---@field name? string Custom name for the plugin directory
+---@field build? string|function Build command (e.g., "make") or Lua function
 
 ---@alias ResonancePlugin string|ResonancePluginDef
 
----@class ResonanceLoadSpec
----@field plugin ResonancePlugin|ResonancePlugin[]
----@field event? string|string[]|table
----@field cmd? string|string[]
----@field ft? string|string[]
----@field keys? ResonanceKeyDef[]
----@field build? string|function
----@field setup? function
----@field restore_keys? boolean
+---@class ResonanceLoadSpec : ResonancePluginDef
+---@field plugin? ResonancePlugin|ResonancePlugin[] Main plugin(s) to load. Can be omitted if URL is passed as `[1]`
+---@field dependencies? ResonancePlugin|ResonancePlugin[] Plugins to load before this plugin
+---@field event? string|string[]|table Lazy load on Neovim events (e.g., "BufReadPre", {"User", pattern = "VeryLazy"})
+---@field cmd? string|string[] Lazy load on Ex commands (e.g., "Telescope")
+---@field ft? string|string[] Lazy load on FileTypes (e.g., "markdown")
+---@field keys? ResonanceKeyDef[] Lazy load on key mappings
+---@field setup? function Callback executed immediately after the plugin is loaded via `vim.pack`
+---@field config? function Alias for `setup`, perfectly compatible with lazy.nvim
+---@field restore_keys? boolean Restore the original key mapping after lazy loading (default: true)
 
 M.config = {
   ui = {

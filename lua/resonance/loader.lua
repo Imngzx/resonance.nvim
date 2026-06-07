@@ -229,7 +229,7 @@ function M.load(config)
       local dep_name = (type(dep) == 'table' and dep.name) or
         (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
       if dep_name then
-        parsed_deps[#parsed_deps + 1] = dep_name
+        parsed_deps[#parsed_deps + 1] = { name = dep_name, raw = dep }
       end
     end
   end
@@ -278,21 +278,29 @@ function M.load(config)
     config._loaded = true
 
     for i = 1, #parsed_deps do
-      local dep_name = parsed_deps[i]
-      if M.specs[dep_name] then
-        if not M.specs[dep_name]._loaded then
-          M.specs[dep_name]._force_load()
+      local dep = parsed_deps[i]
+      if M.specs[dep.name] then
+        if not M.specs[dep.name]._loaded then
+          M.specs[dep.name]._force_load()
         end
       else
-        pcall(pack_add, { dep_name })
+        pcall(pack_add, { dep.raw }, { confirm = false })
+        pcall(function() vim.cmd('packadd ' .. dep.name) end)
       end
     end
 
     local start_ms = hrtime()
 
     if #plugins > 0 then
-      local ok, err = pcall(pack_add, plugins)
-      if not ok then utils.notify('Failed to load plugin: ' .. tostring(err), vim_log_levels.WARN) end
+      local ok, err = pcall(pack_add, plugins, { confirm = false })
+      if not ok then
+        utils.notify('Failed to load plugin via pack.add: ' .. tostring(err),
+          vim_log_levels.WARN)
+      end
+    end
+
+    for i = 1, #parsed_names do
+      pcall(function() vim.cmd('packadd ' .. parsed_names[i]) end)
     end
 
     if config.setup then
@@ -301,7 +309,6 @@ function M.load(config)
     end
 
     local duration = (hrtime() - start_ms) / 1e6
-
     local scanner = package.loaded['resonance.scanner']
     if not scanner then scanner = require('resonance.scanner') end
 

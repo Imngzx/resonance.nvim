@@ -9,10 +9,10 @@
 ## ✨ Features
 
 - **Zero Dependencies:** Works out of the box. Native UI fallback is provided if you prefer a minimalist setup.
-- **Resonance UI:** Gracefully upgrades its UI and search capabilities if `snacks.nvim` or `nui.nvim` are detected.
+- **Pretty UI:** Gracefully upgrades its UI and search capabilities if `snacks.nvim` or `nui.nvim` are detected.
 - **Advanced Lazy Loading:** Load plugins on `Event`, `Cmd`, `Keys`, or `FileType`.
 - **Automatic Build Hooks:** Intercepts `PackChanged` events to automatically run `make`, `cargo`, or custom lua functions when a plugin is installed/updated.
-- **Blazing Fast:** Built entirely on Neovim's native `vim.pack` and modern `vim.system` APIs.
+- **Fast:** Built entirely on Neovim's native `vim.pack` and modern `vim.system` APIs.
 
 ## Preview Image
 
@@ -120,14 +120,37 @@ event = { "User", pattern = "MasonLoaded" }
 local resonance = require('resonance')
 
 resonance.load({
-  plugin = "https://github.com/nvim-treesitter/nvim-treesitter",
-  -- Multiple native events stacked together
+  "https://github.com/<author>/<plugin1_name>",
+
+  dependencies = "https://github.com/<author>/<plugin2_name>",
+
+  build = 'make', -- npm i or others based on plugin's docs
+    
+  cmd = {'cmd1', 'cmd2'},
+
+  keys = {
+    { 'n', '<leader>Tg', '<cmd>cmd1<CR>', { desc = 'Open someting' } },
+    { 'n', '<leader>TL', '<cmd>cmd2<CR>', { desc = 'Do something' } },
+  },
+
   event = { "BufReadPre", "BufNewFile" },
-  setup = function()
+  -- or just single event like [event = "VeryLazy",]
+
+  config = function()
+
+    local name = require('plugin1_name')
+
+    name.setup({
     -- Config here...
+    })
+
   end
 })
 ```
+
+[Complex example](https://github.com/Imngzx/nvim-config-rice-.ver-/blob/nvim-native/lua/config/resonance.lua)
+
+[Simple example](https://github.com/Imngzx/resonance-demo-nvim-config)
 
 ## 📊 Dashboard Resonance.stats integration
 
@@ -236,12 +259,6 @@ _G.start_time = vim.uv.hrtime()
 - `s` : Skip plugin update
 - `D` : Open plugin directory
 - `q` / Esc : Quit
-
-## Simple Configuration examples
-
-[Complex example](https://github.com/Imngzx/nvim-config-rice-.ver-/blob/nvim-native/lua/config/resonance.lua)
-
-[Simple example](https://github.com/Imngzx/resonance-demo-nvim-config)
 
 ## License
 

@@ -9,7 +9,7 @@
 ## ✨ Features
 
 - **Zero Dependencies:** Works out of the box. Native UI fallback is provided if you prefer a minimalist setup.
-- **Ecosystem Resonance:** Gracefully upgrades its UI and search capabilities if `snacks.nvim` or `nui.nvim` are detected.
+- **Resonance UI:** Gracefully upgrades its UI and search capabilities if `snacks.nvim` or `nui.nvim` are detected.
 - **Advanced Lazy Loading:** Load plugins on `Event`, `Cmd`, `Keys`, or `FileType`.
 - **Automatic Build Hooks:** Intercepts `PackChanged` events to automatically run `make`, `cargo`, or custom lua functions when a plugin is installed/updated.
 - **Blazing Fast:** Built entirely on Neovim's native `vim.pack` and modern `vim.system` APIs.

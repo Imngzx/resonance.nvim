@@ -112,10 +112,13 @@ function M.toggle_details()
   st.state.expanded[name] = not st.state.expanded[name]
   st.state.restore_cursor_name = name
 
-  if st.state.expanded[name] and not st.state.pack_details[name] and vim.pack and vim.pack.get then
-    local ok, packs = pcall(vim.pack.get, { name }, { info = true, offline = true })
-    if ok and type(packs) == 'table' and packs[1] then
-      st.state.pack_details[name] = packs[1]
+  if st.state.expanded[name] and vim.pack and vim.pack.get then
+    local pk = st.state.pack_details[name]
+    if not pk or not pk.branches then
+      local ok, packs = pcall(vim.pack.get, { name }, { info = true, offline = true })
+      if ok and type(packs) == 'table' and packs[1] then
+        st.state.pack_details[name] = packs[1]
+      end
     end
   end
 

@@ -115,13 +115,30 @@ function M.open(ui_config)
   st.state.updates, st.state.commits = {}, {}
 
   local function load_commits_async()
+    if vim.pack and vim.pack.get then
+      local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = false })
+      if ok and type(packs) == 'table' then
+        for _, pk in ipairs(packs) do
+          local name = pk.spec.name
+          st.state.pack_details[name] = pk
+          if pk.rev then st.state.commits[name] = string.sub(pk.rev, 1, 7) end
+          if pk.spec and pk.spec.src then st.state.urls[name] = pk.spec.src end
+        end
+      end
+    end
+
     local total = st.state.info.total
     local i = 1
     local function chunk()
       local end_idx = math_min(i + 10, total)
       for j = i, end_idx do
         local p_name, p_path = st.state.info.plugins.name[j], st.state.info.plugins.path[j]
-        st.state.commits[p_name] = st.get_local_hash(p_path)
+        if not st.state.commits[p_name] then
+          st.state.commits[p_name] = st.get_local_hash(p_path) or 'unknown'
+        end
+        if not st.state.urls[p_name] then
+          st.state.urls[p_name] = st.get_src_url(p_path) or 'unknown'
+        end
       end
       i = end_idx + 1
       if i <= total then

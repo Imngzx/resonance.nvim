@@ -284,19 +284,15 @@ function M.load(config)
           M.specs[dep.name]._force_load()
         end
       else
-        pcall(pack_add, { dep.raw }, { confirm = false })
-        -- pcall(function() vim.cmd('packadd ' .. dep.name) end)
+        pcall(pack_add, { dep.raw }, { confirm = false, load = false })
+        pcall(function() vim.cmd('packadd ' .. dep.name) end)
       end
     end
 
     local start_ms = hrtime()
 
     if #plugins > 0 then
-      local ok, err = pcall(pack_add, plugins, { confirm = false })
-      if not ok then
-        utils.notify('Failed to load plugin via pack.add: ' .. tostring(err),
-          vim_log_levels.WARN)
-      end
+      pcall(pack_add, plugins, { confirm = false, load = false })
     end
 
     for i = 1, #parsed_names do

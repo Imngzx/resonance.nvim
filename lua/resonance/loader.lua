@@ -285,7 +285,7 @@ function M.load(config)
         end
       else
         pcall(pack_add, { dep.raw }, { confirm = false })
-        pcall(function() vim.cmd('packadd ' .. dep.name) end)
+        -- pcall(function() vim.cmd('packadd ' .. dep.name) end)
       end
     end
 

@@ -120,31 +120,38 @@ event = { "User", pattern = "MasonLoaded" }
 local resonance = require('resonance')
 
 resonance.load({
-  "https://github.com/<author>/<plugin1_name>",
+  {
+    "https://github.com/<author>/<plugin1_name>",
 
-  dependencies = "https://github.com/<author>/<plugin2_name>",
+    dependencies = "https://github.com/<author>/<plugin2_name>",
 
-  build = 'make', -- npm i or others based on plugin's docs
-    
-  cmd = {'cmd1', 'cmd2'},
+    build = 'make', -- npm i or others based on plugin's docs
+      
+    cmd = {'cmd1', 'cmd2'},
 
-  keys = {
-    { 'n', '<leader>Tg', '<cmd>cmd1<CR>', { desc = 'Open someting' } },
-    { 'n', '<leader>TL', '<cmd>cmd2<CR>', { desc = 'Do something' } },
+    keys = {
+      { 'n', '<leader>Tg', '<cmd>cmd1<CR>', { desc = 'Open someting' } },
+      { 'n', '<leader>TL', '<cmd>cmd2<CR>', { desc = 'Do something' } },
+    },
+
+    -- NOTE: event is compulsory 
+    event = { "BufReadPre", "BufNewFile" },
+    -- or just single event like [event = "VeryLazy",]
+
+    config = function()
+
+      local name = require('plugin1_name')
+
+      name.setup({
+      -- Config here...
+      })
+
+    end
   },
+  
+  { -- another plugin...},
 
-  event = { "BufReadPre", "BufNewFile" },
-  -- or just single event like [event = "VeryLazy",]
-
-  config = function()
-
-    local name = require('plugin1_name')
-
-    name.setup({
-    -- Config here...
-    })
-
-  end
+  { -- another plugin...},
 })
 ```
 

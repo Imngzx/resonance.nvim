@@ -75,7 +75,7 @@ function M.setup(opts)
   end, { desc = 'Open Resonance UI' })
 end
 
----@param spec ResonanceLoadSpec
+---@param spec ResonanceLoadSpec|ResonanceLoadSpec[]
 function M.load(spec)
   if not loader_mod then
     loader_mod = require('resonance.loader')

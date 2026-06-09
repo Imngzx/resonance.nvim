@@ -205,6 +205,20 @@ local function get_event_chain(event, buf, data)
 end
 
 function M.load(config)
+  local is_plugin_list = type(config[1]) == 'table'
+    and not config.plugin and not config.url and not config.src
+    and not config.event and not config.cmd and not config.keys
+    and not config.ft and not config.config and not config.setup
+
+  if is_plugin_list then
+    for _, spec in ipairs(config) do
+      if type(spec) == 'table' then
+        M.load(spec)
+      end
+    end
+    return
+  end
+
   config.plugin = config.plugin or config[1] or config.url
   config.setup = config.setup or config.config
 

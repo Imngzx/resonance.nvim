@@ -375,7 +375,11 @@ function M.load(config)
         elseif args.count and args.count >= 0 then
           cmd_opts.count = args.count
         end
-        nvim_cmd(cmd_opts, {})
+        local ok, err = pcall(nvim_cmd, cmd_opts, {})
+        if not ok then
+          require('resonance.utils').notify('Execution failed: ' .. tostring(err),
+            vim.log.levels.ERROR)
+        end
       end, { nargs = '*', bang = true, range = true, complete = 'file' })
     end
   end

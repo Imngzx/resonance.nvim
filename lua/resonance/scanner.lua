@@ -8,7 +8,6 @@ local fn_stdpath = vim.fn.stdpath
 local nvim_list_runtime_paths = vim.api.nvim_list_runtime_paths
 local table_sort = table.sort
 local string_lower = string.lower
-local ipairs = ipairs
 
 M.load_times = {}
 
@@ -22,8 +21,9 @@ function M.get_info()
   local loaded_set = {}
   local loaded_count, total_count = 0, 0
 
-  for _, p in ipairs(nvim_list_runtime_paths()) do
-    loaded_set[utils.fast_normalize(p)] = true
+  local rtps = nvim_list_runtime_paths()
+  for i = 1, #rtps do
+    loaded_set[utils.fast_normalize(rtps[i])] = true
   end
 
   local req = fs_scandir(pack_dir_base)

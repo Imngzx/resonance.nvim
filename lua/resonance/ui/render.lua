@@ -2,6 +2,7 @@ local M = {}
 local st = require('resonance.ui.state')
 local api = vim.api
 
+local nvim_set_option_value = api.nvim_set_option_value
 local string_rep = string.rep
 local table_concat = table.concat
 local math_max = math.max
@@ -11,7 +12,6 @@ local type = type
 local tostring = tostring
 local vim_list_slice = vim.list_slice
 local vim_schedule = vim.schedule
-local vim_bo = vim.bo
 
 local nvim_win_is_valid = api.nvim_win_is_valid
 local nvim_win_get_width = api.nvim_win_get_width
@@ -215,10 +215,10 @@ function M.render()
   if not buf then return end
   local ns = st.ns
 
-  vim_bo[buf].modifiable = true
+  nvim_set_option_value('modifiable', true, { buf = buf })
   nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim_bo[buf].modifiable = false
-  vim_bo[buf].modified = false
+  nvim_set_option_value('modifiable', false, { buf = buf })
+  nvim_set_option_value('modified', false, { buf = buf })
 
   nvim_buf_clear_namespace(buf, ns, 0, -1)
 

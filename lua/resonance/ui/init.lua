@@ -1,5 +1,6 @@
 local M = {}
 local api = vim.api
+local nvim_set_option_value = api.nvim_set_option_value
 local st = require('resonance.ui.state')
 local render_mod = require('resonance.ui.render')
 local actions = require('resonance.ui.actions')
@@ -13,9 +14,7 @@ local vim_keymap_set = vim.keymap.set
 local vim_log_levels = vim.log.levels
 local vim_cmd = vim.cmd
 local vim_defer_fn = vim.defer_fn
-local vim_bo = vim.bo
 local vim_o = vim.o
-local vim_wo = vim.wo
 
 local nvim_win_is_valid = api.nvim_win_is_valid
 local nvim_set_current_win = api.nvim_set_current_win
@@ -106,10 +105,10 @@ function M.open(ui_config)
   st.state.info = require('resonance.scanner').get_info()
   st.state.buf = nvim_create_buf(false, true)
 
-  vim_bo[st.state.buf].buftype = 'nofile'
-  vim_bo[st.state.buf].filetype = 'resonance'
-  vim_bo[st.state.buf].swapfile = false
-  vim_bo[st.state.buf].bufhidden = 'wipe'
+  nvim_set_option_value('buftype', 'nofile', { buf = st.state.buf })
+  nvim_set_option_value('filetype', 'resonance', { buf = st.state.buf })
+  nvim_set_option_value('swapfile', false, { buf = st.state.buf })
+  nvim_set_option_value('bufhidden', 'wipe', { buf = st.state.buf })
 
   st.state.win_width = math_floor(vim_o.columns * ui_config.width)
   st.state.updates, st.state.commits = {}, {}
@@ -118,7 +117,8 @@ function M.open(ui_config)
     if vim.pack and vim.pack.get then
       local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = false })
       if ok and type(packs) == 'table' then
-        for _, pk in ipairs(packs) do
+        for p = 1, #packs do
+          local pk = packs[p]
           local name = pk.spec.name
           st.state.pack_details[name] = pk
           if pk.rev then st.state.commits[name] = string.sub(pk.rev, 1, 7) end
@@ -209,7 +209,9 @@ function M.open(ui_config)
       title_pos = 'center',
       zindex = 50
     })
-    vim_wo[st.state.win].cursorline = true; vim_wo[st.state.win].wrap = false; vim_wo[st.state.win].signcolumn =
+    nvim_set_option_value('cursorline', true, { win = st.state.win })
+    nvim_set_option_value('wrap', false, { win = st.state.win })
+    nvim_set_option_value('signcolumn', 'no', { win = st.state.win })
     'no'
     bind_keys(on_close)
   end

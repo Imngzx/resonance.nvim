@@ -193,7 +193,9 @@ local function get_event_chain(event, buf, data)
   while event do
     local groups = {}
     if event ~= 'FileType' then
-      for _, autocmd in ipairs(get_autocmds({ event = event })) do
+      local autocmds = get_autocmds({ event = event })
+      for i = 1, #autocmds do
+        local autocmd = autocmds[i]
         if autocmd.group_name then groups[autocmd.group_name] = true end
       end
     end
@@ -211,7 +213,8 @@ function M.load(config)
     and not config.ft and not config.config and not config.setup
 
   if is_plugin_list then
-    for _, spec in ipairs(config) do
+    for i = 1, #config do
+      local spec = config[i]
       if type(spec) == 'table' then
         M.load(spec)
       end
@@ -238,7 +241,8 @@ function M.load(config)
   if config.dependencies then
     local deps = type(config.dependencies) == 'table' and config.dependencies or
       { config.dependencies }
-    for _, dep in ipairs(deps) do
+    for i = 1, #deps do
+      local dep = deps[i]
       local target_url = type(dep) == 'string' and dep or (dep.src or dep.url or dep[1])
       local dep_name = (type(dep) == 'table' and dep.name) or
         (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
@@ -248,7 +252,8 @@ function M.load(config)
     end
   end
 
-  for _, plugin in ipairs(plugins) do
+  for p = 1, #plugins do
+    local plugin = plugins[p]
     local target_url = type(plugin) == 'string' and plugin or (plugin.src or plugin.url or plugin[1])
     local name = (type(plugin) == 'table' and plugin.name) or
       (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
@@ -299,7 +304,7 @@ function M.load(config)
         end
       else
         pcall(pack_add, { dep.raw }, { confirm = false, load = false })
-        pcall(function() vim.cmd('packadd ' .. dep.name) end)
+        pcall(nvim_cmd, { cmd = 'packadd', args = { dep.name } }, {})
       end
     end
 
@@ -310,7 +315,7 @@ function M.load(config)
     end
 
     for i = 1, #parsed_names do
-      pcall(function() vim.cmd('packadd ' .. parsed_names[i]) end)
+      pcall(nvim_cmd, { cmd = 'packadd', args = { parsed_names[i] } }, {})
     end
 
     if config.setup then
@@ -329,12 +334,15 @@ function M.load(config)
     if ev and type(ev) == 'table' and ev.event and not config._replay_done then
       config._replay_done = true
       local chain = ev.event ~= 'User' and get_event_chain(ev.event, ev.buf, ev.data) or {}
-      for _, opts in ipairs(chain) do
+      for c = 1, #chain do
+        local opts = chain[c]
         if next(opts.exclude) == nil then
           exec_autocmds(opts.event, { buf = opts.buf, modeline = false, data = opts.data })
         else
           local done = {}
-          for _, autocmd in ipairs(get_autocmds({ event = opts.event })) do
+          local autocmds = get_autocmds({ event = opts.event })
+          for a = 1, #autocmds do
+            local autocmd = autocmds[a]
             local id = autocmd.event .. ':' .. tostring(autocmd.group or '')
             if autocmd.group and not done[id] and not opts.exclude[autocmd.group_name] then
               done[id] = true
@@ -360,7 +368,8 @@ function M.load(config)
 
   if config.cmd then
     local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd
-    for _, cmd in ipairs(cmds) do
+    for c = 1, #cmds do
+      local cmd = cmds[c]
       create_user_command(cmd, function(args)
         del_user_command(cmd)
         load_now(nil)
@@ -385,7 +394,8 @@ function M.load(config)
   end
 
   if config.keys then
-    for _, key_cfg in ipairs(config.keys) do
+    for k = 1, #config.keys do
+      local key_cfg = config.keys[k]
       local mode = key_cfg[1] or key_cfg.mode or 'n'
       local lhs = key_cfg[2] or key_cfg.lhs
       local rhs = key_cfg[3] or key_cfg.rhs
@@ -406,13 +416,13 @@ function M.load(config)
             if type(rhs) == 'function' then
               rhs()
             elseif type(rhs) == 'string' then
-              local k = replace_termcodes(rhs, true, false, true)
-              feedkeys(k, 'm', false)
+              local term_key = replace_termcodes(rhs, true, false, true)
+              feedkeys(term_key, 'm', false)
             end
             if config.restore_keys ~= false then set_keymap(mode, lhs, rhs, opts) end
           else
-            local k = replace_termcodes(lhs, true, false, true)
-            feedkeys(k, 'i', false)
+            local term_key = replace_termcodes(lhs, true, false, true)
+            feedkeys(term_key, 'i', false)
           end
         end, opts)
       end

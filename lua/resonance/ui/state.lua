@@ -5,7 +5,9 @@ local string_match = string.match
 local string_gsub = string.gsub
 local string_sub = string.sub
 local vim_trim = vim.trim
-local io_open = io.open
+local uv_fs_open = vim.uv.fs_open
+local uv_fs_close = vim.uv.fs_close
+local uv_fs_read = vim.uv.fs_read
 
 local nvim_create_namespace = api.nvim_create_namespace
 local nvim_get_hl = api.nvim_get_hl
@@ -83,43 +85,49 @@ function M.plugin_at_cursor()
 end
 
 function M.get_src_url(path)
-  local file = io_open(path .. '/.git/config', 'r')
-  if not file then return 'unknown' end
-  local content = file:read('*a')
-  file:close()
+  local fd = uv_fs_open(path .. '/.git/config', 'r', 438)
+  if not fd then return 'unknown' end
+
+  local content = uv_fs_read(fd, 65536, 0) or ''
+  uv_fs_close(fd)
+
   local url = string_match(content, '%[remote%s+"origin"%][^%[]-url%s*=%s*([^\n]+)')
   return url and vim_trim(url) or 'unknown'
 end
 
 function M.get_local_hash(path)
   local git_dir = path .. '/.git'
-  local head_file = io_open(git_dir .. '/HEAD', 'r')
-  if not head_file then return nil end
-  local head = head_file:read('*l')
-  head_file:close()
+
+  local function fast_read(file_path)
+    local fd = uv_fs_open(file_path, 'r', 438)
+    if not fd then return nil end
+    local content = uv_fs_read(fd, 65536, 0)
+    uv_fs_close(fd)
+    return content
+  end
+
+  local head = fast_read(git_dir .. '/HEAD')
   if not head then return nil end
 
   local ref = string_match(head, 'ref:%s*(%S+)')
   if ref then
-    local ref_file = io_open(git_dir .. '/' .. ref, 'r')
-    if ref_file then
-      local hash = ref_file:read('*l')
-      ref_file:close()
+    local ref_content = fast_read(git_dir .. '/' .. ref)
+    if ref_content then
+      local hash = string_match(ref_content, '^(%x+)')
       return hash and string_sub(hash, 1, 7) or nil
     else
-      local packed = io_open(git_dir .. '/packed-refs', 'r')
+      local packed = fast_read(git_dir .. '/packed-refs')
       if packed then
-        local content = packed:read('*a')
-        packed:close()
         local escaped_ref = string_gsub(ref, '[%-%.%+%[%]%(%)%$%^%%%?%*]', '%%%1')
-        local hash = string_match(content, '(%x+)%s+' .. escaped_ref)
+        local hash = string_match(packed, '(%x+)%s+' .. escaped_ref)
         if hash then
           return string_sub(hash, 1, 7)
         end
       end
     end
   else
-    return string_sub(head, 1, 7)
+    local hash = string_match(head, '^(%x+)')
+    return hash and string_sub(hash, 1, 7) or nil
   end
   return nil
 end

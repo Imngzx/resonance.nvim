@@ -8,7 +8,6 @@ local system = vim.system
 local pcall = pcall
 local type = type
 local tostring = tostring
-local ipairs = ipairs
 local table_concat = table.concat
 local uv_hrtime = vim.uv.hrtime
 local uv_fs_stat = vim.uv.fs_stat
@@ -38,7 +37,8 @@ function M.check_updates_network()
         if ok and type(packs) == 'table' then
           local pending_count = 0
           local log_completed = 0
-          for _, pk in ipairs(packs) do
+          for p = 1, #packs do
+            local pk = packs[p]
             if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
               pending_count = pending_count + 1
               local name = pk.spec.name
@@ -139,11 +139,12 @@ function M.update_plugins(names)
       if not ok then
         utils.notify('Pack update failed: ' .. tostring(err), vim_log_levels.ERROR)
       else
-        for _, n in ipairs(names) do
+        for i = 1, #names do
+          local n = names[i]
           st.state.updates[n] = nil
-          for i = 1, st.state.info.total do
-            if st.state.info.plugins.name[i] == n then
-              st.state.commits[n] = st.get_local_hash(st.state.info.plugins.path[i])
+          for j = 1, st.state.info.total do
+            if st.state.info.plugins.name[j] == n then
+              st.state.commits[n] = st.get_local_hash(st.state.info.plugins.path[j])
               break
             end
           end

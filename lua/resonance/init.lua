@@ -7,7 +7,6 @@ local create_user_command = vim_api.nvim_create_user_command
 local list_uis = vim_api.nvim_list_uis
 local hrtime = vim.uv.hrtime
 local schedule = vim.schedule
-local vim_cmd = vim.cmd
 local vim_tbl_deep_extend = vim.tbl_deep_extend
 
 ---@diagnostic disable-next-line: undefined-field

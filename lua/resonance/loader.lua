@@ -304,7 +304,7 @@ function M.load(config)
         end
       else
         pcall(pack_add, { dep.raw }, { confirm = false, load = false })
-        pcall(nvim_cmd, { cmd = 'packadd', args = { dep.name } }, {})
+        pcall(nvim_cmd, { cmd = 'packadd', args = { dep.name } })
       end
     end
 
@@ -315,7 +315,7 @@ function M.load(config)
     end
 
     for i = 1, #parsed_names do
-      pcall(nvim_cmd, { cmd = 'packadd', args = { parsed_names[i] } }, {})
+      pcall(nvim_cmd, { cmd = 'packadd', args = { parsed_names[i] } })
     end
 
     if config.setup then
@@ -384,7 +384,7 @@ function M.load(config)
         elseif args.count and args.count >= 0 then
           cmd_opts.count = args.count
         end
-        local ok, err = pcall(nvim_cmd, cmd_opts, {})
+        local ok, err = pcall(nvim_cmd, cmd_opts)
         if not ok then
           require('resonance.utils').notify('Execution failed: ' .. tostring(err),
             vim.log.levels.ERROR)

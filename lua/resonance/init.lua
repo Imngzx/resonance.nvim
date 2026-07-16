@@ -109,7 +109,7 @@ function M.trigger_verylazy()
     once = true,
     callback = function()
       M._end_time = M._end_time or hrtime()
-      vim_api.nvim_command('redrawstatus')
+      vim.cmd.redrawstatus()
       schedule(function()
         exec_autocmds('User', { pattern = 'VeryLazy' })
       end)

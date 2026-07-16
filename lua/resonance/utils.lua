@@ -14,10 +14,7 @@ M.is_windows = function() return jit_os == 'Windows' end
 
 M.fast_normalize = function(path)
   if not path then return path end
-  if M.is_windows() then
-    return string_lower(string_gsub(path, '\\', '/'))
-  end
-  return path
+  return vim.fs.normalize(path)
 end
 
 ---@param msg string

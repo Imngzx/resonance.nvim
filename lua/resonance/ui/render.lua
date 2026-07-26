@@ -64,17 +64,32 @@ local function build_content()
   end
 
   nl()
-  local buttons = { { 'H', 'Home' }, { 'u', 'Update' }, { 'U', 'Update All' }, { 's', 'Skip' }, { 'c', 'Checkout' }, { 'C', 'Review' }, { 'dd', 'Uninstall' }, { 'r', '󱑽 Resonate' }, { 'S', 'Search' }, { 'D', 'Dir' }, { 'q', 'Quit' } }
+  local buttons = {
+    { 'r', '󱑽 Resonate', 'ResoBtnResonateKey', 'ResoBtnResonateText' },
+    { 'u', 'Update' },
+    { 'U', 'Update All' },
+    { 's', 'Skip' },
+    { 'c', 'Checkout' },
+    { 'C', 'Review' },
+    { 'dd', 'Uninstall' },
+    { 'S', 'Search' },
+    { 'D', 'Dir' },
+    { 'q', 'Quit' }
+  }
   local cur_w = 2
   add('  ')
   for i = 1, #buttons do
     local k, t = buttons[i][1], buttons[i][2]
+    local hl_k = buttons[i][3] or 'ResoBtnKey'
+    local hl_t = buttons[i][4] or 'ResoBtnText'
+
     local b_len = 8 + #t
     if cur_w + b_len > st.state.win_width - 2 then
       nl(); nl(); add('  '); cur_w = 2
     end
-    add(' [' .. k .. '] ', 'ResoBtnKey')
-    add(t .. ' ', 'ResoBtnText')
+
+    add(' [' .. k .. '] ', hl_k)
+    add(t .. ' ', hl_t)
     add('  ')
     cur_w = cur_w + b_len
   end

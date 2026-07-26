@@ -17,11 +17,16 @@ local del_keymap = vim.keymap.del
 local replace_termcodes = api.nvim_replace_termcodes
 local feedkeys = api.nvim_feedkeys
 local parse_cmd = api.nvim_parse_cmd
-
 local get_autocmds = api.nvim_get_autocmds
 local exec_autocmds = api.nvim_exec_autocmds
+
 local table_insert = table.insert
 local next = next
+local type = type
+local tostring = tostring
+local pcall = pcall
+local string_match = string.match
+local table_concat = table.concat
 
 local fs_stat = uv.fs_stat
 local fs_scandir = uv.fs_scandir
@@ -32,14 +37,8 @@ local fs_write = uv.fs_write
 local fs_close = uv.fs_close
 local fs_fstat = uv.fs_fstat
 local hrtime = uv.hrtime
-local fn_stdpath = vim.fn.stdpath
 
-local type = type
-local tostring = tostring
-local ipairs = ipairs
-local pcall = pcall
-local string_match = string.match
-local table_concat = table.concat
+local fn_stdpath = vim.fn.stdpath
 local vim_trim = vim.trim
 local vim_log_levels = vim.log.levels
 
@@ -102,6 +101,7 @@ end
 function M.run_build(name, dir, build_task, curr_hash)
   if not dir or dir == '' then return end
   utils.notify('[Resonance] Building ' .. name .. '...', vim_log_levels.INFO)
+
   if type(build_task) == 'string' then
     local shell = utils.is_windows() and 'cmd' or 'sh'
     local flag = utils.is_windows() and '/c' or '-c'
@@ -135,6 +135,7 @@ create_autocmd('PackChanged', {
   callback = function(args)
     local data = args.data
     if not data or (data.kind ~= 'install' and data.kind ~= 'update') then return end
+
     local name = (data.spec and data.spec.name) or data.name or args.match
     local build_task = M.build_hooks[name]
     if not build_task then return end
@@ -156,8 +157,8 @@ local function parse_trigger(config)
         return '󱐋 ' .. (config.event.pattern or config.event[2] or 'User')
       else
         local evs = {}
-        for _, v in ipairs(config.event) do
-          if type(v) == 'string' then evs[#evs + 1] = v end
+        for i = 1, #config.event do
+          if type(config.event[i]) == 'string' then evs[#evs + 1] = config.event[i] end
         end
         return '󱐋 ' .. table_concat(evs, ', ')
       end
@@ -171,8 +172,8 @@ local function parse_trigger(config)
   elseif config.keys then
     if type(config.keys) == 'table' then
       local keys = {}
-      for _, k in ipairs(config.keys) do
-        local val = k[2] or k.lhs
+      for i = 1, #config.keys do
+        local val = config.keys[i][2] or config.keys[i].lhs
         if val then keys[#keys + 1] = val end
       end
       if #keys > 0 then return ' ' .. table_concat(keys, ', ') end
@@ -195,8 +196,7 @@ local function get_event_chain(event, buf, data)
     if event ~= 'FileType' then
       local autocmds = get_autocmds({ event = event })
       for i = 1, #autocmds do
-        local autocmd = autocmds[i]
-        if autocmd.group_name then groups[autocmd.group_name] = true end
+        if autocmds[i].group_name then groups[autocmds[i].group_name] = true end
       end
     end
     table_insert(chain, 1, { event = event, buf = buf, exclude = groups, data = data })
@@ -214,9 +214,8 @@ function M.load(config)
 
   if is_plugin_list then
     for i = 1, #config do
-      local spec = config[i]
-      if type(spec) == 'table' then
-        M.load(spec)
+      if type(config[i]) == 'table' then
+        M.load(config[i])
       end
     end
     return
@@ -234,6 +233,7 @@ function M.load(config)
     end
   end
   plugins = plugins or {}
+
   local trig_str = parse_trigger(config)
   local parsed_names = {}
   local parsed_deps = {}
@@ -265,8 +265,7 @@ function M.load(config)
       M.specs[name] = config
     end
 
-    local specific_build = type(plugin) == 'table' and plugin.build
-    local build_cmd = specific_build or config.build
+    local build_cmd = (type(plugin) == 'table' and plugin.build) or config.build
 
     if name and build_cmd then
       M.build_hooks[name] = build_cmd
@@ -292,15 +291,29 @@ function M.load(config)
     end
   end
 
-  local function load_now(ev)
+  local function load_now(ev, visiting_path)
     if config._loaded then return end
     config._loaded = true
+
+    visiting_path = visiting_path or {}
+    local current_name = parsed_names[1]
+
+    if current_name then
+      if visiting_path[current_name] then
+        require('resonance.utils').notify(
+          'Circular dependency safely broken: ' .. current_name,
+          vim_log_levels.WARN
+        )
+        return
+      end
+      visiting_path[current_name] = true
+    end
 
     for i = 1, #parsed_deps do
       local dep = parsed_deps[i]
       if M.specs[dep.name] then
         if not M.specs[dep.name]._loaded then
-          M.specs[dep.name]._force_load()
+          M.specs[dep.name]._force_load(nil, visiting_path)
         end
       else
         pcall(pack_add, { dep.raw }, { confirm = false, load = false })
@@ -323,10 +336,12 @@ function M.load(config)
       if not ok then utils.notify('Setup error: ' .. tostring(err), vim_log_levels.ERROR) end
     end
 
-    local duration = (hrtime() - start_ms) / 1e6
-    local scanner = package.loaded['resonance.scanner']
-    if not scanner then scanner = require('resonance.scanner') end
+    if current_name then
+      visiting_path[current_name] = nil
+    end
 
+    local duration = (hrtime() - start_ms) / 1e6
+    local scanner = package.loaded['resonance.scanner'] or require('resonance.scanner')
     for i = 1, #parsed_names do
       scanner.load_times[parsed_names[i]] = duration
     end
@@ -335,19 +350,19 @@ function M.load(config)
       config._replay_done = true
       local chain = ev.event ~= 'User' and get_event_chain(ev.event, ev.buf, ev.data) or {}
       for c = 1, #chain do
-        local opts = chain[c]
-        if next(opts.exclude) == nil then
-          exec_autocmds(opts.event, { buf = opts.buf, modeline = false, data = opts.data })
+        local c_opts = chain[c]
+        if next(c_opts.exclude) == nil then
+          exec_autocmds(c_opts.event, { buf = c_opts.buf, modeline = false, data = c_opts.data })
         else
           local done = {}
-          local autocmds = get_autocmds({ event = opts.event })
+          local autocmds = get_autocmds({ event = c_opts.event })
           for a = 1, #autocmds do
             local autocmd = autocmds[a]
             local id = autocmd.event .. ':' .. tostring(autocmd.group or '')
-            if autocmd.group and not done[id] and not opts.exclude[autocmd.group_name] then
+            if autocmd.group and not done[id] and not c_opts.exclude[autocmd.group_name] then
               done[id] = true
-              exec_autocmds(opts.event,
-                { buf = opts.buf, group = autocmd.group_name, modeline = false, data = opts.data })
+              exec_autocmds(c_opts.event,
+                { buf = c_opts.buf, group = autocmd.group_name, modeline = false, data = c_opts.data })
             end
           end
         end
@@ -355,15 +370,28 @@ function M.load(config)
     end
   end
 
-  config._force_load = load_now
+  config._force_load = function(ev, visiting_path)
+    load_now(ev, visiting_path)
+  end
 
   if config.event then
     local ev = type(config.event) == 'string' and { config.event } or config.event
     local event_name = ev[1]
-    local pattern = ev[2] or ev.pattern
     local opts = { once = true, callback = load_now }
-    if event_name == 'User' and pattern then opts.pattern = pattern end
-    create_autocmd(event_name == 'User' and 'User' or ev, opts)
+
+    if event_name == 'User' then
+      opts.pattern = ev[2] or ev.pattern
+      create_autocmd('User', opts)
+    else
+      if ev.pattern then opts.pattern = ev.pattern end
+      local events = {}
+      for i = 1, #ev do
+        if type(ev[i]) == 'string' then
+          events[#events + 1] = ev[i]
+        end
+      end
+      create_autocmd(events, opts)
+    end
   end
 
   if config.cmd then
@@ -386,8 +414,7 @@ function M.load(config)
         end
         local ok, err = pcall(nvim_cmd, cmd_opts)
         if not ok then
-          require('resonance.utils').notify('Execution failed: ' .. tostring(err),
-            vim.log.levels.ERROR)
+          utils.notify('Execution failed: ' .. tostring(err), vim_log_levels.ERROR)
         end
       end, { nargs = '*', bang = true, range = true, complete = 'file' })
     end
@@ -406,7 +433,8 @@ function M.load(config)
           local target_buf = opts.buf or opts.buffer
           local del_opts = target_buf and { buf = target_buf } or {}
           if opts.buffer then
-            opts.buf = opts.buffer; opts.buffer = nil
+            opts.buf = opts.buffer
+            opts.buffer = nil
           end
 
           pcall(del_keymap, mode, lhs, del_opts)

@@ -188,6 +188,21 @@ local function parse_trigger(config)
   return nil
 end
 
+local function normalize_pack_spec(plugin)
+  if type(plugin) ~= 'table' then return plugin end
+
+  local src = plugin.src or plugin.url or plugin[1]
+  if not src then return plugin end
+
+  return {
+    src = src,
+    name = plugin.name,
+    version = plugin.version,
+    data = plugin.data,
+  }
+end
+
+
 local function get_event_chain(event, buf, data)
   local chain = {}
   local event_triggers = { FileType = 'BufReadPost', BufReadPost = 'BufReadPre' }
@@ -221,7 +236,16 @@ function M.load(config)
     return
   end
 
-  config.plugin = config.plugin or config[1] or config.url
+  if not config.plugin and (config.src or config.url or type(config[1]) == 'string') then
+    config.plugin = {
+      src = config.src or config.url or config[1],
+      name = config.name,
+      version = config.version,
+      data = config.data,
+    }
+  else
+    config.plugin = config.plugin or config[1]
+  end
   config.setup = config.setup or config.config
 
   local plugins = config.plugin
@@ -233,6 +257,7 @@ function M.load(config)
     end
   end
   plugins = plugins or {}
+  local pack_plugins = {}
 
   local trig_str = parse_trigger(config)
   local parsed_names = {}
@@ -242,8 +267,8 @@ function M.load(config)
     local deps = type(config.dependencies) == 'table' and config.dependencies or
       { config.dependencies }
     for i = 1, #deps do
-      local dep = deps[i]
-      local target_url = type(dep) == 'string' and dep or (dep.src or dep.url or dep[1])
+      local dep = normalize_pack_spec(deps[i])
+      local target_url = type(dep) == 'string' and dep or (dep.src or dep[1])
       local dep_name = (type(dep) == 'table' and dep.name) or
         (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
       if dep_name then
@@ -254,8 +279,10 @@ function M.load(config)
 
   for p = 1, #plugins do
     local plugin = plugins[p]
-    local target_url = type(plugin) == 'string' and plugin or (plugin.src or plugin.url or plugin[1])
-    local name = (type(plugin) == 'table' and plugin.name) or
+    local pack_plugin = normalize_pack_spec(plugin)
+    pack_plugins[p] = pack_plugin
+    local target_url = type(pack_plugin) == 'string' and pack_plugin or (pack_plugin.src or pack_plugin[1])
+    local name = (type(pack_plugin) == 'table' and pack_plugin.name) or
       (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
 
     if name and trig_str then M.plugin_triggers[name] = trig_str end
@@ -323,8 +350,8 @@ function M.load(config)
 
     local start_ms = hrtime()
 
-    if #plugins > 0 then
-      pcall(pack_add, plugins, { confirm = false, load = false })
+    if #pack_plugins > 0 then
+      pcall(pack_add, pack_plugins, { confirm = false, load = false })
     end
 
     for i = 1, #parsed_names do

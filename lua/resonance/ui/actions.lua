@@ -24,82 +24,49 @@ function M.check_updates_network()
   st.state.checking = true
   render_mod.schedule_render()
 
-  local completed = 0
-  local total = st.state.info.total
-  local MAX_CONCURRENT = 8
-  local running = 0
-  local queue = {}
+  schedule(function()
+    if not (vim.pack and vim.pack.get) then
+      st.state.checking = false
+      render_mod.schedule_render()
+      return
+    end
 
-  local function on_all_completed()
-    schedule(function()
-      if vim.pack and vim.pack.get then
-        local ok, packs = pcall(vim.pack.get, nil, { offline = true })
-        if ok and type(packs) == 'table' then
-          local pending_count = 0
-          local log_completed = 0
-          for p = 1, #packs do
-            local pk = packs[p]
-            if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
-              pending_count = pending_count + 1
-              local name = pk.spec.name
-              system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
-                { cwd = pk.path, text = true },
-                function(out)
-                  if out.code == 0 and out.stdout and vim_trim(out.stdout) ~= '' then
-                    local lines = {}
-                    for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
-                    st.state.updates[name] = lines
-                  end
-                  log_completed = log_completed + 1
-                  if log_completed >= pending_count then
-                    st.state.checking = false
-                    render_mod.schedule_render()
-                  end
-                end)
+    local ok, packs = pcall(vim.pack.get, nil, { info = true, offline = false })
+    if not ok or type(packs) ~= 'table' then
+      st.state.checking = false
+      render_mod.schedule_render()
+      return
+    end
+
+    local pending_count = 0
+    local log_completed = 0
+    for p = 1, #packs do
+      local pk = packs[p]
+      if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
+        pending_count = pending_count + 1
+        local name = pk.spec.name
+        system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
+          { cwd = pk.path, text = true },
+          function(out)
+            if out.code == 0 and out.stdout and vim_trim(out.stdout) ~= '' then
+              local lines = {}
+              for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
+              st.state.updates[name] = lines
             end
-          end
-          if pending_count == 0 then
-            st.state.checking = false; render_mod.schedule_render()
-          end
-        else
-          st.state.checking = false; render_mod.schedule_render()
-        end
+            log_completed = log_completed + 1
+            if log_completed >= pending_count then
+              st.state.checking = false
+              render_mod.schedule_render()
+            end
+          end)
       end
-    end)
-  end
-
-  local queue_idx = 1
-  local function process_queue()
-    while running < MAX_CONCURRENT and queue_idx <= #queue do
-      local p_path = queue[queue_idx]
-      queue_idx = queue_idx + 1
-      running = running + 1
-      system({ 'git', 'fetch', '--quiet' }, { cwd = p_path }, function(_)
-        running = running - 1
-        completed = completed + 1
-        if completed >= total then
-          on_all_completed()
-        else
-          process_queue()
-        end
-      end)
     end
-  end
 
-  for i = 1, total do
-    local p_path = st.state.info.plugins.path[i]
-    if uv_fs_stat(p_path .. '/.git') then
-      queue[#queue + 1] = p_path
-    else
-      completed = completed + 1
+    if pending_count == 0 then
+      st.state.checking = false
+      render_mod.schedule_render()
     end
-  end
-
-  if #queue > 0 then
-    process_queue()
-  else
-    on_all_completed()
-  end
+  end)
 end
 
 function M.toggle_details()

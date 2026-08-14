@@ -11,7 +11,8 @@
 - **Zero Dependencies:** Works out of the box. Native UI fallback is provided if you prefer a minimalist setup.
 - **Pretty UI:** Gracefully upgrades its UI and search capabilities if `snacks.nvim` or `nui.nvim` are detected.
 - **Advanced Lazy Loading:** Load plugins on `Event`, `Cmd`, `Keys`, or `FileType`.
-- **Automatic Build Hooks:** Intercepts `PackChanged` events to automatically run `make`, `cargo`, or custom lua functions when a plugin is installed/updated.
+- **Automatic Build Hooks:** Intercepts `PackChanged` events to automatically run `make`, `cargo`, or custom Lua functions when a plugin is installed or updated.
+- **Native Update Discovery:** Checks pending updates with `vim.pack.get()` and displays the commits from the installed revision to the resolved target revision.
 - **Fast:** Built entirely on Neovim's native `vim.pack` and modern `vim.system` APIs.
 
 ## Preview Image
@@ -114,6 +115,12 @@ event = { "User", pattern = "VeryLazy" }
 event = { "User", pattern = "MasonLoaded" }
 ```
 
+### Package Specs
+
+Resonance accepts native `vim.pack` fields: `src`, `name`, `version`, and `data`. A source can also be supplied as the first positional value or through the `url` compatibility alias; Resonance normalizes both to `src` before calling `vim.pack.add()`.
+
+Each entry needs at least one lazy trigger: `event`, `cmd`, `keys`, or `ft`.
+
 ### 📝 Complete Example
 
 ```lua
@@ -121,7 +128,7 @@ local resonance = require('resonance')
 
 resonance.load({
   {
-    "https://github.com/<author>/<plugin1_name>",
+    src = "https://github.com/<author>/<plugin1_name>",
 
     dependencies = "https://github.com/<author>/<plugin2_name>",
 
@@ -130,14 +137,12 @@ resonance.load({
     cmd = {'cmd1', 'cmd2'},
 
     keys = {
-      { 'n', '<leader>Tg', '<cmd>cmd1<CR>', { desc = 'Open someting' } },
+      { 'n', '<leader>Tg', '<cmd>cmd1<CR>', { desc = 'Open something' } },
       { 'n', '<leader>TL', '<cmd>cmd2<CR>', { desc = 'Do something' } },
     },
 
-    -- NOTE: event is compulsory 
     event = { "BufReadPre", "BufNewFile" },
-    -- or just single event like [event = "VeryLazy",]
-
+    -- For VeryLazy, use: event = { "User", pattern = "VeryLazy" }
     config = function()
 
       local name = require('plugin1_name')
@@ -257,11 +262,11 @@ _G.start_time = vim.uv.hrtime()
 > When the Resonance panel is open:
 
 - `H` : Jump to home (top)
-- `U` : Trigger plugin updates (vim.pack.update())
-- `u` : Trigger plugin updates (vim.pack.update()) *single plugin
-- `dd`: Delete plugin
-- `c` : Checkout specific plugin's available branch/commit/tag
-- `r` : Resonate (refresh and fetch plugin updates)
+- `U` : Update all plugins (`vim.pack.update()`)
+- `u` : Update the plugin at the cursor (`vim.pack.update()`)
+- `dd`: Delete the plugin at the cursor
+- `c` : Check out an available branch, commit, or tag
+- `r` : Check for pending updates (`vim.pack.get()` fetches and resolves package revisions)
 - `S` : Search inside plugins source code (Powered by Snacks.picker / Telescope / Native vimgrep)
 - `s` : Skip plugin update
 - `D` : Open plugin directory

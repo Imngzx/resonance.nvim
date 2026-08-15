@@ -2,8 +2,6 @@ local M = {}
 
 local pcall = pcall
 local type = type
-local string_gsub = string.gsub
-local string_lower = string.lower
 local vim_notify = vim.notify
 local jit_os = jit and jit.os or nil
 

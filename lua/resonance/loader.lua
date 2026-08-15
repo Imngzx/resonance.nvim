@@ -1,4 +1,3 @@
----@diagnostic disable: undefined-field
 local M = {}
 local utils = require('resonance.utils')
 
@@ -59,12 +58,26 @@ local function get_plugin_dir(name)
     _plugin_dir_cache = {}
   end
 
+  -- Fast path: check core/opt first (most plugins live here)
   local fast_path = core_opt_base .. name
   if fs_stat(fast_path) then
     _plugin_dir_cache[name] = fast_path
     return fast_path
   end
 
+  -- Try vim.pack.get() for O(1) lookup (Neovim 0.13+)
+  if vim.pack and vim.pack.get then
+    local ok, packs = pcall(vim.pack.get, nil, { info = false, offline = true })
+    if ok and type(packs) == 'table' then
+      for i = 1, #packs do
+        local p = packs[i]
+        _plugin_dir_cache[p.spec.name] = p.path
+      end
+      if _plugin_dir_cache[name] then return _plugin_dir_cache[name] end
+    end
+  end
+
+  -- Fallback: original filesystem scan (populates cache for all plugins)
   local req = fs_scandir(pack_dir_base)
   if req then
     while true do

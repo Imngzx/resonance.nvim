@@ -86,7 +86,15 @@ end
 function M.plugin_at_cursor()
   if not M.state.win or not nvim_win_is_valid(M.state.win) then return nil end
   local row = nvim_win_get_cursor(M.state.win)[1]
-  return M.state.line_to_name[row]
+  local name = M.state.line_to_name[row]
+  -- If cursor on detail line, search upward for nearest plugin
+  if not name then
+    for r = row - 1, 1, -1 do
+      name = M.state.line_to_name[r]
+      if name then break end
+    end
+  end
+  return name
 end
 
 function M.get_src_url(path)

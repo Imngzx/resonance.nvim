@@ -9,8 +9,8 @@ local math_max = math.max
 local math_min = math.min
 local string_format = string.format
 local type = type
-local tostring = tostring
-local vim_schedule = vim.schedule
+local vim_list_slice = vim.list_slice
+ local vim_schedule = vim.schedule
 
 local nvim_win_is_valid = api.nvim_win_is_valid
 local nvim_win_get_width = api.nvim_win_get_width
@@ -165,7 +165,6 @@ local function build_content()
       for c = 1, math_min(#commits, 12) do
         local hash, msg = commits[c]:match('^(%x+)%s+(.*)$')
         if hash then
-          mark_row(p_name, true)
           add('      ' .. hash .. ' ', 'Number')
           local c_type, c_rest = msg:match('^([%w_-]+!?:)(.*)$')
           if c_type then
@@ -177,35 +176,35 @@ local function build_content()
         end
       end
       if #commits > 12 then
-        mark_row(p_name, true); add('      ... ' .. tostring(#commits - 12) .. ' more commits',
+        add('      ... ' .. tostring(#commits - 12) .. ' more commits',
           'Comment'); nl()
       end
     end
 
     if st.state.expanded[p_name] then
-      mark_row(p_name, true); add('      status: ', 'Comment'); add(
+      add('      status: ', 'Comment'); add(
         is_loaded and 'active' or 'inactive', is_loaded and 'String' or 'Comment'); nl()
       local pk = st.state.pack_details[p_name]
       if pk then
         if pk.branches and #pk.branches > 0 then
-          mark_row(p_name, true); add('      branch: ', 'Comment'); add(
+          add('      branch: ', 'Comment'); add(
             table_concat(pk.branches, ', '), 'String'); nl()
         end
         if pk.tags and #pk.tags > 0 then
           local display_tags = #pk.tags > 5
             and (table_concat(vim_list_slice(pk.tags, 1, 5), ', ') .. ' ...')
             or table_concat(pk.tags, ', ')
-          mark_row(p_name, true); add('      tags:   ', 'Comment'); add(display_tags, 'Type'); nl()
+          add('      tags:   ', 'Comment'); add(display_tags, 'Type'); nl()
         end
       end
 
-      mark_row(p_name, true); add('      path:   ', 'Comment'); add(p_path, 'Normal'); nl()
-      mark_row(p_name, true); add('      src:    ', 'Comment')
+      add('      path:   ', 'Comment'); add(p_path, 'Normal'); nl()
+      add('      src:    ', 'Comment')
       if not st.state.urls[p_name] then st.state.urls[p_name] = st.get_src_url(p_path) end
       add(st.state.urls[p_name], 'Underlined'); nl()
 
       if st.state.commits[p_name] then
-        mark_row(p_name, true); add('      commit: ', 'Comment'); add(st.state.commits[p_name],
+        add('      commit: ', 'Comment'); add(st.state.commits[p_name],
           'Number'); nl()
       end
       nl()

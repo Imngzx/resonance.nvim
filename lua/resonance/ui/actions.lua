@@ -17,7 +17,6 @@ local ui_input = vim.ui.input
 local vim_log_levels = vim.log.levels
 local string_format = string.format
 
-local last_toggle_time = 0
 local spinner_timer = nil
 
 local function stop_spinner()
@@ -56,7 +55,7 @@ function M.check_updates_network()
   start_spinner()
   render_mod.render()
 
-  schedule(function()
+  vim.defer_fn(function()
     if not (vim.pack and vim.pack.get) then
       finish_check()
       return
@@ -92,21 +91,25 @@ function M.check_updates_network()
     end
 
     if pending_count == 0 then
-      finish_check()
+      -- Allow spinner to animate for a bit even when no updates
+      vim.defer_fn(finish_check, 200)
     end
-  end)
+  end, 1)
 end
 
 function M.toggle_details()
-  local now = uv_hrtime() / 1e6
-  if now - last_toggle_time < 200 then return end
-  last_toggle_time = now
-
   local name = st.plugin_at_cursor()
-  if not name then return end
+  -- If cursor on detail line (nil), fall back to first plugin
+  if not name then
+    local info = st.state.info
+    if info and info.plugins and info.plugins.name and #info.plugins.name > 0 then
+      name = info.plugins.name[1]
+    else
+      return
+    end
+  end
   st.state.expanded[name] = not st.state.expanded[name]
-  st.state.restore_cursor_name = name
-
+  -- Don't set restore_cursor_name for interactive toggles - user controls cursor
   if st.state.expanded[name] and vim.pack and vim.pack.get then
     local pk = st.state.pack_details[name]
     if not pk or not pk.branches then
@@ -116,7 +119,7 @@ function M.toggle_details()
       end
     end
   end
-  render_mod.schedule_render()
+  render_mod.render()
 end
 
 function M.update_plugins(names)
@@ -155,7 +158,7 @@ end
 function M.uninstall_plugin(name)
   if not name then return end
   local choice = fn_confirm('Uninstall ' .. name .. ' from disk?', '&Yes\n&No', 2)
-  if choice ~= 1 then return end
+  if choice != 1 then return end
 
   if vim.pack and vim.pack.del then
     utils.notify('Uninstalling ' .. name .. '...', vim_log_levels.INFO)

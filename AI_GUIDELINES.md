@@ -2,14 +2,14 @@
 
 > **Purpose**: Step-by-step reference for AI assistants working on this codebase.  
 > **Audience**: Any AI agent (Cursor, Claude, Copilot, etc.) editing `resonance.nvim`.  
-> **Last Updated**: 2026-08-15
+> **Last Updated**: 2026-08-16
 
 ---
 
 ## 1. Repository Overview
 
 | Aspect | Detail |
-| -------- | -------- |
+|--------|--------|
 | **Type** | Neovim plugin — lazy-loader + UI wrapper around native `vim.pack` (Neovim 0.13+) |
 | **Entry Point** | `lua/resonance/init.lua` → `require('resonance').setup()` |
 | **Core Modules** | `loader.lua` (install/load/lazy), `scanner.lua` (discovery), `ui/` (picker) |
@@ -21,7 +21,7 @@
 ## 2. Available Tools on This Machine
 
 | Tool | Path | Purpose |
-| ------ | ------ | --------- |
+|------|------|---------|
 | `vim-startuptime` | `~/go/bin/vim-startuptime` | **Primary benchmark** — measures Neovim startup with custom args |
 | `rg` (ripgrep) | System `rg` | Fast code search (prefer over `grep`) |
 | `nvim` | System `nvim` (0.13+) | Headless testing: `nvim --headless -c "..." -c "qall"` |
@@ -52,7 +52,7 @@ nvim --headless -c "lua local t=vim.uv.hrtime(); require('resonance.scanner').ge
 ### `scanner.lua` — Replaced O(n) Filesystem Walk with `vim.pack.get()`
 
 | Before | After |
-| -------- | ------- |
+|--------|-------|
 | Manual `fs_scandir` of `pack/*/{start,opt}/*` | `vim.pack.get({info=false, offline=true})` — 0.3ms |
 | Heuristic loaded detection (`path ∈ rtp`) | Exact `p.active` from `vim.pack` |
 | No pending update info | `rev_to`, `manifest`, `branches`, `tags` available |
@@ -88,7 +88,7 @@ scanner.get_detailed_info() -- or scanner.get_info({info=true, offline=false})
 ### Startup Time (`vim-startuptime`, 10 runs, `-u NONE`)
 
 | Version | Avg (ms) | Min (ms) | Max (ms) |
-| --------- | ---------- | ---------- | ---------- |
+|---------|----------|----------|----------|
 | Original scanner | 0.947 | 0.808 | 1.252 |
 | **Optimized scanner** | **0.919** | **0.786** | **1.129** |
 | Original loader | — | — | — |
@@ -99,7 +99,7 @@ scanner.get_detailed_info() -- or scanner.get_info({info=true, offline=false})
 ### UI Open Time
 
 | Version | Time |
-| --------- | ------ |
+|---------|------|
 | Original scanner (online `vim.pack.get`) | ~5000 ms |
 | **Optimized scanner (offline default)** | **~15 ms** |
 | Fallback (`vim.pack = nil`) | ~15 ms |
@@ -107,7 +107,7 @@ scanner.get_detailed_info() -- or scanner.get_info({info=true, offline=false})
 ### `vim.pack.get()` Latency
 
 | Call | Time |
-| ------ | ------ |
+|------|------|
 | `info=true, offline=false` (network) | ~2150 ms |
 | `info=true, offline=true` | ~318 ms |
 | `info=false, offline=true` (default) | **~0.3 ms** |
@@ -218,7 +218,7 @@ git commit -m "perf: optimize scanner/loader with vim.pack.get offline cache"
 ## 8. Debugging Checklist
 
 | Symptom | Check |
-| --------- | ------- |
+|---------|-------|
 | UI slow to open | `scanner.get_info()` using `offline=false`? |
 | Plugin not loading | Trigger registered in `M.plugin_triggers`? `:packadd` called? |
 | Build not running | `PackChanged` firing? `M.build_hooks[name]` set? |
@@ -230,7 +230,7 @@ git commit -m "perf: optimize scanner/loader with vim.pack.get offline cache"
 ## 9. Reference: `vim.pack` API Used
 
 | Function | Purpose | Resonance Usage |
-| ---------- | --------- | ----------------- |
+|----------|---------|-----------------|
 | `vim.pack.add(specs, {confirm=false, load=false})` | Install plugins | `loader.lua:354` |
 | `vim.pack.get(names?, {info, offline})` | Query installed | `scanner.lua`, `loader.lua`, `ui/actions.lua` |
 | `vim.pack.update(names?, {force, offline})` | Update plugins | `ui/actions.lua:103` |
@@ -261,4 +261,131 @@ git show HEAD:lua/resonance/loader.lua > ~/.local/share/nvim/site/pack/core/opt/
 
 ---
 
-*Generated 2026-08-15. Update this file when architecture changes.*
+## 12. AI Workflow & Communication Patterns
+
+### Todo System (Mandatory for Multi-Step Work)
+
+**Initialize at start of any multi-step task:**
+```lua
+todo(i="Brief purpose", op="init", list=[{"phase": "PhaseName", "items": ["Task 1", "Task 2"]}])
+```
+
+**Update as work progresses:**
+```lua
+todo(i="Task description", op="start", task="Task 1", phase="PhaseName")
+todo(i="Task description", op="done", task="Task 1", phase="PhaseName")
+```
+
+**Phase transitions are automatic** — earliest incomplete task in phase order becomes active.
+
+**Purpose:** Gives user clear visibility into what's being worked on, what's done, and what's next.
+
+---
+
+### Code Editing Patterns
+
+#### Use `edit` tool with anchored patches (not `write` for modifications)
+
+```lua
+edit(i="Purpose", input=[[
+*** Begin Patch
+[lua/resonance/ui/render.lua#HASH]
+PUT 25.=25:
++local NEW_CONSTANT = 'value'
+PUT 100.=100:
+  local x = NEW_CONSTANT
+*** End Patch
+]])
+```
+
+**Rules:**
+- Always read file first to get current `#HASH`
+- Use `PUT N.=M:` for replacements, `PUT <N:`/`PUT >N:` for insertions
+- Body rows start with `+` (literal `-` → `+-`)
+- Never use `-` lines — the range defines what's removed
+- After edit, re-read if doing sequential edits to same file
+
+#### Use `write` only for:
+- New files
+- Complete rewrites (when patch would be >50% of file)
+- Generated files
+
+---
+
+### Benchmark-Driven Development
+
+**Every performance change must:**
+1. Measure baseline with `vim-startuptime -count 10 -warmup 3`
+2. Make change
+3. Re-measure — **no regression allowed**
+3. Document before/after in commit message
+
+**UI timing test template:**
+```bash
+nvim --headless -c "luafile lua/resonance/init.lua" \
+  -c "lua require('resonance').setup(); local t=vim.uv.hrtime(); require('resonance').open_ui(); print('UI open:', (vim.uv.hrtime()-t)/1e6, 'ms')" -c "qall"
+```
+
+---
+
+### Sync Discipline
+
+| Action | Command |
+|--------|---------|
+| Sync single file | `cp lua/resonance/ui/render.lua ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/ui/render.lua` |
+| Sync all UI | `cp lua/resonance/ui/*.lua ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/ui/` |
+| Sync all core | `cp lua/resonance/*.lua ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/` |
+
+**Always test in installed location** — user runtime environment.
+
+---
+
+### Testing Patterns
+
+#### Headless UI test (with frame capture):
+```bash
+nvim --headless -c "set rtp+=/home/alice/Projects/code/lua/resonance.nvim" \
+  -c "lua require('resonance').setup(); require('resonance').open_ui(); local a=require('resonance.ui.actions'); a.check_updates_network(); local st=require('resonance.ui.state'); for i=1,12 do vim.wait(50); local buf=st.state.buf; if buf then local lines=vim.api.nvim_buf_get_lines(buf, 11, 14, false); print('T+'..(i*50)..'ms checking='..tostring(st.state.checking)..' frame='..st.state.spinner_frame..' '..vim.inspect(lines[1])) end end" -c "sleep 5000m" -c "qall"
+```
+
+#### Fallback test (no vim.pack):
+```bash
+nvim --headless -c "lua vim.pack=nil" -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); local info=require('resonance.scanner').get_info(); print('fallback:', info.total)" -c "qall"
+```
+
+#### Load test:
+```bash
+nvim --headless -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); require('resonance').load({src='https://github.com/neovim/nvim-lspconfig', event='LspAttach'})" -c "qall"
+```
+
+---
+
+## 13. Recent Optimizations (2026-08-16)
+
+### UI Render (`render.lua`)
+
+| Optimization | Change |
+|--------------|--------|
+| Cached static button lines | `BUTTONS` table at module scope |
+| Pre-computed type labels | `TYPE_LABELS = {opt='[opt]', start='[start]'}` |
+| Cached `stats()` call | `_cached_stats` memoization |
+| Pre-fetched src URLs | Async in `init.lua` `load_commits_async()` |
+
+### Actions (`actions.lua`)
+
+| Optimization | Change |
+|--------------|--------|
+| Localize `uv_hrtime` | `local uv_hrtime = vim.uv.hrtime` |
+| All imports used | No dead code |
+| `schedule` → `vim.defer_fn(..., 1)` | Spinner gets one event-loop tick |
+| `finish_check` delayed 200ms | Spinner visible when no updates |
+
+### State (`state.lua`)
+
+| Addition | Purpose |
+|----------|---------|
+| `spinner_frame` | Module-global frame counter for 30fps animation |
+
+---
+
+*Generated 2026-08-15. Updated 2026-08-16 with AI workflow patterns.*

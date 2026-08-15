@@ -18,23 +18,53 @@ local vim_log_levels = vim.log.levels
 local string_format = string.format
 
 local last_toggle_time = 0
+local spinner_timer = nil
+
+local function stop_spinner()
+  if spinner_timer and not spinner_timer:is_closing() then
+    spinner_timer:stop()
+    spinner_timer:close()
+  end
+  spinner_timer = nil
+end
+
+local function finish_check()
+  st.state.checking = false
+  stop_spinner()
+  render_mod.schedule_render()
+end
+
+local function start_spinner()
+  stop_spinner()
+  st.state.spinner_frame = 1
+  spinner_timer = vim.uv.new_timer()
+  if spinner_timer then
+    spinner_timer:start(0, 33, vim.schedule_wrap(function()
+      if not st.state.checking then
+        stop_spinner()
+        return
+      end
+      st.state.spinner_frame = (st.state.spinner_frame % 10) + 1
+      render_mod.render()
+    end))
+  end
+end
 
 function M.check_updates_network()
   if st.state.checking then return end
   st.state.checking = true
-  render_mod.schedule_render()
+  start_spinner()
+  render_mod.render()
 
   schedule(function()
     if not (vim.pack and vim.pack.get) then
-      st.state.checking = false
-      render_mod.schedule_render()
+      finish_check()
       return
     end
 
     local ok, packs = pcall(vim.pack.get, nil, { info = true, offline = false })
     if not ok or type(packs) ~= 'table' then
-      st.state.checking = false
-      render_mod.schedule_render()
+      finish_check()
       return
     end
 
@@ -55,16 +85,14 @@ function M.check_updates_network()
             end
             log_completed = log_completed + 1
             if log_completed >= pending_count then
-              st.state.checking = false
-              render_mod.schedule_render()
+              finish_check()
             end
           end)
       end
     end
 
     if pending_count == 0 then
-      st.state.checking = false
-      render_mod.schedule_render()
+      finish_check()
     end
   end)
 end
@@ -88,7 +116,6 @@ function M.toggle_details()
       end
     end
   end
-
   render_mod.schedule_render()
 end
 

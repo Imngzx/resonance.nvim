@@ -42,8 +42,8 @@ M.ns = nvim_create_namespace('resonance_ui')
 ---@field urls table<string, string>
 ---@field expanded table<string, boolean>
 ---@field checking boolean
+---@field spinner_frame integer
 ---@field pack_details table<string, table>
----@field updating boolean
 ---@field line_to_name table<number, string>
 ---@field name_to_line table<string, number>
 ---@field restore_cursor_name? string
@@ -60,8 +60,8 @@ M.state = {
   expanded = {},
   pack_details = {},
   checking = false,
+  spinner_frame = 1,
   line_to_name = {},
-  updating = false,
   name_to_line = {},
   restore_cursor_name = nil,
 }

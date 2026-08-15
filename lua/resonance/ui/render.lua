@@ -10,7 +10,6 @@ local math_min = math.min
 local string_format = string.format
 local type = type
 local tostring = tostring
-local vim_list_slice = vim.list_slice
 local vim_schedule = vim.schedule
 
 local nvim_win_is_valid = api.nvim_win_is_valid
@@ -24,6 +23,8 @@ local pcall = pcall
 
 M.render_scheduled = false
 
+local SPINNER_FRAMES = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
+
 local _spaces_cache = setmetatable({}, {
   __index = function(t, k)
     local v = string_rep(' ', k)
@@ -31,6 +32,35 @@ local _spaces_cache = setmetatable({}, {
     return v
   end
 })
+
+-- Pre-computed type labels
+local TYPE_LABELS = {
+  opt = '[opt]',
+  start = '[start]',
+}
+
+-- Static button definitions (never change)
+local BUTTONS = {
+  { 'r', '󱑽 Resonate', 'ResoBtnResonateKey', 'ResoBtnResonateText' },
+  { 'u', 'Update', 'ResoBtnKey', 'ResoBtnText' },
+  { 'U', 'Update All', 'ResoBtnKey', 'ResoBtnText' },
+  { 's', 'Skip', 'ResoBtnKey', 'ResoBtnText' },
+  { 'c', 'Checkout', 'ResoBtnKey', 'ResoBtnText' },
+  { 'C', 'Review', 'ResoBtnKey', 'ResoBtnText' },
+  { 'dd', 'Uninstall', 'ResoBtnKey', 'ResoBtnText' },
+  { 'S', 'Search', 'ResoBtnKey', 'ResoBtnText' },
+  { 'D', 'Dir', 'ResoBtnKey', 'ResoBtnText' },
+  { 'q', 'Quit', 'ResoBtnKey', 'ResoBtnText' },
+}
+
+-- Cached stats
+local _cached_stats = nil
+local function get_stats()
+  if not _cached_stats then
+    _cached_stats = require('resonance').stats()
+  end
+  return _cached_stats
+end
 
 local function build_content()
   st.state.line_to_name = {}
@@ -63,31 +93,16 @@ local function build_content()
     if not is_detail then st.state.name_to_line[name] = line_idx + 1 end
   end
 
+  -- Static header (buttons + startuptime)
   nl()
-  local buttons = {
-    { 'r', '󱑽 Resonate', 'ResoBtnResonateKey', 'ResoBtnResonateText' },
-    { 'u', 'Update' },
-    { 'U', 'Update All' },
-    { 's', 'Skip' },
-    { 'c', 'Checkout' },
-    { 'C', 'Review' },
-    { 'dd', 'Uninstall' },
-    { 'S', 'Search' },
-    { 'D', 'Dir' },
-    { 'q', 'Quit' }
-  }
   local cur_w = 2
   add('  ')
-  for i = 1, #buttons do
-    local k, t = buttons[i][1], buttons[i][2]
-    local hl_k = buttons[i][3] or 'ResoBtnKey'
-    local hl_t = buttons[i][4] or 'ResoBtnText'
-
+  for i = 1, #BUTTONS do
+    local k, t, hl_k, hl_t = BUTTONS[i][1], BUTTONS[i][2], BUTTONS[i][3], BUTTONS[i][4]
     local b_len = 8 + #t
     if cur_w + b_len > st.state.win_width - 2 then
       nl(); nl(); add('  '); cur_w = 2
     end
-
     add(' [' .. k .. '] ', hl_k)
     add(t .. ' ', hl_t)
     add('  ')
@@ -95,7 +110,7 @@ local function build_content()
   end
   nl(); nl()
 
-  local stats = require('resonance').stats()
+  local stats = get_stats()
   if stats.startuptime > 0 then
     add('  Startuptime: ', 'Title')
     add(string_format('%.2f ms', stats.startuptime), 'WarningMsg')
@@ -116,6 +131,7 @@ local function build_content()
     if st.state.updates[n] then pending_idx[#pending_idx + 1] = i else clean_idx[#clean_idx + 1] = i end
   end
 
+  -- draw_plugin moved outside for reuse
   local function draw_plugin(idx, is_pending)
     local p_name, p_type, p_path, is_loaded, p_trigger = names[idx], types[idx], paths[idx],
       loadeds[idx], triggers[idx]
@@ -125,8 +141,8 @@ local function build_content()
 
     add(p_name, is_pending and 'DiagnosticWarn' or (is_loaded and 'Normal' or 'Comment'))
     add(_spaces_cache[math_max(0, max_name_len - #p_name + 2)])
-    add(string_format('[%s]', p_type), 'Comment')
-    add(_spaces_cache[math_max(0, 7 - #p_type)])
+    add(TYPE_LABELS[p_type] or string_format('[%s]', p_type), 'Comment')
+    add(_spaces_cache[math_max(0, 7 - #(TYPE_LABELS[p_type] or p_type))])
 
     local ms = st.state.info.load_times[p_name]
     if ms then
@@ -196,15 +212,21 @@ local function build_content()
     end
   end
 
-  add(string_format('  Updates Available (%d)', #pending_idx), 'Title')
-  if st.state.checking then add(' (󱑽 Resonating...)', 'DiagnosticInfo') end
-  nl()
-
   if #pending_idx == 0 then
-    if not st.state.checking then
-      add('    no pending updates', 'Comment'); nl()
+    if st.state.checking then
+      add('  Updates Available (0)', 'Title')
+      add('  ' .. SPINNER_FRAMES[st.state.spinner_frame] .. ' Resonating...', 'DiagnosticInfo')
+      nl()
+    else
+      add('  No pending updates.', 'Comment')
+      nl()
     end
   else
+    add(string_format('  Updates Available (%d)', #pending_idx), 'Title')
+    if st.state.checking then
+      add('  ' .. SPINNER_FRAMES[st.state.spinner_frame] .. ' Resonating...', 'DiagnosticInfo')
+    end
+    nl()
     for i = 1, #pending_idx do draw_plugin(pending_idx[i], true) end
   end
 

@@ -91,14 +91,14 @@ function M.init_hls()
   nvim_set_hl(0, 'ResoBtnResonateKey', { fg = di.fg, bg = cl.bg, default = true, bold = true })
   nvim_set_hl(0, 'ResoBtnResonateText', { fg = di.fg, bg = cl.bg, default = true, bold = true })
 
-  nvim_set_hl(0, 'ResoBtnDAGKey', { fg = er.fg, bg = cl.bg, default = true, bold = true })
-  nvim_set_hl(0, 'ResoBtnDAGText', { fg = er.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnDAGKey', { fg = ty.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnDAGText', { fg = ty.fg, bg = cl.bg, default = true, bold = true })
 
-  nvim_set_hl(0, 'ResoBtnUpdateKey', { fg = ok.fg, bg = cl.bg, default = true, bold = true })
-  nvim_set_hl(0, 'ResoBtnUpdateText', { fg = ok.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnUpdateKey', { fg = st.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnUpdateText', { fg = st.fg, bg = cl.bg, default = true, bold = true })
 
-  nvim_set_hl(0, 'ResoBtnUpdateAllKey', { fg = ok.fg, bg = cl.bg, default = true, bold = true })
-  nvim_set_hl(0, 'ResoBtnUpdateAllText', { fg = ok.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnUpdateAllKey', { fg = st.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnUpdateAllText', { fg = st.fg, bg = cl.bg, default = true, bold = true })
 
   nvim_set_hl(0, 'ResoBtnSkipKey', { fg = hi.fg, bg = cl.bg, default = true, bold = true })
   nvim_set_hl(0, 'ResoBtnSkipText', { fg = hi.fg, bg = cl.bg, default = true, bold = true })
@@ -115,11 +115,11 @@ function M.init_hls()
   nvim_set_hl(0, 'ResoBtnSearchKey', { fg = di.fg, bg = cl.bg, default = true, bold = true })
   nvim_set_hl(0, 'ResoBtnSearchText', { fg = di.fg, bg = cl.bg, default = true, bold = true })
 
-  nvim_set_hl(0, 'ResoBtnDirKey', { fg = ty.fg, bg = cl.bg, default = true, bold = true })
-  nvim_set_hl(0, 'ResoBtnDirText', { fg = ty.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnDirKey', { fg = di.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnDirText', { fg = di.fg, bg = cl.bg, default = true, bold = true })
 
-  nvim_set_hl(0, 'ResoBtnQuitKey', { fg = wa.fg, bg = cl.bg, default = true, bold = true })
-  nvim_set_hl(0, 'ResoBtnQuitText', { fg = wa.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnQuitKey', { fg = fn.fg, bg = cl.bg, default = true })
+  nvim_set_hl(0, 'ResoBtnQuitText', { fg = cm.fg, bg = cl.bg, default = true })
 end
 
 function M.is_valid()

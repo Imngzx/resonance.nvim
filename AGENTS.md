@@ -28,6 +28,7 @@
 | `git` | System `git` | Version control, `git show HEAD:<file>` for original versions |
 | `lua` | Embedded in `nvim` | All Lua execution via `nvim --headless -c "lua ..."` |
 | `bash` and `fish` | Standard | Shell commands, pipelines |
+| `lua-language-server` | `/usr/bin/lua-language-server` (pacman) | LSP diagnostics: `lua-language-server --check=FILE` |
 
 ### Benchmark Command Template
 
@@ -153,10 +154,12 @@ vim-startuptime -count 10 -warmup 3 -- -u NONE -c "luafile ~/.local/share/nvim/s
 nvim --headless -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); local info=require('resonance.scanner').get_info(); print(info.total, info.loaded)" -c "qall"
 nvim --headless -c "lua vim.pack=nil" -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); local info=require('resonance.scanner').get_info(); print('fallback:', info.total)" -c "qall"
 
+# LSP diagnostics (lua-language-server via pacman)
+lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/loader.lua
+
 # Benchmarks (must not regress)
 vim-startuptime -count 10 -warmup 3 -- -u NONE -c "luafile ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/init.lua" -c "lua require('resonance').setup()" -c "qall"
 ```
-
 ### Step 5: Commit
 
 ```bash

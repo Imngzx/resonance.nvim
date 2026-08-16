@@ -45,15 +45,15 @@ local TYPE_LABELS = {
 local BUTTONS = {
   { 'r', '󱑽 Resonate', 'ResoBtnResonateKey', 'ResoBtnResonateText' },
   { 'A', 'DAG', 'ResoBtnDAGKey', 'ResoBtnDAGText' },
-  { 'u', 'Update', 'ResoBtnKey', 'ResoBtnText' },
-  { 'U', 'Update All', 'ResoBtnKey', 'ResoBtnText' },
-  { 's', 'Skip', 'ResoBtnKey', 'ResoBtnText' },
-  { 'c', 'Checkout', 'ResoBtnKey', 'ResoBtnText' },
-  { 'C', 'Review', 'ResoBtnKey', 'ResoBtnText' },
-  { 'dd', 'Uninstall', 'ResoBtnKey', 'ResoBtnText' },
-  { 'S', 'Search', 'ResoBtnKey', 'ResoBtnText' },
-  { 'D', 'Dir', 'ResoBtnKey', 'ResoBtnText' },
-  { 'q', 'Quit', 'ResoBtnKey', 'ResoBtnText' },
+  { 'u', 'Update', 'ResoBtnUpdateKey', 'ResoBtnUpdateText' },
+  { 'U', 'Update All', 'ResoBtnUpdateAllKey', 'ResoBtnUpdateAllText' },
+  { 's', 'Skip', 'ResoBtnSkipKey', 'ResoBtnSkipText' },
+  { 'c', 'Checkout', 'ResoBtnCheckoutKey', 'ResoBtnCheckoutText' },
+  { 'C', 'Review', 'ResoBtnReviewKey', 'ResoBtnReviewText' },
+  { 'dd', 'Uninstall', 'ResoBtnUninstallKey', 'ResoBtnUninstallText' },
+  { 'S', 'Search', 'ResoBtnSearchKey', 'ResoBtnSearchText' },
+  { 'D', 'Dir', 'ResoBtnDirKey', 'ResoBtnDirText' },
+  { 'q', 'Quit', 'ResoBtnQuitKey', 'ResoBtnQuitText' },
 }
 
 -- Cached stats

@@ -77,6 +77,13 @@ function M.init_hls()
   local cm = nvim_get_hl(0, { name = 'Comment' })
   local di = nvim_get_hl(0, { name = 'DiagnosticInfo' })
   local er = nvim_get_hl(0, { name = 'DiagnosticError' })
+  local wa = nvim_get_hl(0, { name = 'DiagnosticWarn' })
+  local ok = nvim_get_hl(0, { name = 'DiagnosticOk' })
+  local hi = nvim_get_hl(0, { name = 'DiagnosticHint' })
+  local st = nvim_get_hl(0, { name = 'Statement' })
+  local ty = nvim_get_hl(0, { name = 'Type' })
+  local co = nvim_get_hl(0, { name = 'Constant' })
+  local sp = nvim_get_hl(0, { name = 'Special' })
 
   nvim_set_hl(0, 'ResoBtnKey', { fg = fn.fg, bg = cl.bg, default = true })
   nvim_set_hl(0, 'ResoBtnText', { fg = cm.fg, bg = cl.bg, default = true })
@@ -86,6 +93,33 @@ function M.init_hls()
 
   nvim_set_hl(0, 'ResoBtnDAGKey', { fg = er.fg, bg = cl.bg, default = true, bold = true })
   nvim_set_hl(0, 'ResoBtnDAGText', { fg = er.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnUpdateKey', { fg = ok.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnUpdateText', { fg = ok.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnUpdateAllKey', { fg = ok.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnUpdateAllText', { fg = ok.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnSkipKey', { fg = hi.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnSkipText', { fg = hi.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnCheckoutKey', { fg = sp.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnCheckoutText', { fg = sp.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnReviewKey', { fg = hi.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnReviewText', { fg = hi.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnUninstallKey', { fg = er.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnUninstallText', { fg = er.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnSearchKey', { fg = di.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnSearchText', { fg = di.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnDirKey', { fg = ty.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnDirText', { fg = ty.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnQuitKey', { fg = wa.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnQuitText', { fg = wa.fg, bg = cl.bg, default = true, bold = true })
 end
 
 function M.is_valid()

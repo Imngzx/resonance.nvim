@@ -3,12 +3,13 @@ local M = {}
 local pcall = pcall
 local type = type
 local string_match = string.match
+local table_concat = table.concat
 local vim_notify = vim.notify
 
 local _snacks_checked = false
 local _snacks_notifier = nil
 
-M.is_windows = function() return jit_os == 'Windows' end
+M.is_windows = function() return jit.os == 'Windows' end
 
 M.fast_normalize = function(path)
   if not path then return path end
@@ -55,14 +56,31 @@ function M.normalize_pack_spec(plugin)
   }
 end
 
--- Parse trigger type from config
+-- Parse trigger type from config (with display icons)
 ---@param config table
 ---@return string|nil
 function M.parse_trigger(config)
-  if config.event then return 'Event' end
-  if config.cmd then return 'Cmd' end
-  if config.keys then return 'Keys' end
-  if config.ft then return 'FileType' end
+  if config.event then
+    if type(config.event) == 'table' then
+      local ev = config.event
+      if ev[1] == 'User' then
+        return '󱐋 User(' .. (ev.pattern or ev[2] or 'Unknown') .. ')'
+      end
+      return '󱐋 ' .. table_concat(ev, ', ')
+    end
+    return '󱐋 ' .. config.event
+  end
+  if config.cmd then
+    local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd
+    return '󰘳 ' .. table_concat(cmds, ', ')
+  end
+  if config.keys then
+    return '󰌌 keys'
+  end
+  if config.ft then
+    local fts = type(config.ft) == 'string' and { config.ft } or config.ft
+    return '󰈔 ' .. table_concat(fts, ', ')
+  end
   return nil
 end
 
@@ -84,7 +102,5 @@ function M.parse_dependencies(config)
   end
   return deps
 end
-
-
 
 return M

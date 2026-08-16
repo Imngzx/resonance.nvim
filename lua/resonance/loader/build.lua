@@ -86,20 +86,25 @@ function M.setup_packchanged_autocmd(get_plugin_dir)
   local create_autocmd = api.nvim_create_autocmd
 
   create_autocmd('PackChanged', {
+    group = api.nvim_create_augroup('ResonanceBuilder', { clear = true }),
     callback = function(args)
       local data = args.data
-      if not data or not data.spec or not data.spec.name then return end
+      if not data or (data.kind ~= 'install' and data.kind ~= 'update') then return end
 
-      local name = data.spec.name
-      local kind = data.kind
+      local spec = data.spec
+      if not spec or not spec.name then return end
+      local name = spec.name
+
       local build_task = M.build_hooks[name]
+      if not build_task then return end
 
-      if build_task and (kind == 'update' or kind == 'install') then
-        local dir = get_plugin_dir(name)
-        if dir then
-          M.check_and_build(name, dir, build_task)
-        end
-      end
+      local dir = data.path or get_plugin_dir(name)
+      if not dir then return end
+
+      system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
+        local curr_hash = (obj.code == 0 and obj.stdout) and vim_trim(obj.stdout) or 'done'
+        schedule(function() M.run_build(name, dir, build_task, curr_hash) end)
+      end)
     end,
   })
 end

@@ -10,9 +10,13 @@
 | File | Responsibility |
 |------|----------------|
 | `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `stats()`, `open_ui()`, `trigger_verylazy()` |
-| `lua/resonance/loader.lua` | Core: DAG resolution, lazy triggers, event replay, build hooks |
+| `lua/resonance/loader/init.lua` | Core: DAG resolution, lazy triggers, event replay, build hooks (entry point) |
+| `lua/resonance/loader/spec.lua` | Plugin config parsing, name extraction, spec normalization |
+| `lua/resonance/loader/triggers.lua` | Event/cmd/keys/ft trigger registration |
+| `lua/resonance/loader/build.lua` | Build hooks, run_build, check_and_build, PackChanged handler |
+| `lua/resonance/loader/dag.lua` | DAG data, replay info, event chain |
 | `lua/resonance/scanner.lua` | Plugin discovery: scans `vim.pack` directories, extracts metadata |
-| `lua/resonance/utils.lua` | Shared utilities: `fast_normalize()`, `notify()` |
+| `lua/resonance/utils.lua` | Shared utilities: `extract_name()`, `normalize_pack_spec()`, `parse_trigger()`, `parse_dependencies()`, `notify()`, `fast_normalize()` |
 | `lua/resonance/ui/init.lua` | UI entry: window/buffer creation, key bindings |
 | `lua/resonance/ui/render.lua` | Rendering: list view + DAG view, extmark highlights |
 | `lua/resonance/ui/state.lua` | UI state: `view_mode`, `dag_data`, `replay_info`, helpers |
@@ -42,7 +46,8 @@ resonance.load({
 })
 ```
 
-### Lazy Trigger Resolution (loader.lua)
+### Lazy Trigger Resolution (loader/)
+
 | Trigger | Mechanism |
 |---------|-----------|
 | `event` | `create_autocmd(event, { once=true, callback=load_now })` |
@@ -167,11 +172,11 @@ perf(render): reuse module-level state arrays
 
 | Issue | Location | Notes |
 |-------|----------|-------|
-| Spec key collision | `loader.lua:298` | Uses repo name only; `owner/repo` collides with `other/repo` |
-| Circular dependency abort | `loader.lua:362` | Detects cycles via ordered `visiting_path._order`, aborts with full path |
-| Spec mutation fixed | `loader.lua:52` | Uses `plugin_state` table keyed by config, no longer mutates user spec |
+| Spec key collision | `loader/init.lua:298` | Uses repo name only; `owner/repo` collides with `other/repo` |
+| Circular dependency abort | `loader/init.lua:362` | Detects cycles via ordered `visiting_path._order`, aborts with full path |
+| Spec mutation fixed | `loader/init.lua:52` | Uses `plugin_state` table keyed by config, no longer mutates user spec |
 | No spec.lua parsing | `scanner.lua` | Misses lazy triggers defined in plugin's `plugin/spec.lua` |
-| `cmd`/`keys`/`ft` no replay | `loader.lua` | Only `event` triggers replay missed autocmds |
+| `cmd`/`keys`/`ft` no replay | `loader/init.lua` | Only `event` triggers replay missed autocmds |
 | UI state not persisted | `state.lua` | `view_mode`, `expanded` reset on reopen |
 
 ---
@@ -197,8 +202,8 @@ All lua_ls diagnostics: **clean** (`.luarc.json` with LuaJIT + Neovim globals)
 3. Add button to `render.lua:BUTTONS` if needed
 
 ### New Lazy Trigger Type
-1. Add parsing in `loader.lua:parse_trigger()`
-2. Register autocmd/command/keymap in `M.load()`
+1. Add parsing in `loader/spec.lua:parse_trigger()`
+2. Register autocmd/command/keymap in `loader/triggers.lua`
 3. Handle replay in `load_now()` if applicable
 
 ### New Render View
@@ -217,22 +222,33 @@ All lua_ls diagnostics: **clean** (`.luarc.json` with LuaJIT + Neovim globals)
 - Per vim.pack help: `PackChanged` event data has `spec` field with resolved name
 
 ### Fix 2: Circular Dependency Detection
-**File:** `loader.lua:347-378`
+**File:** `loader/init.lua:347-378`
 - Uses `visiting_path._order` array to track visit order
 - On cycle: builds full path `A -> B -> C -> A` and aborts with ERROR level
 - Returns early without marking loaded, leaving plugin unloaded
 
 ### Fix 3: Buffer-Local Keymap Restoration
-**File:** `loader.lua:472-507`
+**File:** `loader/init.lua:472-507`
 - Preserves original `opts` table (including `buffer`/`buf`) via `vim.tbl_extend('keep', {}, opts)`
 - Tracks `is_buffer` and `target_buf` before callback mutates `opts`
 - Uses preserved `restore_opts` for re-mapping after plugin loads
 
 ### Fix 4: Spec Mutation Prevention
-**File:** `loader.lua:52-53`
+**File:** `loader/init.lua:52-53`
 - Added `plugin_state = {}` table keyed by config table reference
 - Stores `loaded`, `replay_done` internally instead of on user config
 - `get_dag_data()` reads from `plugin_state[spec]`
+
+### Fix 5: Event Replay Chain (InsertEnter Fix)
+**File:** `loader/dag.lua`, `loader/init.lua`
+- `get_event_chain()` now accepts `buf` and `data` parameters (matches original)
+- Call site fixed: `dag._get_event_chain_internal(ev.event, ev.buf, ev.data)`
+
+### Fix 6: Build System PackChanged Handler
+**File:** `loader/build.lua`
+- Restored `data.path or get_plugin_dir(name)` fallback
+- Added `group = api.nvim_create_augroup('ResonanceBuilder', { clear = true })`
+- Matches original single-file loader behavior exactly
 
 ---
 

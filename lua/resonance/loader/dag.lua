@@ -6,16 +6,23 @@ local get_autocmds = api.nvim_get_autocmds
 
 local type = type
 
-local function get_event_chain(event)
+local function get_event_chain(event, buf, data)
   local chain = {}
   local current = event
   local visited = {}
 
   while current and not visited[current] do
     visited[current] = true
-    local autocmds = get_autocmds({ event = current })
+    local autocmds = get_autocmds({ event = current, buf = buf })
     if #autocmds > 0 then
-      chain[#chain + 1] = current
+      local exclude = {}
+      for a = 1, #autocmds do
+        local autocmd = autocmds[a]
+        if autocmd.group then
+          exclude[autocmd.group_name] = true
+        end
+      end
+      chain[#chain + 1] = { event = current, buf = buf, exclude = exclude, data = data }
     end
 
     if current == 'BufReadPre' then
@@ -98,8 +105,8 @@ function M.get_replay_info(specs, plugin_triggers)
 end
 
 -- Internal helper to get event chain
-function M._get_event_chain_internal(event)
-  return get_event_chain(event)
+function M._get_event_chain_internal(event, buf, data)
+  return get_event_chain(event, buf, data)
 end
 
 return M

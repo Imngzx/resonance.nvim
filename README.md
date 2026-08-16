@@ -267,6 +267,7 @@ _G.start_time = vim.uv.hrtime()
 - `c` : Check out an available branch, commit, or tag
 - `r` : Check for pending updates (`vim.pack.get()` fetches and resolves package revisions)
 - `S` : Search inside plugins source code (Powered by Snacks.picker / Telescope / Native vimgrep)
+- `g` : Check Dependency Graph (DAG) & Event Replay
 - `s` : Skip plugin update
 - `D` : Open plugin directory
 - `q` / Esc : Quit

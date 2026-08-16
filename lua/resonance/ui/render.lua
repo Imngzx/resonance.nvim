@@ -10,7 +10,7 @@ local math_min = math.min
 local string_format = string.format
 local type = type
 local vim_list_slice = vim.list_slice
- local vim_schedule = vim.schedule
+local vim_schedule = vim.schedule
 
 local nvim_win_is_valid = api.nvim_win_is_valid
 local nvim_win_get_width = api.nvim_win_get_width
@@ -36,9 +36,9 @@ _spaces_cache = setmetatable({}, {
 
 -- Pre-computed type labels
 local TYPE_LABELS = {
-  start = 'start',
-  opt = 'opt',
-  core = 'core',
+  start = '[start]',
+  opt = '[opt]',
+  core = '[core]',
 }
 
 -- Static button definitions (never change)

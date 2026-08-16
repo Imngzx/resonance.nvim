@@ -52,13 +52,24 @@ resonance.load({
 
 ### DAG Resolution
 ```lua
--- Recursive DFS with cycle detection
+-- Recursive DFS with cycle detection (FIXED: ordered path tracking + abort on cycle)
 load_now(ev, visiting_path)
+  -- Initialize visiting_path with _order array for cycle path tracking
+  if visiting_path[current_name] then
+    -- Build cycle path in order: A -> B -> A
+    notify('Circular dependency detected: A -> B -> A (aborting)', ERROR)
+    return
+  end
   visiting_path[current_name] = true
+  path_order[#path_order + 1] = current_name
+
+  if state.loaded then return end
+  state.loaded = true
+
   for dep in deps do
-    if not M.specs[dep]._loaded then
-      M.specs[dep]._force_load(ev, visiting_path)
-    end
+    -- Always call _force_load to check visiting_path for cycles
+    -- load_now early-returns if already loaded
+    M.specs[dep.name]._force_load(nil, visiting_path)
   end
   -- pack_add + packadd + setup()
 ```
@@ -157,8 +168,8 @@ perf(render): reuse module-level state arrays
 | Issue | Location | Notes |
 |-------|----------|-------|
 | Spec key collision | `loader.lua:298` | Uses repo name only; `owner/repo` collides with `other/repo` |
-| Silent cycle break | `loader.lua:342` | Warns but doesn't print full cycle path |
-| Spec mutation | `loader.lua:335` | Adds `_loaded`, `_force_load`, `_replay_done` to user spec |
+| Circular dependency abort | `loader.lua:362` | Detects cycles via ordered `visiting_path._order`, aborts with full path |
+| Spec mutation fixed | `loader.lua:52` | Uses `plugin_state` table keyed by config, no longer mutates user spec |
 | No spec.lua parsing | `scanner.lua` | Misses lazy triggers defined in plugin's `plugin/spec.lua` |
 | `cmd`/`keys`/`ft` no replay | `loader.lua` | Only `event` triggers replay missed autocmds |
 | UI state not persisted | `state.lua` | `view_mode`, `expanded` reset on reopen |
@@ -195,6 +206,33 @@ All lua_ls diagnostics: **clean** (`.luarc.json` with LuaJIT + Neovim globals)
 2. Add `build_<view>_content()` before `build_content()`
 3. Add branch in `build_content()`: `if view_mode == 'x' then return build_x() end`
 4. Add key binding in `init.lua`
+
+---
+
+## 9. Recent Fixes (2026-08-16)
+
+### Fix 1: PackChanged Handler Defensive Checks
+**File:** `loader.lua:146-164`
+- Added validation for `data.spec` and `data.spec.name` before accessing
+- Per vim.pack help: `PackChanged` event data has `spec` field with resolved name
+
+### Fix 2: Circular Dependency Detection
+**File:** `loader.lua:347-378`
+- Uses `visiting_path._order` array to track visit order
+- On cycle: builds full path `A -> B -> C -> A` and aborts with ERROR level
+- Returns early without marking loaded, leaving plugin unloaded
+
+### Fix 3: Buffer-Local Keymap Restoration
+**File:** `loader.lua:472-507`
+- Preserves original `opts` table (including `buffer`/`buf`) via `vim.tbl_extend('keep', {}, opts)`
+- Tracks `is_buffer` and `target_buf` before callback mutates `opts`
+- Uses preserved `restore_opts` for re-mapping after plugin loads
+
+### Fix 4: Spec Mutation Prevention
+**File:** `loader.lua:52-53`
+- Added `plugin_state = {}` table keyed by config table reference
+- Stores `loaded`, `replay_done` internally instead of on user config
+- `get_dag_data()` reads from `plugin_state[spec]`
 
 ---
 

@@ -188,6 +188,7 @@ git commit -m "perf: optimize scanner/loader with vim.pack.get offline cache"
 - Localize globals at top: `local uv = vim.uv`, `local fs_scandir = uv.fs_scandir`
 - Avoid `vim.fn` in hot paths — use `vim.uv` / `vim.system`
 - Tables over multiple returns: `{name=..., path=..., loaded=...}`
+- Use luajit syntax
 - Early returns, flat conditionals
 - Comments only for *why*, not *what*
 
@@ -266,11 +267,13 @@ git show HEAD:lua/resonance/loader.lua > ~/.local/share/nvim/site/pack/core/opt/
 ### Todo System (Mandatory for Multi-Step Work)
 
 **Initialize at start of any multi-step task:**
+
 ```lua
 todo(i="Brief purpose", op="init", list=[{"phase": "PhaseName", "items": ["Task 1", "Task 2"]}])
 ```
 
 **Update as work progresses:**
+
 ```lua
 todo(i="Task description", op="start", task="Task 1", phase="PhaseName")
 todo(i="Task description", op="done", task="Task 1", phase="PhaseName")
@@ -299,13 +302,15 @@ PUT 100.=100:
 ```
 
 **Rules:**
+
 - Always read file first to get current `#HASH`
 - Use `PUT N.=M:` for replacements, `PUT <N:`/`PUT >N:` for insertions
 - Body rows start with `+` (literal `-` → `+-`)
 - Never use `-` lines — the range defines what's removed
 - After edit, re-read if doing sequential edits to same file
 
-#### Use `write` only for:
+#### Use `write` only for
+
 - New files
 - Complete rewrites (when patch would be >50% of file)
 - Generated files
@@ -315,12 +320,14 @@ PUT 100.=100:
 ### Benchmark-Driven Development
 
 **Every performance change must:**
+
 1. Measure baseline with `vim-startuptime -count 10 -warmup 3`
 2. Make change
 3. Re-measure — **no regression allowed**
-3. Document before/after in commit message
+4. Document before/after in commit message
 
 **UI timing test template:**
+
 ```bash
 nvim --headless -c "luafile lua/resonance/init.lua" \
   -c "lua require('resonance').setup(); local t=vim.uv.hrtime(); require('resonance').open_ui(); print('UI open:', (vim.uv.hrtime()-t)/1e6, 'ms')" -c "qall"
@@ -342,18 +349,21 @@ nvim --headless -c "luafile lua/resonance/init.lua" \
 
 ### Testing Patterns
 
-#### Headless UI test (with frame capture):
+#### Headless UI test (with frame capture)
+
 ```bash
 nvim --headless -c "set rtp+=/home/alice/Projects/code/lua/resonance.nvim" \
   -c "lua require('resonance').setup(); require('resonance').open_ui(); local a=require('resonance.ui.actions'); a.check_updates_network(); local st=require('resonance.ui.state'); for i=1,12 do vim.wait(50); local buf=st.state.buf; if buf then local lines=vim.api.nvim_buf_get_lines(buf, 11, 14, false); print('T+'..(i*50)..'ms checking='..tostring(st.state.checking)..' frame='..st.state.spinner_frame..' '..vim.inspect(lines[1])) end end" -c "sleep 5000m" -c "qall"
 ```
 
-#### Fallback test (no vim.pack):
+#### Fallback test (no vim.pack)
+
 ```bash
 nvim --headless -c "lua vim.pack=nil" -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); local info=require('resonance.scanner').get_info(); print('fallback:', info.total)" -c "qall"
 ```
 
-#### Load test:
+#### Load test
+
 ```bash
 nvim --headless -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); require('resonance').load({src='https://github.com/neovim/nvim-lspconfig', event='LspAttach'})" -c "qall"
 ```

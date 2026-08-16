@@ -19,9 +19,10 @@
 
 ![Preview Video](https://github.com/user-attachments/assets/f37b574f-6061-493b-95cb-9e9478616b05)
 
-![Preview Image](https://github.com/user-attachments/assets/f4dce883-5346-45db-9727-0fc8f0898303)
+![Preview Image](https://github.com/user-attachments/assets/970436bb-afcf-4a8e-98b0-620b819d720f)
 
-![Preview Image](https://github.com/user-attachments/assets/36ec5afb-23c4-4c3f-a1ae-88eaac56a88f)
+| ![Build notifications](https://github.com/user-attachments/assets/36ec5afb-23c4-4c3f-a1ae-88eaac56a88f) | ![DAG UI](https://github.com/user-attachments/assets/6ef4a31b-fbed-4aa4-9477-4bbd05854c7b) |
+| -------------- | --------------- |
 
 ## 📦 Installation & Configuration
 

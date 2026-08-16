@@ -116,7 +116,7 @@ function M.open(ui_config)
 
   st.state.win_width = math_floor(vim_o.columns * ui_config.width)
   st.state.updates, st.state.commits = {}, {}
-
+  st.state.view_mode = 'list'
   local function load_commits_async()
     if vim.pack and vim.pack.get then
       local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = false })

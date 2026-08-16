@@ -238,13 +238,15 @@ local function build_content()
   local max_name_len = 0
 
   local info = st.state.info
+  if not info then return {}, {} end
+  if not info.plugins then return {}, {} end
   local names = info.plugins.name
   local types = info.plugins.type
   local paths = info.plugins.path
   local loadeds = info.plugins.loaded
   local triggers = info.plugins.trigger
   local updates = st.state.updates
-
+  if not info.total then return {}, {} end
   for i = 1, info.total do
     local n = names[i]
     local nlen = #n
@@ -277,7 +279,7 @@ local function build_content()
     add(type_label and type_label or string_format('[%s]', p_type), 'Comment')
     add(_spaces_cache[math_max(0, 7 - #(type_label or p_type))])
 
-    local ms = st.state.info.load_times[p_name]
+    local ms = info and info.load_times and info.load_times[p_name]
     if ms then
       local t_str = string_format('%.2f ms', ms)
       add(_spaces_cache[math_max(0, 10 - #t_str)])

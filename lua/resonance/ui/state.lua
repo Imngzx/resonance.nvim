@@ -29,10 +29,8 @@ M.ns = nvim_create_namespace('resonance_ui')
 ---@class ResonanceScannerInfo
 ---@field plugins ResonancePluginSOA
 ---@field total integer
----@field loaded integer
 ---@field pack_dir string
 ---@field load_times table<string, number>
-
 ---@class ResonanceUIState
 ---@field buf? integer
 ---@field win? integer
@@ -43,14 +41,15 @@ M.ns = nvim_create_namespace('resonance_ui')
 ---@field urls table<string, string>
 ---@field expanded table<string, boolean>
 ---@field checking boolean
+---@field updating boolean
 ---@field spinner_frame integer
+---@field restore_cursor_name? string
 ---@field pack_details table<string, table>
 ---@field line_to_name table<number, string>
 ---@field name_to_line table<string, number>
 ---@field view_mode string  -- 'list' | 'dag'
 ---@field dag_data table    -- { nodes: table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, edges: table<string, string[]> }
 ---@field replay_info table<string, {event:string, chain:string[], replayed:boolean}>
----@type ResonanceUIState
 M.state = {
   buf = nil,
   win = nil,
@@ -62,6 +61,7 @@ M.state = {
   expanded = {},
   pack_details = {},
   checking = false,
+  updating = false,
   spinner_frame = 1,
   line_to_name = {},
   name_to_line = {},

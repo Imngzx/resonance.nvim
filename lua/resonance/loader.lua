@@ -6,6 +6,9 @@ local uv = vim.uv
 local system = vim.system
 local schedule = vim.schedule
 local pack_add = vim.pack and vim.pack.add or nil
+local function pack_add_safe(...)
+  if pack_add then return pack_add(...) end
+end
 
 local create_autocmd = api.nvim_create_autocmd
 local create_user_command = api.nvim_create_user_command
@@ -400,7 +403,7 @@ function M.load(config)
         -- load_now will early-return if already loaded
         M.specs[dep.name]._force_load(nil, visiting_path)
       else
-        pcall(pack_add, { dep.raw }, { confirm = false, load = false })
+        pcall(pack_add_safe, { dep.raw }, { confirm = false, load = false })
         pcall(nvim_cmd, { cmd = 'packadd', args = { dep.name } })
       end
     end
@@ -408,7 +411,7 @@ function M.load(config)
     local start_ms = hrtime()
 
     if #pack_plugins > 0 then
-      pcall(pack_add, pack_plugins, { confirm = false, load = false })
+      pcall(pack_add_safe, pack_plugins, { confirm = false, load = false })
     end
 
     for i = 1, #parsed_names do

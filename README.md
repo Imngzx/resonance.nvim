@@ -261,7 +261,6 @@ _G.start_time = vim.uv.hrtime()
 > [!TIP]
 > When the Resonance panel is open:
 
-- `H` : Jump to home (top)
 - `U` : Update all plugins (`vim.pack.update()`)
 - `u` : Update the plugin at the cursor (`vim.pack.update()`)
 - `dd`: Delete the plugin at the cursor

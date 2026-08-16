@@ -1,3 +1,4 @@
+-- this file is for ai to troubleshoot since modularity is not yet stable
 local M = {}
 local utils = require('resonance.utils')
 
@@ -649,4 +650,3 @@ function M._get_event_chain_internal(event)
 end
 
 return M
-

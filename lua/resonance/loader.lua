@@ -19,7 +19,6 @@ local parse_cmd = api.nvim_parse_cmd
 local get_autocmds = api.nvim_get_autocmds
 local exec_autocmds = api.nvim_exec_autocmds
 
-local table_insert = table.insert
 local next = next
 local type = type
 local tostring = tostring
@@ -140,7 +139,8 @@ function M.run_build(name, dir, build_task, curr_hash)
         if obj.code == 0 then
           mark_build_success(dir, curr_hash)
         else
-          utils.notify('Build failed for ' .. name .. ': ' .. (obj.stderr or 'unknown'), vim_log_levels.ERROR)
+          utils.notify('Build failed for ' .. name .. ': ' .. (obj.stderr or 'unknown'),
+            vim_log_levels.ERROR)
         end
       end)
     end
@@ -307,7 +307,8 @@ function M.load(config)
     local plugin = plugins[p]
     local pack_plugin = normalize_pack_spec(plugin)
     pack_plugins[p] = pack_plugin
-    local target_url = type(pack_plugin) == 'string' and pack_plugin or (pack_plugin.src or pack_plugin[1])
+    local target_url = type(pack_plugin) == 'string' and pack_plugin or
+      (pack_plugin.src or pack_plugin[1])
     local name = (type(pack_plugin) == 'table' and pack_plugin.name) or
       (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
 
@@ -557,7 +558,8 @@ function M.get_dag_data()
   for name, spec in pairs(M.specs) do
     local deps = {}
     if spec.dependencies then
-      local dep_list = type(spec.dependencies) == 'table' and spec.dependencies or { spec.dependencies }
+      local dep_list = type(spec.dependencies) == 'table' and spec.dependencies or
+        { spec.dependencies }
       for i = 1, #dep_list do
         local dep = normalize_pack_spec(dep_list[i])
         local target_url = type(dep) == 'string' and dep or (dep.src or dep[1])
@@ -643,3 +645,4 @@ function M._get_event_chain_internal(event)
 end
 
 return M
+

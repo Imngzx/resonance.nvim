@@ -503,4 +503,71 @@ function M.load(config)
   end
 end
 
+---@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, table<string, string[]>
+function M.get_dag_data()
+  local nodes = {}
+  local edges = {}
+
+  for name, spec in pairs(M.specs) do
+    local trigger_str = M.plugin_triggers[name] or 'none'
+    local deps = {}
+    if spec.dependencies then
+      local dep_list = type(spec.dependencies) == 'table' and spec.dependencies or { spec.dependencies }
+      for _, dep in ipairs(dep_list) do
+        local dep_spec = type(dep) == 'table' and dep or { src = dep }
+        local dep_name = dep_spec.name or (dep_spec.src and dep_spec.src:match('([^/]+)%.git$') or dep_spec.src and dep_spec.src:match('([^/]+)$'))
+        if dep_name then deps[#deps + 1] = dep_name end
+      end
+    end
+    nodes[name] = {
+      name = name,
+      deps = deps,
+      trigger = trigger_str,
+      loaded = spec._loaded == true,
+    }
+    edges[name] = deps
+  end
+
+  return nodes, edges
+end
+
+---@return table<string, {event:string, chain:string[], replayed:boolean}>
+function M.get_replay_info()
+  local info = {}
+  for name, spec in pairs(M.specs) do
+    if spec._replay_done then
+      local trigger = M.plugin_triggers[name] or 'none'
+      local chain = {}
+      if trigger ~= 'none' and trigger ~= 'Cmd' and trigger ~= 'Keys' and trigger ~= 'FileType' then
+        local ev = type(spec.event) == 'string' and { spec.event } or spec.event
+        if ev and ev[1] then
+          local event_name = ev[1]
+          if event_name ~= 'User' then
+            chain = M._get_event_chain_internal(event_name)
+          end
+        end
+      end
+      info[name] = {
+        event = trigger,
+        chain = chain,
+        replayed = spec._replay_done == true,
+      }
+    end
+  end
+  return info
+end
+
+-- Internal helper to get event chain
+function M._get_event_chain_internal(event)
+  local chain = {}
+  if event == 'BufReadPre' then
+    chain = { 'BufRead', 'BufReadPost' }
+  elseif event == 'BufNewFile' then
+    chain = { 'BufRead', 'BufReadPost' }
+  elseif event == 'FileType' then
+    chain = { 'Syntax' }
+  end
+  return chain
+end
+
 return M

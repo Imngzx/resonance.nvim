@@ -9,7 +9,6 @@ local pcall = pcall
 local type = type
 local tostring = tostring
 local table_concat = table.concat
-local uv_hrtime = vim.uv.hrtime
 local uv_fs_stat = vim.uv.fs_stat
 local vim_trim = vim.trim
 local fn_confirm = vim.fn.confirm
@@ -158,7 +157,7 @@ end
 function M.uninstall_plugin(name)
   if not name then return end
   local choice = fn_confirm('Uninstall ' .. name .. ' from disk?', '&Yes\n&No', 2)
-  if choice != 1 then return end
+  if choice ~= 1 then return end
 
   if vim.pack and vim.pack.del then
     utils.notify('Uninstalling ' .. name .. '...', vim_log_levels.INFO)

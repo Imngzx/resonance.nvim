@@ -1,13 +1,14 @@
 local M = {}
 local api = vim.api
+local uv = vim.uv
 
 local string_match = string.match
 local string_gsub = string.gsub
 local string_sub = string.sub
 local vim_trim = vim.trim
-local uv_fs_open = vim.uv.fs_open
-local uv_fs_close = vim.uv.fs_close
-local uv_fs_read = vim.uv.fs_read
+local uv_fs_open = uv.fs_open
+local uv_fs_close = uv.fs_close
+local uv_fs_read = uv.fs_read
 
 local nvim_create_namespace = api.nvim_create_namespace
 local nvim_get_hl = api.nvim_get_hl
@@ -46,8 +47,9 @@ M.ns = nvim_create_namespace('resonance_ui')
 ---@field pack_details table<string, table>
 ---@field line_to_name table<number, string>
 ---@field name_to_line table<string, number>
----@field restore_cursor_name? string
-
+---@field view_mode string  -- 'list' | 'dag'
+---@field dag_data table    -- { nodes: table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, edges: table<string, string[]> }
+---@field replay_info table<string, {event:string, chain:string[], replayed:boolean}>
 ---@type ResonanceUIState
 M.state = {
   buf = nil,
@@ -64,6 +66,9 @@ M.state = {
   line_to_name = {},
   name_to_line = {},
   restore_cursor_name = nil,
+  view_mode = 'list',
+  dag_data = { nodes = {}, edges = {} },
+  replay_info = {},
 }
 
 function M.init_hls()
@@ -143,6 +148,15 @@ function M.get_local_hash(path)
     return hash and string_sub(hash, 1, 7) or nil
   end
   return nil
+end
+
+function M.refresh_dag_data()
+  local loader = package.loaded['resonance.loader'] or require('resonance.loader')
+  local nodes, edges = loader.get_dag_data()
+  local replay_info = loader.get_replay_info()
+  M.state.dag_data.nodes = nodes
+  M.state.dag_data.edges = edges
+  M.state.replay_info = replay_info
 end
 
 return M

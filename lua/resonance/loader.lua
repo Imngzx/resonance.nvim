@@ -49,6 +49,9 @@ M.build_hooks = {}
 M.plugin_triggers = {}
 M.specs = {}
 
+-- Internal plugin state (separate from user config to avoid mutation)
+local plugin_state = {}
+
 local _plugin_dir_cache = nil
 
 local function get_plugin_dir(name)
@@ -100,6 +103,7 @@ local function get_plugin_dir(name)
       end
     end
   end
+
   return _plugin_dir_cache[name]
 end
 
@@ -113,34 +117,36 @@ end
 
 function M.run_build(name, dir, build_task, curr_hash)
   if not dir or dir == '' then return end
-  utils.notify('[Resonance] Building ' .. name .. '...', vim_log_levels.INFO)
 
-  if type(build_task) == 'string' then
-    local shell = utils.is_windows() and 'cmd' or 'sh'
-    local flag = utils.is_windows() and '/c' or '-c'
-    system({ shell, flag, build_task }, { cwd = dir, text = true }, function(out)
-      schedule(function()
-        if out.code == 0 then
+  local fd = fs_open(dir .. '/.resonance_built', 'r', 438)
+  local last_hash = ''
+  if fd then
+    local stat = fs_fstat(fd)
+    if stat then last_hash = fs_read(fd, stat.size, 0) or '' end
+    fs_close(fd)
+  end
+
+  if last_hash == curr_hash then return end
+
+  local cmd
+  if type(build_task) == 'function' then
+    cmd = function()
+      build_task(dir)
+      mark_build_success(dir, curr_hash)
+    end
+  else
+    cmd = function()
+      system({ 'sh', '-c', build_task }, { cwd = dir, text = true }, function(obj)
+        if obj.code == 0 then
           mark_build_success(dir, curr_hash)
-          utils.notify('[Resonance] Build success: ' .. name, vim_log_levels.INFO)
         else
-          utils.notify('[Resonance] Build failed: ' .. name .. '\n' .. (out.stderr or ''),
-            vim_log_levels.ERROR)
+          utils.notify('Build failed for ' .. name .. ': ' .. (obj.stderr or 'unknown'), vim_log_levels.ERROR)
         end
       end)
-    end)
-  elseif type(build_task) == 'function' then
-    schedule(function()
-      local ok, err = pcall(build_task, dir)
-      if ok then
-        mark_build_success(dir, curr_hash)
-        utils.notify('[Resonance] Build executed: ' .. name, vim_log_levels.INFO)
-      else
-        utils.notify('[Resonance] Build failed: ' .. name .. '\n' .. tostring(err),
-          vim_log_levels.ERROR)
-      end
-    end)
+    end
   end
+
+  schedule(cmd)
 end
 
 create_autocmd('PackChanged', {
@@ -149,7 +155,10 @@ create_autocmd('PackChanged', {
     local data = args.data
     if not data or (data.kind ~= 'install' and data.kind ~= 'update') then return end
 
-    local name = (data.spec and data.spec.name) or data.name or args.match
+    local spec = data.spec
+    if not spec or not spec.name then return end
+    local name = spec.name
+
     local build_task = M.build_hooks[name]
     if not build_task then return end
 
@@ -171,66 +180,70 @@ local function parse_trigger(config)
       else
         local evs = {}
         for i = 1, #config.event do
-          if type(config.event[i]) == 'string' then evs[#evs + 1] = config.event[i] end
+          if type(config.event[i]) == 'string' then
+            evs[#evs + 1] = config.event[i]
+          end
         end
         return '󱐋 ' .. table_concat(evs, ', ')
       end
     end
     return '󱐋 ' .. tostring(config.event)
-  elseif config.cmd then
-    if type(config.cmd) == 'table' then
-      return ' ' .. table_concat(config.cmd, ', ')
-    end
-    return ' ' .. tostring(config.cmd)
-  elseif config.keys then
-    if type(config.keys) == 'table' then
-      local keys = {}
-      for i = 1, #config.keys do
-        local val = config.keys[i][2] or config.keys[i].lhs
-        if val then keys[#keys + 1] = val end
-      end
-      if #keys > 0 then return ' ' .. table_concat(keys, ', ') end
-    end
-    return ' key'
-  elseif config.ft then
-    if type(config.ft) == 'table' then
-      return ' ' .. table_concat(config.ft, ', ')
-    end
-    return ' ' .. tostring(config.ft)
+  end
+  if config.cmd then
+    local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd
+    return '󰘳 ' .. table_concat(cmds, ', ')
+  end
+  if config.keys then
+    return '󰌌 keys'
+  end
+  if config.ft then
+    local fts = type(config.ft) == 'string' and { config.ft } or config.ft
+    return '󰈔 ' .. table_concat(fts, ', ')
   end
   return nil
 end
 
 local function normalize_pack_spec(plugin)
   if type(plugin) ~= 'table' then return plugin end
-
-  local src = plugin.src or plugin.url or plugin[1]
-  if not src then return plugin end
-
   return {
-    src = src,
+    src = plugin.src or plugin.url or plugin[1],
     name = plugin.name,
     version = plugin.version,
     data = plugin.data,
   }
 end
 
-
 local function get_event_chain(event, buf, data)
   local chain = {}
-  local event_triggers = { FileType = 'BufReadPost', BufReadPost = 'BufReadPre' }
-  while event do
-    local groups = {}
-    if event ~= 'FileType' then
-      local autocmds = get_autocmds({ event = event })
-      for i = 1, #autocmds do
-        if autocmds[i].group_name then groups[autocmds[i].group_name] = true end
+  local current = event
+  local visited = {}
+
+  while current and not visited[current] do
+    visited[current] = true
+    local autocmds = get_autocmds({ event = current, buf = buf })
+    if #autocmds > 0 then
+      local exclude = {}
+      for a = 1, #autocmds do
+        local autocmd = autocmds[a]
+        if autocmd.group then
+          exclude[autocmd.group_name] = true
+        end
       end
+      chain[#chain + 1] = { event = current, buf = buf, exclude = exclude, data = data }
     end
-    table_insert(chain, 1, { event = event, buf = buf, exclude = groups, data = data })
-    data = nil
-    event = event_triggers[event]
+
+    -- Get next event in chain (hardcoded common chains)
+    if current == 'BufReadPre' then
+      current = 'BufRead'
+    elseif current == 'BufRead' then
+      current = 'BufReadPost'
+    elseif current == 'BufNewFile' then
+      current = 'BufRead'
+    else
+      break
+    end
   end
+
   return chain
 end
 
@@ -332,29 +345,59 @@ function M.load(config)
   end
 
   local function load_now(ev, visiting_path)
-    if config._loaded then return end
-    config._loaded = true
+    local state = plugin_state[config]
+    if not state then
+      state = { loaded = false }
+      plugin_state[config] = state
+    end
 
-    visiting_path = visiting_path or {}
+    -- Initialize visiting_path if nil
+    if not visiting_path then visiting_path = {} end
+
+    -- Use ordered list for cycle detection to preserve path order
+    local path_order = visiting_path._order
+    if not path_order then
+      path_order = {}
+      visiting_path._order = path_order
+    end
     local current_name = parsed_names[1]
 
     if current_name then
       if visiting_path[current_name] then
+        -- Build cycle path in order
+        local cycle = {}
+        for _, n in ipairs(path_order) do
+          cycle[#cycle + 1] = n
+        end
+        cycle[#cycle + 1] = current_name
         require('resonance.utils').notify(
-          'Circular dependency safely broken: ' .. current_name,
-          vim_log_levels.WARN
+          'Circular dependency detected: ' .. table_concat(cycle, ' -> ') .. ' (aborting)',
+          vim_log_levels.ERROR
         )
         return
       end
       visiting_path[current_name] = true
+      path_order[#path_order + 1] = current_name
     end
+
+    if state.loaded then
+      if current_name then
+        visiting_path[current_name] = nil
+        -- Remove from path_order (last element)
+        if path_order[#path_order] == current_name then
+          path_order[#path_order] = nil
+        end
+      end
+      return
+    end
+    state.loaded = true
 
     for i = 1, #parsed_deps do
       local dep = parsed_deps[i]
       if M.specs[dep.name] then
-        if not M.specs[dep.name]._loaded then
-          M.specs[dep.name]._force_load(nil, visiting_path)
-        end
+        -- Always call _force_load to check visiting_path for cycles
+        -- load_now will early-return if already loaded
+        M.specs[dep.name]._force_load(nil, visiting_path)
       else
         pcall(pack_add, { dep.raw }, { confirm = false, load = false })
         pcall(nvim_cmd, { cmd = 'packadd', args = { dep.name } })
@@ -378,6 +421,9 @@ function M.load(config)
 
     if current_name then
       visiting_path[current_name] = nil
+      if path_order[#path_order] == current_name then
+        path_order[#path_order] = nil
+      end
     end
 
     local duration = (hrtime() - start_ms) / 1e6
@@ -386,8 +432,8 @@ function M.load(config)
       scanner.load_times[parsed_names[i]] = duration
     end
 
-    if ev and type(ev) == 'table' and ev.event and not config._replay_done then
-      config._replay_done = true
+    if ev and type(ev) == 'table' and ev.event and not state.replay_done then
+      state.replay_done = true
       local chain = ev.event ~= 'User' and get_event_chain(ev.event, ev.buf, ev.data) or {}
       for c = 1, #chain do
         local c_opts = chain[c]
@@ -469,13 +515,13 @@ function M.load(config)
       local opts = key_cfg[4] or key_cfg.opts or {}
 
       if lhs then
+        -- Preserve original opts for restoration (including buffer-local info)
+        local restore_opts = vim.tbl_extend('keep', {}, opts)
+        local is_buffer = opts.buffer ~= nil or opts.buf ~= nil
+        local target_buf = opts.buf or opts.buffer
+
         set_keymap(mode, lhs, function()
-          local target_buf = opts.buf or opts.buffer
-          local del_opts = target_buf and { buf = target_buf } or {}
-          if opts.buffer then
-            opts.buf = opts.buffer
-            opts.buffer = nil
-          end
+          local del_opts = is_buffer and { buf = target_buf } or {}
 
           pcall(del_keymap, mode, lhs, del_opts)
           load_now(nil)
@@ -487,7 +533,7 @@ function M.load(config)
               local term_key = replace_termcodes(rhs, true, false, true)
               feedkeys(term_key, 'm', false)
             end
-            if config.restore_keys ~= false then set_keymap(mode, lhs, rhs, opts) end
+            if config.restore_keys ~= false then set_keymap(mode, lhs, rhs, restore_opts) end
           else
             local term_key = replace_termcodes(lhs, true, false, true)
             feedkeys(term_key, 'i', false)
@@ -509,21 +555,27 @@ function M.get_dag_data()
   local edges = {}
 
   for name, spec in pairs(M.specs) do
-    local trigger_str = M.plugin_triggers[name] or 'none'
     local deps = {}
     if spec.dependencies then
       local dep_list = type(spec.dependencies) == 'table' and spec.dependencies or { spec.dependencies }
-      for _, dep in ipairs(dep_list) do
-        local dep_spec = type(dep) == 'table' and dep or { src = dep }
-        local dep_name = dep_spec.name or (dep_spec.src and dep_spec.src:match('([^/]+)%.git$') or dep_spec.src and dep_spec.src:match('([^/]+)$'))
-        if dep_name then deps[#deps + 1] = dep_name end
+      for i = 1, #dep_list do
+        local dep = normalize_pack_spec(dep_list[i])
+        local target_url = type(dep) == 'string' and dep or (dep.src or dep[1])
+        local dep_name = (type(dep) == 'table' and dep.name) or
+          (target_url and (string_match(target_url, '([^/]+)%.git$') or string_match(target_url, '([^/]+)$')))
+        if dep_name then
+          deps[#deps + 1] = dep_name
+        end
       end
     end
+
+    local trig_str = parse_trigger(spec)
+    local state = plugin_state[spec]
     nodes[name] = {
       name = name,
       deps = deps,
-      trigger = trigger_str,
-      loaded = spec._loaded == true,
+      trigger = trig_str or 'none',
+      loaded = state and state.loaded or false,
     }
     edges[name] = deps
   end
@@ -543,7 +595,13 @@ function M.get_replay_info()
         if ev and ev[1] then
           local event_name = ev[1]
           if event_name ~= 'User' then
-            chain = M._get_event_chain_internal(event_name)
+            local autocmds = get_autocmds({ event = event_name })
+            for a = 1, #autocmds do
+              local autocmd = autocmds[a]
+              if autocmd.group then
+                chain[#chain + 1] = autocmd.group_name
+              end
+            end
           end
         end
       end
@@ -560,13 +618,27 @@ end
 -- Internal helper to get event chain
 function M._get_event_chain_internal(event)
   local chain = {}
-  if event == 'BufReadPre' then
-    chain = { 'BufRead', 'BufReadPost' }
-  elseif event == 'BufNewFile' then
-    chain = { 'BufRead', 'BufReadPost' }
-  elseif event == 'FileType' then
-    chain = { 'Syntax' }
+  local current = event
+  local visited = {}
+
+  while current and not visited[current] do
+    visited[current] = true
+    local autocmds = get_autocmds({ event = current })
+    if #autocmds > 0 then
+      chain[#chain + 1] = current
+    end
+
+    if current == 'BufReadPre' then
+      current = 'BufRead'
+    elseif current == 'BufRead' then
+      current = 'BufReadPost'
+    elseif current == 'BufNewFile' then
+      current = 'BufRead'
+    else
+      break
+    end
   end
+
   return chain
 end
 

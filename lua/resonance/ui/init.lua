@@ -216,7 +216,6 @@ function M.open(ui_config)
     nvim_set_option_value('cursorline', true, { win = st.state.win })
     nvim_set_option_value('wrap', false, { win = st.state.win })
     nvim_set_option_value('signcolumn', 'no', { win = st.state.win })
-    'no'
     bind_keys(on_close)
   end
   render_mod.schedule_render()

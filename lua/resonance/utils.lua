@@ -90,7 +90,8 @@ end
 function M.parse_dependencies(config)
   local deps = {}
   if config.dependencies then
-    local dep_list = type(config.dependencies) == 'table' and config.dependencies or { config.dependencies }
+    local dep_list = type(config.dependencies) == 'table' and config.dependencies or
+      { config.dependencies }
     for i = 1, #dep_list do
       local dep = M.normalize_pack_spec(dep_list[i])
       local target_url = type(dep) == 'string' and dep or (dep.src or dep[1])

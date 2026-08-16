@@ -222,7 +222,8 @@ function M.load(config)
     if ev and type(ev) == 'table' and ev.event and not state.replay_done then
       state.replay_done = true
       config._replay_done = true
-      local chain = ev.event ~= 'User' and dag._get_event_chain_internal(ev.event, ev.buf, ev.data) or {}
+      local chain = ev.event ~= 'User' and dag._get_event_chain_internal(ev.event, ev.buf, ev.data) or
+        {}
       for c = 1, #chain do
         local c_opts = chain[c]
         if next(c_opts.exclude) == nil then

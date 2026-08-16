@@ -47,7 +47,8 @@ function M.get_dag_data(specs, plugin_state)
   for name, spec in pairs(specs) do
     local deps = {}
     if spec.dependencies then
-      local dep_list = type(spec.dependencies) == 'table' and spec.dependencies or { spec.dependencies }
+      local dep_list = type(spec.dependencies) == 'table' and spec.dependencies or
+        { spec.dependencies }
       for i = 1, #dep_list do
         local dep = utils.normalize_pack_spec(dep_list[i])
         local target_url = type(dep) == 'string' and dep or (dep.src or dep[1])

@@ -51,8 +51,10 @@ function M.extract_names(plugins)
     local plugin = plugins[p]
     local pack_plugin = utils.normalize_pack_spec(plugin)
     pack_plugins[p] = pack_plugin
-    local target_url = type(pack_plugin) == 'string' and pack_plugin or (pack_plugin.src or pack_plugin[1])
-    local name = (type(pack_plugin) == 'table' and pack_plugin.name) or utils.extract_name(target_url)
+    local target_url = type(pack_plugin) == 'string' and pack_plugin or
+      (pack_plugin.src or pack_plugin[1])
+    local name = (type(pack_plugin) == 'table' and pack_plugin.name) or
+      utils.extract_name(target_url)
 
     if name then
       parsed_names[#parsed_names + 1] = name

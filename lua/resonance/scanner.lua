@@ -42,7 +42,7 @@ local function fallback_scan(plugin_triggers)
                 total_count = total_count + 1
                 local p_path = target_dir .. '/' .. p_name
                 local is_loaded = loaded_set[p_path] or loaded_set[utils.fast_normalize(p_path)] or
-                false
+                  false
                 if is_loaded then loaded_count = loaded_count + 1 end
                 plugins.name[total_count] = p_name
                 plugins.type[total_count] = sub
@@ -184,4 +184,3 @@ function M.get_detailed_info()
 end
 
 return M
-

@@ -39,7 +39,8 @@ function M.run_build(name, dir, build_task, curr_hash)
       else
         system({ 'sh', '-c', build_task }, { cwd = dir, text = true }, function(obj)
           if obj.code ~= 0 then
-            utils.notify('Build failed for ' .. name .. ': ' .. (obj.stderr or ''), vim.log.levels.ERROR)
+            utils.notify('Build failed for ' .. name .. ': ' .. (obj.stderr or ''),
+              vim.log.levels.ERROR)
           else
             schedule(function() M.mark_build_success(dir, curr_hash) end)
           end

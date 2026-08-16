@@ -44,6 +44,7 @@ local TYPE_LABELS = {
 -- Static button definitions (never change)
 local BUTTONS = {
   { 'r', '󱑽 Resonate', 'ResoBtnResonateKey', 'ResoBtnResonateText' },
+  { 'A', 'DAG', 'ResoBtnDAGKey', 'ResoBtnDAGText' },
   { 'u', 'Update', 'ResoBtnKey', 'ResoBtnText' },
   { 'U', 'Update All', 'ResoBtnKey', 'ResoBtnText' },
   { 's', 'Skip', 'ResoBtnKey', 'ResoBtnText' },
@@ -52,7 +53,6 @@ local BUTTONS = {
   { 'dd', 'Uninstall', 'ResoBtnKey', 'ResoBtnText' },
   { 'S', 'Search', 'ResoBtnKey', 'ResoBtnText' },
   { 'D', 'Dir', 'ResoBtnKey', 'ResoBtnText' },
-  { 'g', 'DAG', 'ResoBtnKey', 'ResoBtnText' },
   { 'q', 'Quit', 'ResoBtnKey', 'ResoBtnText' },
 }
 
@@ -142,7 +142,7 @@ local function build_dag_content()
   nl()
   add('  Dependency Graph (DAG) & Event Replay', 'Title')
   nl()
-  add('  Press g to return to list view', 'Comment')
+  add('  Press A to return to list view', 'Comment')
   nl(); nl()
 
   for _, name in ipairs(sorted_names) do

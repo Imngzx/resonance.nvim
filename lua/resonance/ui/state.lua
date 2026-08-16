@@ -76,12 +76,16 @@ function M.init_hls()
   local fn = nvim_get_hl(0, { name = 'Function' })
   local cm = nvim_get_hl(0, { name = 'Comment' })
   local di = nvim_get_hl(0, { name = 'DiagnosticInfo' })
+  local er = nvim_get_hl(0, { name = 'DiagnosticError' })
 
   nvim_set_hl(0, 'ResoBtnKey', { fg = fn.fg, bg = cl.bg, default = true })
   nvim_set_hl(0, 'ResoBtnText', { fg = cm.fg, bg = cl.bg, default = true })
 
   nvim_set_hl(0, 'ResoBtnResonateKey', { fg = di.fg, bg = cl.bg, default = true, bold = true })
   nvim_set_hl(0, 'ResoBtnResonateText', { fg = di.fg, bg = cl.bg, default = true, bold = true })
+
+  nvim_set_hl(0, 'ResoBtnDAGKey', { fg = er.fg, bg = cl.bg, default = true, bold = true })
+  nvim_set_hl(0, 'ResoBtnDAGText', { fg = er.fg, bg = cl.bg, default = true, bold = true })
 end
 
 function M.is_valid()

@@ -93,7 +93,7 @@ local function bind_keys(win_close_fn)
     local name = st.plugin_at_cursor()
     if name then actions.checkout_plugin(name) end
   end, 'Checkout Plugin')
-  map('g', function()
+  map('A', function()
     st.state.view_mode = st.state.view_mode == 'dag' and 'list' or 'dag'
     st.refresh_dag_data()
     render_mod.schedule_render()

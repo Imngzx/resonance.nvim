@@ -1,8 +1,8 @@
 # Resonance.nvim — AI Development Guidelines
 
-> **Purpose**: Step-by-step reference for AI assistants working on this codebase.  
-> **Audience**: Any AI agent (Cursor, Claude, Copilot, etc.) editing `resonance.nvim`.  
-> **Last Updated**: 2026-08-16
+> **Purpose**: Step-by-step reference for AI assistants working on this codebase.
+> **Audience**: Any AI agent (Cursor, Claude, Copilot, etc.) editing `resonance.nvim`.
+> **Last Updated**: 2026-08-17
 
 ---
 
@@ -12,7 +12,7 @@
 |--------|--------|
 | **Type** | Neovim plugin — lazy-loader + UI wrapper around native `vim.pack` (Neovim 0.13+) |
 | **Entry Point** | `lua/resonance/init.lua` → `require('resonance').setup()` |
-| **Core Modules** | `loader.lua` (install/load/lazy), `scanner.lua` (discovery), `ui/` (picker) |
+| **Core Modules** | `loader/` (init, build, triggers, spec, dag), `scanner.lua` (discovery), `ui/` (picker) |
 | **Install Location** | `~/.local/share/nvim/site/pack/core/opt/resonance.nvim/` (managed by `vim.pack`) |
 | **Config Style** | Lazy specs with triggers: `event`, `cmd`, `keys`, `ft` |
 
@@ -48,7 +48,7 @@ nvim --headless -c "lua local t=vim.uv.hrtime(); require('resonance.scanner').ge
 
 ---
 
-## 3. Key Changes (2026-08-15)
+## 3. Key Changes (2026-08-17)
 
 ### `scanner.lua` — Replaced O(n) Filesystem Walk with `vim.pack.get()`
 
@@ -57,7 +57,7 @@ nvim --headless -c "lua local t=vim.uv.hrtime(); require('resonance.scanner').ge
 | Manual `fs_scandir` of `pack/*/{start,opt}/*` | `vim.pack.get({info=false, offline=true})` — 0.3ms |
 | Heuristic loaded detection (`path ∈ rtp`) | Exact `p.active` from `vim.pack` |
 | No pending update info | `rev_to`, `manifest`, `branches`, `tags` available |
-| UI open: ~5000ms (blocking network) | UI open: ~15ms (offline cache) |
+| UI open: ~5000ms (blocking network) | UI open: ~12ms (offline cache + async) |
 
 **API**:
 
@@ -73,14 +73,52 @@ scanner.get_detailed_info() -- or scanner.get_info({info=true, offline=false})
 
 ---
 
-### `loader.lua` — Optimized `get_plugin_dir()` with Bulk Cache
+### `loader/` — Modular Loader (2026-08-16)
 
-| Before | After |
-|--------|-------|
-| Per-call filesystem walk on cache miss | Single `vim.pack.get({info=false, offline=true})` populates entire cache |
-| ~0.1ms per miss | ~0.3ms total for all 43 plugins |
+Split monolithic `loader.lua` into 5 focused modules under `lua/resonance/loader/`:
 
-**Change**: `get_plugin_dir(name)` now tries `vim.pack.get()` first, falls back to original scan.
+| Module | Responsibility |
+|--------|----------------|
+| `init.lua` | Main entry, `load()`, `get_plugin_dir()`, `get_dag_data()`, `get_replay_info()`, `_get_event_chain_internal()` |
+| `build.lua` | Build hooks, `run_build()`, `check_and_build()`, `mark_build_success()`, `PackChanged` autocmd |
+| `triggers.lua` | Trigger registration: `register_event()`, `register_cmd()`, `register_keys()`, `register_ft()`, `register_all()` |
+| `spec.lua` | Config parsing: `parse_config()`, `extract_names()`, `normalize_pack_spec()` |
+| `dag.lua` | DAG data: `get_dag_data()`, `get_replay_info()`, `_get_event_chain_internal()` |
+
+**Key improvements over original**:
+- `check_and_build()` — hash check before building (fixes redundant builds on PackChanged)
+- Exported `mark_build_success()`, `setup_packchanged_autocmd()`, `get_plugin_dir()`
+- `populate_plugin_dir_cache()` — bulk cache population via single `vim.pack.get()`
+- All LSP diagnostics clean
+
+---
+
+### `ui/init.lua` — Optimized UI Open (2026-08-17)
+
+Two-pass async loading:
+
+| Pass | Call | Time | Purpose |
+|------|------|------|---------|
+| 1 (sync) | `vim.pack.get({info=false, offline=true})` | ~1ms | Commits, URLs, rev |
+| 2 (deferred 50ms) | `vim.pack.get({info=true, offline=true})` | ~300ms | Branches, tags |
+
+UI open: **330ms → 12ms** (27x faster)
+
+---
+
+### Build System Fixes (2026-08-17)
+
+- `run_build()`: restored early-return hash check from `loader_original.lua`
+- `PackChanged` autocmd: now uses `check_and_build()` instead of direct `run_build()`
+- `update_plugins()`: changed `offline=true` → `offline=false` so updates actually download
+- All build exports available via `require('resonance.loader')`
+
+---
+
+### Help Documentation (2026-08-17)
+
+- `doc/resonance.txt` — comprehensive help with 18 tags
+- `:help resonance`, `:help resonance-api-loader`, `:help resonance-triggers`, etc.
 
 ---
 
@@ -92,8 +130,7 @@ scanner.get_detailed_info() -- or scanner.get_info({info=true, offline=false})
 |---------|----------|----------|----------|
 | Original scanner | 0.947 | 0.808 | 1.252 |
 | **Optimized scanner** | **0.919** | **0.786** | **1.129** |
-| Original loader | — | — | — |
-| **Optimized loader** | **0.919** | **0.786** | **1.129** |
+| **Modular loader (current)** | **0.87** | **0.77** | **1.27** |
 
 > **No startup regression** — lazy-loading happens post-setup.
 
@@ -102,7 +139,8 @@ scanner.get_detailed_info() -- or scanner.get_info({info=true, offline=false})
 | Version | Time |
 |---------|------|
 | Original scanner (online `vim.pack.get`) | ~5000 ms |
-| **Optimized scanner (offline default)** | **~15 ms** |
+| Optimized scanner (offline default) | ~15 ms |
+| **Two-pass async (current)** | **~12 ms** |
 | Fallback (`vim.pack = nil`) | ~15 ms |
 
 ### `vim.pack.get()` Latency
@@ -122,7 +160,11 @@ scanner.get_detailed_info() -- or scanner.get_info({info=true, offline=false})
 
 ```bash
 # Read core modules
-read lua/resonance/loader.lua
+read lua/resonance/loader/init.lua
+read lua/resonance/loader/build.lua
+read lua/resonance/loader/triggers.lua
+read lua/resonance/loader/spec.lua
+read lua/resonance/loader/dag.lua
 read lua/resonance/scanner.lua
 read lua/resonance/init.lua
 read lua/resonance/ui/init.lua
@@ -155,17 +197,18 @@ nvim --headless -c "luafile lua/resonance/init.lua" -c "lua require('resonance')
 nvim --headless -c "lua vim.pack=nil" -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); local info=require('resonance.scanner').get_info(); print('fallback:', info.total)" -c "qall"
 
 # LSP diagnostics (lua-language-server via pacman)
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/loader.lua
+lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/loader/init.lua
 
 # Benchmarks (must not regress)
 vim-startuptime -count 10 -warmup 3 -- -u NONE -c "luafile ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/init.lua" -c "lua require('resonance').setup()" -c "qall"
 ```
+
 ### Step 5: Commit
 
 ```bash
 cd /home/alice/Projects/code/lua/resonance.nvim
-git add lua/resonance/scanner.lua lua/resonance/loader.lua
-git commit -m "perf: optimize scanner/loader with vim.pack.get offline cache"
+git add lua/resonance/loader/ lua/resonance/scanner.lua lua/resonance/ui/init.lua doc/
+git commit -m "perf: modular loader + UI async + build fixes"
 ```
 
 ---
@@ -201,9 +244,10 @@ git commit -m "perf: optimize scanner/loader with vim.pack.get offline cache"
 
 ### Add New Lazy Trigger Type
 
-1. `loader.lua`: Extend `parse_trigger()` (lines 153-189)
-2. `loader.lua`: Add autocmd/command/keymap in `M.load()` (lines 404-490)
-3. `scanner.lua`: Add trigger icon fallback in `get_info()`
+1. `loader/triggers.lua`: Add `register_<type>()` function
+2. `loader/triggers.lua`: Add to `register_all()`
+3. `loader/init.lua`: Ensure trigger registered in `M.load()`
+4. `scanner.lua`: Add trigger icon fallback in `get_info()`
 
 ### Add UI Column/Action
 
@@ -214,8 +258,10 @@ git commit -m "perf: optimize scanner/loader with vim.pack.get offline cache"
 
 ### Modify Build System
 
-- `loader.lua`: `M.build_hooks`, `M.run_build()`, `PackChanged` autocmd (lines 49-151)
+- `loader/build.lua`: `M.build_hooks`, `M.run_build()`, `M.check_and_build()`, `PackChanged` autocmd
+- `loader/init.lua`: Export build functions
 - Respects `.resonance_built` hash cache
+- `offline=false` for `update_plugins()` to trigger PackChanged
 
 ---
 
@@ -235,12 +281,12 @@ git commit -m "perf: optimize scanner/loader with vim.pack.get offline cache"
 
 | Function | Purpose | Resonance Usage |
 |----------|---------|-----------------|
-| `vim.pack.add(specs, {confirm=false, load=false})` | Install plugins | `loader.lua:354` |
-| `vim.pack.get(names?, {info, offline})` | Query installed | `scanner.lua`, `loader.lua`, `ui/actions.lua` |
+| `vim.pack.add(specs, {confirm=false, load=false})` | Install plugins | `loader/init.lua:354` |
+| `vim.pack.get(names?, {info, offline})` | Query installed | `scanner.lua`, `loader/init.lua`, `ui/actions.lua` |
 | `vim.pack.update(names?, {force, offline})` | Update plugins | `ui/actions.lua:103` |
 | `vim.pack.del(names, {force})` | Delete plugins | `ui/actions.lua:136` |
-| `PackChanged` event | Build hooks | `loader.lua:133` |
-| `vim.pack.Spec` fields | `src`, `name`, `version`, `data` | `loader.lua:191` normalize |
+| `PackChanged` event | Build hooks | `loader/build.lua:95` |
+| `vim.pack.Spec` fields | `src`, `name`, `version`, `data` | `loader/spec.lua` normalize |
 
 ---
 
@@ -249,6 +295,7 @@ git commit -m "perf: optimize scanner/loader with vim.pack.get offline cache"
 | Source (Edit Here) | Installed (Test Here) |
 |--------------------|----------------------|
 | `/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/` | `~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/` |
+| `/home/alice/Projects/code/lua/resonance.nvim/doc/` | `~/.local/share/nvim/site/pack/core/opt/resonance.nvim/doc/` |
 
 **Always test in installed location** — that's what users run.
 
@@ -260,7 +307,9 @@ git commit -m "perf: optimize scanner/loader with vim.pack.get offline cache"
 # From git HEAD
 cd /home/alice/Projects/code/lua/resonance.nvim
 git show HEAD:lua/resonance/scanner.lua > ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/scanner.lua
-git show HEAD:lua/resonance/loader.lua > ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/loader.lua
+git show HEAD:lua/resonance/loader/init.lua > ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/loader/init.lua
+git show HEAD:lua/resonance/loader/build.lua > ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/loader/build.lua
+git show HEAD:lua/resonance/ui/init.lua > ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/ui/init.lua
 ```
 
 ---
@@ -303,14 +352,6 @@ PUT 100.=100:
 *** End Patch
 ]])
 ```
-
-**Rules:**
-
-- Always read file first to get current `#HASH`
-- Use `PUT N.=M:` for replacements, `PUT <N:`/`PUT >N:` for insertions
-- Body rows start with `+` (literal `-` → `+-`)
-- Never use `-` lines — the range defines what's removed
-- After edit, re-read if doing sequential edits to same file
 
 #### Use `write` only for
 
@@ -373,32 +414,4 @@ nvim --headless -c "luafile lua/resonance/init.lua" -c "lua require('resonance')
 
 ---
 
-## 13. Recent Optimizations (2026-08-16)
-
-### UI Render (`render.lua`)
-
-| Optimization | Change |
-|--------------|--------|
-| Cached static button lines | `BUTTONS` table at module scope |
-| Pre-computed type labels | `TYPE_LABELS = {opt='[opt]', start='[start]'}` |
-| Cached `stats()` call | `_cached_stats` memoization |
-| Pre-fetched src URLs | Async in `init.lua` `load_commits_async()` |
-
-### Actions (`actions.lua`)
-
-| Optimization | Change |
-|--------------|--------|
-| Localize `uv_hrtime` | `local uv_hrtime = vim.uv.hrtime` |
-| All imports used | No dead code |
-| `schedule` → `vim.defer_fn(..., 1)` | Spinner gets one event-loop tick |
-| `finish_check` delayed 200ms | Spinner visible when no updates |
-
-### State (`state.lua`)
-
-| Addition | Purpose |
-|----------|---------|
-| `spinner_frame` | Module-global frame counter for 30fps animation |
-
----
-
-*Generated 2026-08-15. Updated 2026-08-16 with AI workflow patterns.*
+*Generated 2026-08-15. Updated 2026-08-17 with modular loader, build fixes, UI async, help docs.*

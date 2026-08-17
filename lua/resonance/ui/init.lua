@@ -119,7 +119,7 @@ function M.open(ui_config)
   st.state.view_mode = 'list'
   local function load_commits_async()
     if vim.pack and vim.pack.get then
-      local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = false })
+      local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = true })
       if ok and type(packs) == 'table' then
         for p = 1, #packs do
           local pk = packs[p]

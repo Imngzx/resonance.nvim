@@ -118,8 +118,9 @@ function M.open(ui_config)
   st.state.updates, st.state.commits = {}, {}
   st.state.view_mode = 'list'
   local function load_commits_async()
+    -- First pass: fast load with info=false (commits, urls, rev) ~1ms
     if vim.pack and vim.pack.get then
-      local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = true })
+      local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = false })
       if ok and type(packs) == 'table' then
         for p = 1, #packs do
           local pk = packs[p]
@@ -152,6 +153,28 @@ function M.open(ui_config)
       end
     end
     chunk()
+
+    -- Second pass: fetch branches/tags asynchronously (info=true is slow ~300ms)
+    vim_defer_fn(function()
+      if vim.pack and vim.pack.get then
+        local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = true })
+        if ok and type(packs) == 'table' then
+          for p = 1, #packs do
+            local pk = packs[p]
+            local name = pk.spec.name
+            if pk.branches then
+              st.state.pack_details[name] = st.state.pack_details[name] or {}
+              st.state.pack_details[name].branches = pk.branches
+            end
+            if pk.tags then
+              st.state.pack_details[name] = st.state.pack_details[name] or {}
+              st.state.pack_details[name].tags = pk.tags
+            end
+          end
+          render_mod.schedule_render()
+        end
+      end
+    end, 50)
   end
   load_commits_async()
 

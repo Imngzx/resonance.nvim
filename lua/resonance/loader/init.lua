@@ -83,6 +83,8 @@ M.get_plugin_dir = get_plugin_dir
 M.build_hooks = build.build_hooks
 M.run_build = build.run_build
 M.check_and_build = build.check_and_build
+M.mark_build_success = build.mark_build_success
+M.setup_packchanged_autocmd = build.setup_packchanged_autocmd
 build.setup_packchanged_autocmd(get_plugin_dir)
 
 M.plugin_triggers = {}

@@ -20,7 +20,6 @@ local spinner_timer = nil
 
 local function stop_spinner()
   if spinner_timer and not spinner_timer:is_closing() then
-    spinner_timer:stop()
     spinner_timer:close()
   end
   spinner_timer = nil
@@ -34,18 +33,13 @@ end
 
 local function start_spinner()
   stop_spinner()
-  st.state.spinner_frame = 1
   spinner_timer = vim.uv.new_timer()
-  if spinner_timer then
-    spinner_timer:start(0, 33, vim.schedule_wrap(function()
-      if not st.state.checking then
-        stop_spinner()
-        return
-      end
-      st.state.spinner_frame = (st.state.spinner_frame % 10) + 1
-      render_mod.render()
-    end))
-  end
+  spinner_timer:start(0, 100, function()
+    schedule(function()
+      st.state.spinner_frame = (st.state.spinner_frame % 8) + 1
+      render_mod.schedule_render()
+    end)
+  end)
 end
 
 function M.check_updates_network()
@@ -98,26 +92,8 @@ end
 
 function M.toggle_details()
   local name = st.plugin_at_cursor()
-  -- If cursor on detail line (nil), fall back to first plugin
-  if not name then
-    local info = st.state.info
-    if info and info.plugins and info.plugins.name and #info.plugins.name > 0 then
-      name = info.plugins.name[1]
-    else
-      return
-    end
-  end
+  if not name then return end
   st.state.expanded[name] = not st.state.expanded[name]
-  -- Don't set restore_cursor_name for interactive toggles - user controls cursor
-  if st.state.expanded[name] and vim.pack and vim.pack.get then
-    local pk = st.state.pack_details[name]
-    if not pk or not pk.branches then
-      local ok, packs = pcall(vim.pack.get, { name }, { info = true, offline = true })
-      if ok and type(packs) == 'table' and packs[1] then
-        st.state.pack_details[name] = packs[1]
-      end
-    end
-  end
   render_mod.render()
 end
 
@@ -129,7 +105,7 @@ function M.update_plugins(names)
     utils.notify('Updating ' .. table_concat(names, ', ') .. '...', vim_log_levels.INFO)
 
     schedule(function()
-      local ok, err = pcall(vim.pack.update, names, { force = true, offline = true })
+      local ok, err = pcall(vim.pack.update, names, { force = true, offline = false })
       st.state.updating = false
 
       if not ok then
@@ -161,23 +137,13 @@ function M.uninstall_plugin(name)
 
   if vim.pack and vim.pack.del then
     utils.notify('Uninstalling ' .. name .. '...', vim_log_levels.INFO)
-    schedule(function()
-      local ok, err = pcall(vim.pack.del, { name }, { force = true })
-      if not ok then
-        utils.notify('Uninstall failed: ' .. tostring(err), vim_log_levels.ERROR)
-      else
-        st.state.updates[name] = nil
-        st.state.commits[name] = nil
-        st.state.expanded[name] = nil
-        st.state.urls[name] = nil
-        st.state.info = require('resonance.scanner').get_info()
-        render_mod.schedule_render()
-        utils.notify('Uninstalled ' .. name .. '. Please restart Nvim to apply changes.',
-          vim_log_levels.WARN)
-      end
-    end)
-  else
-    utils.notify('Triggering plugin uninstall for ' .. name, vim_log_levels.INFO)
+    local ok, err = pcall(vim.pack.del, { name }, { force = true })
+    if ok then
+      utils.notify('Uninstalled ' .. name, vim_log_levels.INFO)
+    else
+      utils.notify('Uninstall failed: ' .. tostring(err), vim_log_levels.ERROR)
+    end
+    render_mod.schedule_render()
   end
 end
 

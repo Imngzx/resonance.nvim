@@ -80,9 +80,9 @@ end
 -- Public API: get_plugin_dir for build module
 M.get_plugin_dir = get_plugin_dir
 
--- Expose build hooks and setup
 M.build_hooks = build.build_hooks
 M.run_build = build.run_build
+M.check_and_build = build.check_and_build
 build.setup_packchanged_autocmd(get_plugin_dir)
 
 M.plugin_triggers = {}

@@ -32,10 +32,22 @@ end
 function M.run_build(name, dir, build_task, curr_hash)
   if not dir or dir == '' then return end
 
+  -- Check if already built at this hash (early return)
+  local last_hash = ''
+  local fd = fs_open(dir .. '/.resonance_built', 'r', 438)
+  if fd then
+    local stat = fs_fstat(fd)
+    if stat then last_hash = fs_read(fd, stat.size, 0) or '' end
+    fs_close(fd)
+  end
+
+  if last_hash == curr_hash then return end
+
   local function do_build()
     local ok, err = pcall(function()
       if type(build_task) == 'function' then
         build_task(dir)
+        schedule(function() M.mark_build_success(dir, curr_hash) end)
       else
         system({ 'sh', '-c', build_task }, { cwd = dir, text = true }, function(obj)
           if obj.code ~= 0 then
@@ -45,9 +57,7 @@ function M.run_build(name, dir, build_task, curr_hash)
             schedule(function() M.mark_build_success(dir, curr_hash) end)
           end
         end)
-        return
       end
-      schedule(function() M.mark_build_success(dir, curr_hash) end)
     end)
     if not ok then
       utils.notify('Build error for ' .. name .. ': ' .. tostring(err), vim.log.levels.ERROR)
@@ -102,10 +112,7 @@ function M.setup_packchanged_autocmd(get_plugin_dir)
       local dir = data.path or get_plugin_dir(name)
       if not dir then return end
 
-      system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
-        local curr_hash = (obj.code == 0 and obj.stdout) and vim_trim(obj.stdout) or 'done'
-        schedule(function() M.run_build(name, dir, build_task, curr_hash) end)
-      end)
+      M.check_and_build(name, dir, build_task)
     end,
   })
 end

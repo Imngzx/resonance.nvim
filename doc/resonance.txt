@@ -1,0 +1,356 @@
+*resonance.txt*   Plugin manager for Neovim using native |vim.pack|
+
+==============================================================================
+CONTENTS                                                 *resonance-contents*
+
+1. Introduction                          |resonance-introduction|
+2. Installation                          |resonance-installation|
+3. Quick Start                           |resonance-quick-start|
+4. Configuration                         |resonance-configuration|
+   4.1 Lazy Loading Triggers             |resonance-triggers|
+   4.2 Dependencies                      |resonance-dependencies|
+   4.3 Build Commands                    |resonance-build|
+   4.4 Version Pinning                   |resonance-version|
+5. User Interface                        |resonance-ui|
+   5.1 Key Mappings                      |resonance-ui-keys|
+   5.2 Plugin Details                    |resonance-ui-details|
+6. API Reference                         |resonance-api|
+   6.1 Main Functions                    |resonance-api-main|
+   6.2 Loader Module                     |resonance-api-loader|
+   6.3 Scanner Module                    |resonance-api-scanner|
+   6.4 UI Module                         |resonance-api-ui|
+7. Events                                |resonance-events|
+8. Fallback Mode                         |resonance-fallback|
+9. Performance                           |resonance-performance|
+
+==============================================================================
+1. Introduction                                    *resonance-introduction*
+
+Resonance is a lightweight plugin manager for Neovim 0.13+ that wraps the
+native |vim.pack| API with lazy-loading capabilities and a Terminal UI.
+
+Key features:
+- Native |vim.pack| integration (no external dependencies)
+- Lazy loading via triggers: events, commands, filetypes, keymaps
+- Automatic dependency resolution
+- Build hooks with hash-based caching
+- Terminal UI for plugin management (install, update, checkout, uninstall)
+- DAG visualization of plugin dependencies
+- Event replay for correct autocmd ordering
+- Fallback mode when vim.pack is unavailable
+- Sub-millisecond startup overhead
+
+==============================================================================
+2. Installation                                    *resonance-installation*
+
+Requirements:
+- Neovim 0.13+ (for |vim.pack|)
+- Git
+
+Using |vim.pack| (recommended):
+    :lua vim.pack.add({{src='https://github.com/yourname/resonance.nvim'}})
+    :packadd resonance.nvim
+
+Manual installation:
+    git clone https://github.com/yourname/resonance.nvim \
+      ~/.local/share/nvim/site/pack/core/opt/resonance.nvim
+
+Then add to your init.lua:
+    require('resonance').setup()
+
+==============================================================================
+3. Quick Start                                     *resonance-quick-start*
+
+Basic setup in your init.lua:
+
+    local resonance = require('resonance')
+    resonance.setup({
+      -- List of plugin specifications
+      {
+        src = 'https://github.com/neovim/nvim-lspconfig',
+        event = 'LspAttach',           -- Lazy load on LspAttach event
+        dependencies = {'https://github.com/neovim/nvim-lua/plenary.nvim'},
+        build = 'echo "building"',     -- Optional build command
+      },
+      {
+        src = 'https://github.com/folke/which-key.nvim',
+        event = 'VeryLazy',
+      },
+      {
+        src = 'https://github.com/nvim-treesitter/nvim-treesitter',
+        build = function(dir)          -- Function build hook
+          vim.cmd('TSUpdate')
+        end,
+      },
+    })
+
+    -- Open UI with :Resonance or lua
+    vim.keymap.set('n', '<leader>rp', function()
+      resonance.open_ui()
+    end)
+
+==============================================================================
+4. Configuration                                   *resonance-configuration*
+
+The |resonance.setup()| function accepts a list of plugin specifications.
+Each spec is a table with the following fields:
+
+Common fields:
+    src (string)        Git repository URL (required)
+    name (string)       Override plugin name (derived from URL if omitted)
+    version (string)    Git tag/branch/commit to checkout
+    event (string|table) Lazy load on autocmd event(s)
+    cmd (string|table)  Lazy load on command(s)
+    ft (string|table)   Lazy load on filetype(s)
+    keys (table)        Lazy load on keymap(s)
+    dependencies (table) List of dependency plugin URLs
+    build (string|function) Build command or function(dir)
+    config (function)   Called after plugin loads (alias for setup)
+    setup (function)    Called after plugin loads
+    plugin (table)      Alternative spec format (lazy.nvim compatible)
+
+Multiple plugins can be passed as separate arguments or as a list:
+
+    -- As separate arguments
+    resonance.setup(
+      {src = '...', event = '...'},
+      {src = '...', cmd = '...'}
+    )
+
+    -- As a list
+    resonance.setup({
+      {src = '...', event = '...'},
+      {src = '...', cmd = '...'},
+    })
+
+4.1 Lazy Loading Triggers                          *resonance-triggers*
+
+|event| - Load when autocmd fires:
+    event = 'LspAttach'
+    event = {'BufReadPost', 'BufNewFile'}
+
+|cmd| - Load when command is invoked:
+    cmd = 'Neogit'
+    cmd = {'Neogit', 'Git'}
+
+|ft| - Load when filetype is set:
+    ft = 'lua'
+    ft = {'lua', 'python'}
+
+|keys| - Load when keymap is pressed:
+    keys = {'<leader>g', '<leader>gg'}
+    keys = {{'n', '<leader>g', func, {desc = 'Git'}}}  -- Full keymap spec
+
+Triggers can be combined. Plugin loads on FIRST matching trigger.
+
+4.2 Dependencies                                   *resonance-dependencies*
+
+    dependencies = {'https://github.com/neovim/nvim-lua/plenary.nvim'}
+
+Dependencies are loaded BEFORE the plugin. They support all trigger types.
+Circular dependencies are detected and reported.
+
+4.3 Build Commands                                 *resonance-build*
+
+String command (runs in plugin directory):
+    build = 'make' or build = './install.sh'
+
+Function hook (receives plugin directory):
+    build = function(dir)
+      vim.system({'cargo', 'build', '--release'}, {cwd = dir})
+    end
+
+Build runs automatically:
+- On install (via PackChanged event)
+- On update (when git hash changes)
+- Hash cached in `.resonance_built` to avoid rebuilds
+
+4.4 Version Pinning                                *resonance-version*
+
+Pin to specific tag, branch, or commit:
+    version = 'v1.0.0'      -- Tag
+    version = 'main'        -- Branch
+    version = 'abc1234'     -- Commit hash
+
+==============================================================================
+5. User Interface                                  *resonance-ui>
+
+Open UI:
+    :lua require('resonance').open_ui()
+    :Resonance  (user command created by setup)
+
+The UI shows all installed plugins with status, triggers, and metadata.
+
+5.1 Key Mappings                                   *resonance-ui-keys*
+
+In the Resonance UI buffer:
+
+    <CR>         Toggle plugin details (expanded view)
+    r            Check for updates (network)
+    u            Update plugin under cursor
+    U            Update all plugins with pending updates
+    s            Skip update for plugin under cursor
+    c            Checkout branch/tag/commit (prompts for target)
+    dd           Uninstall plugin under cursor
+    S            Search plugin source (grep)
+    D            Open plugin directory in explorer
+    C            Run native vim.pack.update (offline)
+    A            Toggle DAG view (dependency graph)
+    q / <Esc>    Close UI
+
+5.2 Plugin Details                                 *resonance-ui-details>
+
+Press <CR> on a plugin to expand details showing:
+- Load status (active/inactive)
+- Git branches (local + remote)
+- Git tags (latest 5)
+- Installation path
+- Source URL
+- Current commit hash
+- Load time (ms)
+
+==============================================================================
+6. API Reference                                   *resonance-api>
+
+6.1 Main Functions                                 *resonance-api-main*
+
+    resonance.setup(config)
+        Initialize plugin manager with configuration.
+        config: table (see |resonance-configuration|)
+        Returns: nothing
+
+    resonance.open_ui([ui_config])
+        Open the Terminal UI.
+        ui_config: optional table overriding default UI config
+        Returns: nothing
+
+    resonance.load(config)
+        Load a single plugin specification (called internally by setup).
+        Returns: nothing
+
+6.2 Loader Module                                  *resonance-api-loader*
+
+    local loader = require('resonance.loader')
+
+    loader.load(config)
+        Load plugin specification with triggers.
+
+    loader.get_plugin_dir(name)
+        Get filesystem path for installed plugin.
+        Returns: string path or nil
+
+    loader.run_build(name, dir, build_task, curr_hash)
+        Execute build command for plugin.
+        build_task: string command or function(dir)
+        curr_hash: current git commit hash
+        Returns: nothing (async)
+
+    loader.check_and_build(name, dir, build_task)
+        Check git hash and run build if changed.
+        Returns: nothing (async)
+
+    loader.mark_build_success(dir, hash)
+        Write build hash to .resonance_built file.
+
+    loader.setup_packchanged_autocmd(get_plugin_dir_fn)
+        Register PackChanged autocmd for automatic builds.
+
+    loader.get_dag_data()
+        Returns: nodes, edges tables for dependency graph.
+
+    loader.get_replay_info()
+        Returns: event replay information for loaded plugins.
+
+    loader._get_event_chain_internal(event, buf, data)
+        Get autocmd chain for event replay.
+
+    loader.build_hooks
+        Table of plugin_name -> build_task (string|function)
+
+    loader.plugin_triggers
+        Table of plugin_name -> trigger string
+
+    loader.specs
+        Table of plugin_name -> raw spec config
+
+6.3 Scanner Module                                 *resonance-api-scanner*
+
+    local scanner = require('resonance.scanner')
+
+    scanner.get_info([opts])
+        Get plugin information.
+        opts: {info = boolean, offline = boolean}
+        info=false (default): fast, no branches/tags
+        info=true: includes branches, tags, rev_to
+        offline=true (default): use cached data
+        Returns: {plugins = {name[], type[], path[], loaded[], trigger[]}, total, loaded, pack_dir, load_times}
+
+    scanner.get_detailed_info()
+        Alias for get_info({info=true, offline=false})
+
+    scanner.load_times
+        Table of plugin_name -> load_time_ms
+
+6.4 UI Module                                      *resonance-api-ui*
+
+    local ui = require('resonance.ui')
+    local actions = require('resonance.ui.actions')
+    local state = require('resonance.ui.state')
+    local render = require('resonance.ui.render')
+
+    ui.open(ui_config)
+        Open the UI window.
+
+    actions.check_updates_network()
+        Fetch remote updates for all plugins (async).
+
+    actions.update_plugins(names)
+        Update specified plugins via vim.pack.update.
+
+    actions.checkout_plugin(name)
+        Interactive git checkout for plugin.
+
+    actions.uninstall_plugin(name)
+        Remove plugin from disk.
+
+    state.state
+        Current UI state table (plugins, commits, updates, etc.)
+
+==============================================================================
+7. Events                                          *resonance-events|
+
+Autocmd events emitted:
+
+    User  ResonanceLoad     {name = plugin_name}  After plugin loaded
+    User  ResonanceUpdate   {name = plugin_name}  After plugin updated
+    User  ForceLoad<Name>   Triggered by lazy load for plugin <Name>
+
+Event replay ensures autocmds fire in correct order for nested triggers.
+
+==============================================================================
+8. Fallback Mode                                   *resonance-fallback|
+
+When |vim.pack| is unavailable (set `vim.pack = nil` before setup):
+- Filesystem scan of `pack/*/{start,opt}/*` used instead
+- All lazy-loading triggers work
+- UI shows plugins from filesystem
+- Build hooks work
+- Network operations (update, checkout) disabled
+
+==============================================================================
+9. Performance                                     *resonance-performance|
+
+Benchmarks (Neovim 0.13+, 43 plugins):
+- Startup overhead: ~0.9ms average
+- UI open: ~12ms (fast path + async branches/tags)
+- scanner.get_info(): ~1ms (offline, info=false)
+- scanner.get_info({info=true}): ~300ms (fetches branches/tags)
+
+Optimizations:
+- Two-pass UI loading (commits first, branches/tags deferred)
+- vim.pack.get() cache for plugin paths
+- Batched pack.add() calls
+- Hash-based build caching (.resonance_built)
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

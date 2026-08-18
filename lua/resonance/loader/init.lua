@@ -9,8 +9,8 @@ local dag = require('resonance.loader.dag')
 local api = vim.api
 local uv = vim.uv
 local pack_add = vim.pack and vim.pack.add or nil
-local function pack_add_safe(...)
-  if pack_add then return pack_add(...) end
+local function pack_add_safe(vararg)
+  if pack_add then return pack_add(vararg) end
 end
 
 local nvim_cmd = api.nvim_cmd
@@ -25,6 +25,7 @@ local hrtime = uv.hrtime
 
 local fn_stdpath = vim.fn.stdpath
 local vim_log_levels = vim.log.levels
+local pcall = pcall
 
 local pack_dir_base = utils.fast_normalize(fn_stdpath('data') .. '/site/pack')
 

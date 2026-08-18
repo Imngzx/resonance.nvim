@@ -8,12 +8,10 @@ local fn_stdpath = vim.fn.stdpath
 local nvim_list_runtime_paths = vim.api.nvim_list_runtime_paths
 local table_sort = table.sort
 local string_lower = string.lower
-
 M.load_times = {}
 
 local pack_dir_base = utils.fast_normalize(fn_stdpath('data') .. '/site/pack')
 local sub_dirs = { 'start', 'opt' }
-
 local function fallback_scan(plugin_triggers)
   local plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {} }
   local loaded_set = {}
@@ -27,30 +25,25 @@ local function fallback_scan(plugin_triggers)
   local req = fs_scandir(pack_dir_base)
   if req then
     while true do
-      local pkg_name, pkg_type = fs_scandir_next(req)
-      if not pkg_name then break end
-      if pkg_type == 'directory' or pkg_type == 'link' then
-        for i = 1, #sub_dirs do
-          local sub = sub_dirs[i]
-          local target_dir = pack_dir_base .. '/' .. pkg_name .. '/' .. sub
-          local t_req = fs_scandir(target_dir)
-          if t_req then
-            while true do
-              local p_name, p_type = fs_scandir_next(t_req)
-              if not p_name then break end
-              if p_type == 'directory' or p_type == 'link' then
-                total_count = total_count + 1
-                local p_path = target_dir .. '/' .. p_name
-                local is_loaded = loaded_set[p_path] or loaded_set[utils.fast_normalize(p_path)] or
-                  false
-                if is_loaded then loaded_count = loaded_count + 1 end
-                plugins.name[total_count] = p_name
-                plugins.type[total_count] = sub
-                plugins.path[total_count] = p_path
-                plugins.loaded[total_count] = is_loaded
-                plugins.trigger[total_count] = plugin_triggers[p_name] or
-                  (sub == 'start' and '󰜎 start' or '󰢱 opt')
-              end
+      local name, typ = fs_scandir_next(req)
+      if not name then break end
+      if typ == 'directory' then
+        local sub = fs_scandir(pack_dir_base .. '/' .. name)
+        if sub then
+          while true do
+            local pname, ptyp = fs_scandir_next(sub)
+            if not pname then break end
+            if ptyp == 'directory' then
+              local full_path = pack_dir_base .. '/' .. name .. '/' .. pname
+              total_count = total_count + 1
+              plugins.name[total_count] = pname
+              plugins.path[total_count] = full_path
+              plugins.type[total_count] = (name == 'opt' and 'opt' or 'start')
+              local is_loaded = loaded_set[utils.fast_normalize(full_path)]
+              plugins.loaded[total_count] = is_loaded or false
+              plugins.trigger[total_count] = plugin_triggers[pname] or
+                (plugins.type[total_count] == 'start' and '󰜎 start' or '󰢱 opt')
+              if is_loaded then loaded_count = loaded_count + 1 end
             end
           end
         end

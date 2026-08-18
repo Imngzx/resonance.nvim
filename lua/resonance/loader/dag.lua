@@ -5,6 +5,7 @@ local api = vim.api
 local get_autocmds = api.nvim_get_autocmds
 
 local type = type
+local pairs = pairs
 
 local function get_event_chain(event, buf, data)
   local chain = {}

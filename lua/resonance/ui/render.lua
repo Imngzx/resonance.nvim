@@ -2,15 +2,16 @@ local M = {}
 local st = require('resonance.ui.state')
 local api = vim.api
 
-local nvim_set_option_value = api.nvim_set_option_value
 local string_rep = string.rep
 local table_concat = table.concat
 local math_max = math.max
 local math_min = math.min
 local string_format = string.format
 local type = type
+local pairs = pairs
 local vim_list_slice = vim.list_slice
 local vim_schedule = vim.schedule
+local vbo = vim.bo
 
 local nvim_win_is_valid = api.nvim_win_is_valid
 local nvim_win_get_width = api.nvim_win_get_width
@@ -86,8 +87,8 @@ local function add(text, hl)
 end
 
 local function nl()
-  lines[#lines + 1] = table_concat(line_parts)
   line_idx = line_idx + 1
+  lines[line_idx] = table_concat(line_parts)
   -- Clear line_parts efficiently
   for i = 1, #line_parts do line_parts[i] = nil end
   cur_col = 0
@@ -407,11 +408,10 @@ function M.render()
   if not buf then return end
   local ns = st.ns
 
-  nvim_set_option_value('modifiable', true, { buf = buf })
+  vbo[buf].modifiable = true
   nvim_buf_set_lines(buf, 0, -1, false, l)
-  nvim_set_option_value('modifiable', false, { buf = buf })
-  nvim_set_option_value('modified', false, { buf = buf })
-
+  vbo[buf].modifiable = false
+  vbo[buf].modified = false
   nvim_buf_clear_namespace(buf, ns, 0, -1)
 
   for i = 1, #h, 4 do

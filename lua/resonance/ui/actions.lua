@@ -17,7 +17,6 @@ local vim_log_levels = vim.log.levels
 local string_format = string.format
 
 local spinner_timer = nil
-
 local function stop_spinner()
   if spinner_timer and not spinner_timer:is_closing() then
     spinner_timer:close()

@@ -1,6 +1,5 @@
 local M = {}
 local api = vim.api
-local nvim_set_option_value = api.nvim_set_option_value
 local st = require('resonance.ui.state')
 local render_mod = require('resonance.ui.render')
 local actions = require('resonance.ui.actions')
@@ -15,6 +14,8 @@ local vim_log_levels = vim.log.levels
 local vim_cmd = vim.cmd
 local vim_defer_fn = vim.defer_fn
 local vim_o = vim.o
+local vbo = vim.bo
+local vwo = vim.wo
 
 local nvim_win_is_valid = api.nvim_win_is_valid
 local nvim_set_current_win = api.nvim_set_current_win
@@ -109,10 +110,10 @@ function M.open(ui_config)
   st.state.info = require('resonance.scanner').get_info()
   st.state.buf = nvim_create_buf(false, true)
 
-  nvim_set_option_value('buftype', 'nofile', { buf = st.state.buf })
-  nvim_set_option_value('filetype', 'resonance', { buf = st.state.buf })
-  nvim_set_option_value('swapfile', false, { buf = st.state.buf })
-  nvim_set_option_value('bufhidden', 'wipe', { buf = st.state.buf })
+  vbo[st.state.buf].buftype = 'nofile'
+  vbo[st.state.buf].filetype = 'resonance'
+  vbo[st.state.buf].swapfile = false
+  vbo[st.state.buf].bufhidden = 'wipe'
 
   st.state.win_width = math_floor(vim_o.columns * ui_config.width)
   st.state.updates, st.state.commits = {}, {}
@@ -236,9 +237,9 @@ function M.open(ui_config)
       title_pos = 'center',
       zindex = 50
     })
-    nvim_set_option_value('cursorline', true, { win = st.state.win })
-    nvim_set_option_value('wrap', false, { win = st.state.win })
-    nvim_set_option_value('signcolumn', 'no', { win = st.state.win })
+    vwo[st.state.win].cursorline = true
+    vwo[st.state.win].wrap = false
+    vwo[st.state.win].signcolumn = 'no'
     bind_keys(on_close)
   end
   render_mod.schedule_render()

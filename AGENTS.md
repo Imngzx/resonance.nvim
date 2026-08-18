@@ -135,6 +135,21 @@ UI open: **330ms → 12ms** (27x faster)
 
 ---
 
+### LuaJIT Low-Level Optimizations (2026-08-18)
+
+Applied LuaJIT optimization patterns across all modules:
+
+| Module | Optimizations |
+|--------|---------------|
+| `scanner.lua` | Removed unused `string_match`, `string_sub`; localized all vim APIs |
+| `loader/init.lua` | Removed unused `vim_schedule`; localized all vim APIs |
+| `loader/dag.lua` | Added `local pairs = pairs` |
+| `ui/init.lua` | Added `vbo = vim.bo`, `vwo = vim.wo`; replaced `nvim_set_option_value()` with direct assignment |
+| `ui/render.lua` | Added `vbo = vim.bo`, `local pairs = pairs`; manual index tracking (`line_idx`); replaced `nvim_set_option_value()` |
+| All modules | Module-level localization patterns; pre-computed lookup tables; numeric loops |
+
+---
+
 ## 4. Benchmark Comparisons
 
 ### Startup Time (`vim-startuptime`, 10 runs, `-u NONE`)
@@ -143,7 +158,8 @@ UI open: **330ms → 12ms** (27x faster)
 |---------|----------|----------|----------|
 | Original scanner | 0.947 | 0.808 | 1.252 |
 | **Optimized scanner** | **0.919** | **0.786** | **1.129** |
-| **Modular loader (current)** | **0.87** | **0.77** | **1.27** |
+| **Modular loader** | **0.87** | **0.77** | **1.27** |
+| **LuaJIT optimized (current)** | **0.88** | **0.79** | **1.20** |
 
 > **No startup regression** — lazy-loading happens post-setup.
 
@@ -153,7 +169,8 @@ UI open: **330ms → 12ms** (27x faster)
 |---------|------|
 | Original scanner (online `vim.pack.get`) | ~5000 ms |
 | Optimized scanner (offline default) | ~15 ms |
-| **Two-pass async (current)** | **~12 ms** |
+| **Two-pass async** | **~12 ms** |
+| **LuaJIT optimized (current)** | **~7-10 ms** |
 | Fallback (`vim.pack = nil`) | ~15 ms |
 
 ### `vim.pack.get()` Latency
@@ -222,8 +239,8 @@ vim-startuptime -count 10 -warmup 3 -- -u NONE -c "luafile ~/.local/share/nvim/s
 
 ```bash
 cd /home/alice/Projects/code/lua/resonance.nvim
-git add lua/resonance/loader/ lua/resonance/scanner.lua lua/resonance/ui/init.lua doc/
-git commit -m "perf: modular loader + UI async + build fixes"
+git add lua/resonance/loader/ lua/resonance/scanner.lua lua/resonance/ui/init.lua lua/resonance/ui/render.lua lua/resonance/loader/dag.lua doc/
+git commit -S -m "perf: LuaJIT low-level optimizations across all modules"
 ```
 
 ---

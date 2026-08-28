@@ -11,16 +11,21 @@ local string_lower = string.lower
 M.load_times = {}
 
 local pack_dir_base = utils.fast_normalize(fn_stdpath('data') .. '/site/pack')
-local sub_dirs = { 'start', 'opt' }
-local function fallback_scan(plugin_triggers)
-  local plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {} }
-  local loaded_set = {}
-  local loaded_count, total_count = 0, 0
 
+-- Build a set of normalized runtime paths for loaded detection
+local function build_loaded_set()
+  local loaded_set = {}
   local rtps = nvim_list_runtime_paths()
   for i = 1, #rtps do
     loaded_set[utils.fast_normalize(rtps[i])] = true
   end
+  return loaded_set
+end
+
+local function fallback_scan(plugin_triggers)
+  local plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {} }
+  local loaded_set = build_loaded_set()
+  local loaded_count, total_count = 0, 0
 
   local req = fs_scandir(pack_dir_base)
   if req then
@@ -96,6 +101,9 @@ function M.get_info(opts)
       local plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {}, rev = {}, rev_to = {}, manifest = {} }
       local loaded_count, total_count = 0, 0
 
+      -- Cross-reference with runtimepath for accurate loaded status
+      local loaded_set = build_loaded_set()
+
       for i = 1, #packs do
         local p = packs[i]
         local spec = p.spec
@@ -104,7 +112,9 @@ function M.get_info(opts)
 
         plugins.name[total_count] = name
         plugins.path[total_count] = p.path
-        plugins.loaded[total_count] = p.active or false
+        -- Use runtimepath check (more accurate than p.active for manually loaded plugins)
+        local is_loaded = loaded_set[utils.fast_normalize(p.path)]
+        plugins.loaded[total_count] = is_loaded or false
         plugins.rev[total_count] = p.rev
         plugins.rev_to[total_count] = info_mode and p.rev_to or nil
         plugins.manifest[total_count] = info_mode and p.manifest or nil

@@ -20,19 +20,23 @@ end
 ---@param level integer
 ---@param opts table|nil
 function M.notify(msg, level, opts)
-  if not _snacks_checked then
-    local ok, snacks = pcall(require, 'snacks')
-    if ok and type(snacks) == 'table' and snacks.notifier then
-      _snacks_notifier = snacks.notifier
+  -- Always defer notification to avoid fast event context (vim.system callbacks, PackChanged, etc.)
+  -- Both vim.notify and snacks.notifier.notify can fail with E5560 in fast event contexts
+  vim.schedule(function()
+    if not _snacks_checked then
+      local ok, snacks = pcall(require, 'snacks')
+      if ok and type(snacks) == 'table' and snacks.notifier then
+        _snacks_notifier = snacks.notifier
+      end
+      _snacks_checked = true
     end
-    _snacks_checked = true
-  end
 
-  if _snacks_notifier then
-    _snacks_notifier.notify(msg, level, opts or { title = 'Resonance' })
-  else
-    vim_notify('[Resonance] ' .. msg, level, opts)
-  end
+    if _snacks_notifier then
+      _snacks_notifier.notify(msg, level, opts or { title = 'Resonance' })
+    else
+      vim_notify('[Resonance] ' .. msg, level, opts)
+    end
+  end)
 end
 
 -- Extract plugin name from URL or path

@@ -7,9 +7,14 @@ local fs_fstat = uv.fs_fstat
 local fs_read = uv.fs_read
 local fs_write = uv.fs_write
 local fs_close = uv.fs_close
+local async = vim.async
 local system = vim.system
 local schedule = vim.schedule
 local vim_trim = vim.trim
+local type = type
+local tostring = tostring
+local system_async = async.wrap(3, system)
+local build_semaphore = async.semaphore(2)
 
 M.build_hooks = {}
 
@@ -43,28 +48,27 @@ function M.run_build(name, dir, build_task, curr_hash)
 
   if last_hash == curr_hash then return end
 
-  local function do_build()
-    local ok, err = pcall(function()
+  schedule(function()
+    local build_run = async.run('resonance_build:' .. name, function()
       if type(build_task) == 'function' then
         build_task(dir)
-        schedule(function() M.mark_build_success(dir, curr_hash) end)
       else
-        system({ 'sh', '-c', build_task }, { cwd = dir, text = true }, function(obj)
-          if obj.code ~= 0 then
-            utils.notify('Build failed for ' .. name .. ': ' .. (obj.stderr or ''),
-              vim.log.levels.ERROR)
-          else
-            schedule(function() M.mark_build_success(dir, curr_hash) end)
-          end
+        local obj = build_semaphore:with(function()
+          return system_async({ 'sh', '-c', build_task }, { cwd = dir, text = true })
         end)
+        if obj.code ~= 0 then
+          error(obj.stderr and obj.stderr ~= '' and obj.stderr or obj.stdout or 'command failed', 0)
+        end
       end
+      M.mark_build_success(dir, curr_hash)
     end)
-    if not ok then
-      utils.notify('Build error for ' .. name .. ': ' .. tostring(err), vim.log.levels.ERROR)
-    end
-  end
-
-  schedule(do_build)
+    build_run:on_complete(function(err)
+      if not err then return end
+      schedule(function()
+        utils.notify('Build failed for ' .. name .. ': ' .. tostring(err), vim.log.levels.ERROR)
+      end)
+    end)
+  end)
 end
 
 -- Check and run build if hash changed
@@ -82,11 +86,18 @@ function M.check_and_build(name, dir, build_task)
     fs_close(fd)
   end
 
-  system({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true }, function(obj)
+  local check_run = async.run('resonance_build_check:' .. name, function()
+    local obj = system_async({ 'git', 'rev-parse', 'HEAD' }, { cwd = dir, text = true })
     local curr_hash = (obj.code == 0 and obj.stdout) and vim_trim(obj.stdout) or 'done'
     if last_hash ~= curr_hash then
       M.run_build(name, dir, build_task, curr_hash)
     end
+  end)
+  check_run:on_complete(function(err)
+    if not err then return end
+    schedule(function()
+      utils.notify('Build check failed for ' .. name .. ': ' .. tostring(err), vim.log.levels.ERROR)
+    end)
   end)
 end
 

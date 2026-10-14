@@ -61,6 +61,9 @@ function M.run_build(name, dir, build_task, curr_hash)
         end
       end
       M.mark_build_success(dir, curr_hash)
+      schedule(function()
+        utils.notify('Build succeeded for ' .. name, vim.log.levels.INFO)
+      end)
     end)
     build_run:on_complete(function(err)
       if not err then return end

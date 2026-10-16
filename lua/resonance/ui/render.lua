@@ -100,10 +100,9 @@ local function mark_row(name, is_detail)
 end
 
 local function reset_render_state()
-  -- Reset for new render
-  for i = 1, #lines do lines[i] = nil end
-  for i = 1, #hls do hls[i] = nil end
-  for i = 1, #line_parts do line_parts[i] = nil end
+  table_clear(lines)
+  table_clear(hls)
+  table_clear(line_parts)
   line_idx = 0
   cur_col = 0
   st.state.line_to_name = {}

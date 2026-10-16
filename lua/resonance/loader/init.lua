@@ -154,20 +154,10 @@ function M.load(config)
 
     if current_name then
       if visiting_path[current_name] then
-        -- Build cycle path in order
-        local cycle = {}
-        for _, n in ipairs(path_order) do
-          cycle[#cycle + 1] = n
-        end
-        cycle[#cycle + 1] = current_name
-        utils.notify(
-          'Circular dependency detected: ' .. table_concat(cycle, ' -> ') .. ' (aborting)',
-          vim_log_levels.ERROR
-        )
+        local msg = table_concat(path_order, ' -> ') .. ' -> ' .. current_name
+        utils.notify('Circular dependency detected: ' .. msg .. ' (aborting)', vim_log_levels.ERROR)
         return
       end
-      visiting_path[current_name] = true
-      path_order[#path_order + 1] = current_name
     end
 
     if state.loaded then

@@ -4,6 +4,7 @@ local api = vim.api
 
 local string_rep = string.rep
 local table_concat = table.concat
+local table_clear = require('table.clear')
 local math_max = math.max
 local math_min = math.min
 local string_format = string.format
@@ -145,7 +146,8 @@ local function build_dag_content()
   add('  Press A to return to list view', 'Comment')
   nl(); nl()
 
-  for _, name in ipairs(sorted_names) do
+  for i = 1, #sorted_names do
+    local name = sorted_names[i]
     local node = nodes[name]
     local deps = edges[name]
     local replay = replay_info[name]
@@ -164,7 +166,8 @@ local function build_dag_content()
 
     -- Dependencies (edges)
     if deps and #deps > 0 then
-      for i, dep in ipairs(deps) do
+      for j = 1, #deps do
+        local dep = deps[j]
         add('    ├─ ', 'Comment')
         add(dep, 'Function')
         if nodes[dep] and nodes[dep].loaded then

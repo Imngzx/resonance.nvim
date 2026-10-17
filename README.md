@@ -17,7 +17,7 @@
 
 ## Preview Image
 
-![Preview Video](https://github.com/user-attachments/assets/f37b574f-6061-493b-95cb-9e9478616b05)
+<https://github.com/user-attachments/assets/f37b574f-6061-493b-95cb-9e9478616b05>
 
 ![Preview Image](https://github.com/user-attachments/assets/d109dc38-1cbe-4396-9b4f-ed19088ac586)
 

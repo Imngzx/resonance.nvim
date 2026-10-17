@@ -233,7 +233,7 @@ dashboard.section.footer.opts.hl = "Comment"
 alpha.setup(dashboard.opts)
 ```
 
-For mini.starter
+For mini.starter:
 
 ```lua
 local starter = require("mini.starter")

@@ -1,6 +1,6 @@
 # 🔊 Resonance.nvim
 
-> An optimized, minimalist, and zero-dependency lazy-loader & vim.pack wrapper for Neovim (0.13+).
+> An optimized, minimalist, and zero-dependency lazy-loader and Vim.pack wrapper for Neovim (0.13+).
 
 `Resonance.nvim` is born out of a desire for extreme performance and simplicity. It strips away the bloat of traditional package managers while keeping the most powerful features: **lazy-loading**, **automatic build hooks**, and an **elegant UI**.
 
@@ -24,7 +24,7 @@
 | ![Build notifications](https://github.com/user-attachments/assets/36ec5afb-23c4-4c3f-a1ae-88eaac56a88f) | ![DAG UI](https://github.com/user-attachments/assets/7c919ec8-91bf-420f-a10d-fc439917b2d7) |
 | -------------- | --------------- |
 
-## 📦 Installation & Configuration
+## 📦 Installation and Configuration
 
 Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is downloaded and prepended to your runtime path on the first run.
 
@@ -33,11 +33,11 @@ Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is do
 -- 🎵 Bootstrap Resonance.nvim
 -- =====================================================================
 local plugin_url = "https://github.com/Imngzx/resonance.nvim"
-local pack_path = vim.fn.stdpath("data") .. "/site/pack/core/opt/resonance.nvim"
+local pack_path = Vim.fn.stdpath("data") .. "/site/pack/core/opt/resonance.nvim"
 
-if not vim.uv.fs_stat(pack_path) then
-  vim.notify("󱑽 Resonating (Downloading resonance.nvim)...", vim.log.levels.INFO)
-  vim.system({
+if not Vim.uv.fs_stat(pack_path) then
+  Vim.notify("󱑽 Resonating (Downloading resonance.nvim)...", Vim.log.levels.INFO)
+  Vim.system({
     "git",
     "clone",
     "--filter=blob:none",
@@ -66,7 +66,7 @@ resonance.setup({
   }
 })
 
--- UI keymap binding 
+-- UI keymap binding
 vim.keymap.set("n", "<leader>pL", resonance.open_ui, { desc = "Resonance UI" })
 
 -- NOTE: must put this at the end of your init.lua!
@@ -84,12 +84,12 @@ You can define events as a `string`, a `table` of multiple strings, or a detaile
 
 Here are the most commonly used native events for lazy-loading plugins:
 
-- **Startup & UI:** `VimEnter`, `UIEnter`
-- **File & Buffer:** `BufReadPre`, `BufReadPost`, `BufNewFile`, `BufEnter`
+- **Startup and UI:** `VimEnter`, `UIEnter`
+- **File and Buffer:** `BufReadPre`, `BufReadPost`, `BufNewFile`, `BufEnter`
 - **Mode Changes:** `InsertEnter`, `CmdlineEnter`, `VisualEnter`
 - **Others:** `CursorMoved`, `FocusGained`, `TextYankPost`
 
-**Examples:**
+#### **Examples:**
 
 ```lua
 -- Single event
@@ -134,7 +134,7 @@ resonance.load({
     dependencies = "https://github.com/<author>/<plugin2_name>",
 
     build = 'make', -- npm i or others based on plugin's docs
-      
+
     cmd = {'cmd1', 'cmd2'},
 
     keys = {
@@ -154,16 +154,16 @@ resonance.load({
 
     end
   },
-  
+
   { -- another plugin...},
 
   { -- another plugin...},
 })
 ```
 
-[Complex example](https://github.com/Imngzx/nvim-config-rice-.ver-/blob/nvim-native/lua/config/resonance.lua)
+[Complex example](https://github.com/Imngzx/nvim-config-rice-.ver-/blob/nvim-native/lua/config/resonance.lua).
 
-[Simple example](https://github.com/Imngzx/resonance-demo-nvim-config)
+[Simple example](https://github.com/Imngzx/resonance-demo-nvim-config).
 
 ## 📊 Dashboard Resonance.stats integration
 
@@ -186,7 +186,7 @@ local stats = require("resonance").stats()
 -- }
 ```
 
-For snacks.nvim:
+#### For snacks.nvim
 
 ```lua
 require("snacks").setup({
@@ -213,7 +213,7 @@ require("snacks").setup({
 })
 ```
 
-For alpha.nvim:
+#### For alpha.nvim
 
 ```lua
 local alpha = require("alpha")
@@ -233,14 +233,14 @@ dashboard.section.footer.opts.hl = "Comment"
 alpha.setup(dashboard.opts)
 ```
 
-For mini.starter:
+#### For **mini.starter**
 
 ```lua
 local starter = require("mini.starter")
 
 starter.setup({
   -- ... (your items and hooks) ...
-  
+
   footer = function()
     local stats = require("resonance").stats()
     local ms = string.format("%.2f ms", stats.startuptime)
@@ -250,28 +250,25 @@ starter.setup({
 ```
 
 > [!TIP]
-> If you want a very "honest" startuptime, please add this on top of your init.lua
+> If you want a very "honest" startuptime, please add this on top of your init.lua.
 
 ```lua
 -- enable this for a "very" honest startuptime :)
-_G.start_time = vim.uv.hrtime()
+_G.start_time = Vim.uv.hrtime()
 ```
 
 ## ⌨️ UI Keymaps
 
-> [!TIP]
-> When the Resonance panel is open:
-
-- `U` : Update all plugins (`vim.pack.update()`)
-- `u` : Update the plugin at the cursor (`vim.pack.update()`)
-- `dd`: Delete the plugin at the cursor
-- `c` : Check out an available branch, commit, or tag
-- `r` : Check for pending updates (`vim.pack.get()` fetches and resolves package revisions)
-- `S` : Search inside plugins source code (Powered by Snacks.picker / Telescope / Native vimgrep)
-- `g` : Check Dependency Graph (DAG) & Event Replay
-- `s` : Skip plugin update
-- `D` : Open plugin directory
-- `q` / Esc : Quit
+- `U` : Update all plugins (`vim.pack.update()`).
+- `u` : Update the plugin at the cursor (`vim.pack.update()`).
+- `dd`: Delete the plugin at the cursor.
+- `c` : Check out an available branch, commit, or tag.
+- `r` : Check for pending updates (`vim.pack.get()` fetches and resolves package revisions).
+- `S` : Search inside plugins source code (Powered by Snacks.picker / Telescope / Native vimgrep).
+- `g` : Check Dependency Graph (DAG) and Event Replay.
+- `s` : Skip plugin update.
+- `D` : Open plugin directory.
+- `q` / Esc : Quit.
 
 ## License
 

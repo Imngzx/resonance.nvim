@@ -35,42 +35,39 @@ Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is do
 -- =====================================================================
 -- 🎵 Bootstrap Resonance.nvim
 -- =====================================================================
-local plugin_url = "https://github.com/Imngzx/resonance.nvim"
-local pack_path = vim.fn.stdpath("data") .. "/site/pack/core/opt/resonance.nvim"
+-- You can also use the link from codeberg
+local plugin_url = 'https://github.com/Imngzx/resonance.nvim'
+local pack_path = vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim'
 
 if not vim.uv.fs_stat(pack_path) then
-  vim.notify("󱑽 Resonating (Downloading resonance.nvim)...", vim.log.levels.INFO)
-  vim.system({
-    "git",
-    "clone",
-    "--filter=blob:none",
-    plugin_url,
-    "--branch=main",
-    pack_path
-  }):wait()
+  vim.notify('󱑽 Resonating (Downloading resonance.nvim)...', vim.log.levels.INFO)
+  vim.system({ 'git', 'clone', '--filter=blob:none', plugin_url, '--branch=main',
+    pack_path }):wait()
 end
 
 vim.opt.rtp:prepend(pack_path)
 
-vim.cmd("packadd resonance.nvim")
-
 -- =====================================================================
 -- 🚀 Configuration
 -- =====================================================================
-local resonance = require("resonance")
-
-resonance.setup({
-  ui = {
-    border = 'rounded',
-    title = ' 󱑽 Resonance 󱑽 ',
-    width = 0.65,
-    height = 0.75,
-    backdrop = 60, -- only for snacks
-  }
+local resonance = require('resonance')
+resonance.load({
+  'https://github.com/Imngzx/resonance.nvim',
+  version = 'main',
+  event = 'VimEnter',
+  keys = {
+    { 'n', '<leader>pL', '<cmd>Resonance<cr>', { desc = '[Float] Resonance UI' } },
+  },
+  config = function()
+    resonance.setup({
+      ui = {
+        border = 'rounded',
+        width = 0.65,
+        height = 0.75,
+      }
+    })
+  end
 })
-
--- UI keymap binding
-vim.keymap.set("n", "<leader>pL", resonance.open_ui, { desc = "Resonance UI" })
 
 -- NOTE: must put this at the end of your init.lua!
 resonance.trigger_verylazy()

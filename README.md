@@ -1,6 +1,6 @@
 # 🔊 Resonance.nvim
 
-> An optimized, minimalist, and zero-dependency lazy-loader and Vim.pack wrapper for Neovim (0.13+).
+> An optimized, minimalist, and zero-dependency lazy-loader and `vim.pack` wrapper for Neovim (0.13+).
 
 `Resonance.nvim` is born out of a desire for extreme performance and simplicity. It strips away the bloat of traditional package managers while keeping the most powerful features: **lazy-loading**, **automatic build hooks**, and an **elegant UI**.
 
@@ -36,11 +36,11 @@ Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is do
 -- 🎵 Bootstrap Resonance.nvim
 -- =====================================================================
 local plugin_url = "https://github.com/Imngzx/resonance.nvim"
-local pack_path = Vim.fn.stdpath("data") .. "/site/pack/core/opt/resonance.nvim"
+local pack_path = vim.fn.stdpath("data") .. "/site/pack/core/opt/resonance.nvim"
 
-if not Vim.uv.fs_stat(pack_path) then
-  Vim.notify("󱑽 Resonating (Downloading resonance.nvim)...", Vim.log.levels.INFO)
-  Vim.system({
+if not vim.uv.fs_stat(pack_path) then
+  vim.notify("󱑽 Resonating (Downloading resonance.nvim)...", vim.log.levels.INFO)
+  vim.system({
     "git",
     "clone",
     "--filter=blob:none",
@@ -257,7 +257,7 @@ starter.setup({
 
 ```lua
 -- enable this for a "very" honest startuptime :)
-_G.start_time = Vim.uv.hrtime()
+_G.start_time = vim.uv.hrtime()
 ```
 
 ## ⌨️ UI Keymaps

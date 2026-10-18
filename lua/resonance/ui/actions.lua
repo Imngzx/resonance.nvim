@@ -73,43 +73,66 @@ function M.check_updates_network()
     return
   end
 
-  local completed = 0
+  local completed_fetches = 0
 
   for i = 1, total do
-    local name = names[i]
     local path = paths[i]
 
-    local run = async.run('resonance_check:' .. name, function()
+    local run = async.run('resonance_fetch:' .. names[i], function()
       check_semaphore:with(function()
-        local out1 = system_async({ 'git', 'ls-remote', 'origin', 'HEAD' },
-          { cwd = path, text = true })
-        if out1.code == 0 and out1.stdout then
-          local remote_hash = out1.stdout:match('^(%x+)')
-          if remote_hash then
-            local local_hash = st.state.commits[name]
-            if local_hash and not vim.startswith(remote_hash, local_hash) then
-              local out2 = system_async({ 'git', 'fetch', 'origin' }, { cwd = path, text = true })
-              if out2.code == 0 then
-                local out3 = system_async({ 'git', 'log', '--oneline', 'HEAD..FETCH_HEAD' },
-                  { cwd = path, text = true })
-                if out3.code == 0 and out3.stdout and vim_trim(out3.stdout) ~= '' then
-                  local lines = {}
-                  for line in out3.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
-                  st.state.updates[name] = lines
-                  render_mod.schedule_render()
-                end
-              end
-            end
-          end
-        end
-        ---@diagnostic disable-next-line: missing-return
+        -- Fetch all branches and tags silently in the background
+        system_async({ 'git', 'fetch', '--tags', '--force' }, { cwd = path, text = true })
+        return true
       end)
     end)
 
     run:on_complete(function(_)
-      completed = completed + 1
-      if completed >= total then
-        schedule(finish_check)
+      completed_fetches = completed_fetches + 1
+      if completed_fetches >= total then
+        schedule(function()
+          -- Network fetches are done. Ask native vim.pack to calculate rev_to offline
+          if not (vim.pack and vim.pack.get) then
+            finish_check()
+            return
+          end
+
+          local ok, packs = pcall(vim.pack.get, nil, { info = true, offline = true })
+          if not ok or type(packs) ~= 'table' then
+            finish_check()
+            return
+          end
+
+          local pending_logs = 0
+          local logs_completed = 0
+
+          for p = 1, #packs do
+            local pk = packs[p]
+            if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
+              pending_logs = pending_logs + 1
+              local p_name = pk.spec.name
+
+              -- Local git log is fast enough for standard callbacks
+              system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
+                { cwd = pk.path, text = true }, function(out)
+                  if out.code == 0 and out.stdout and vim_trim(out.stdout) ~= '' then
+                    local lines = {}
+                    for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
+                    st.state.updates[p_name] = lines
+                    schedule(function() render_mod.schedule_render() end)
+                  end
+
+                  logs_completed = logs_completed + 1
+                  if logs_completed >= pending_logs then
+                    schedule(finish_check)
+                  end
+                end)
+            end
+          end
+
+          if pending_logs == 0 then
+            finish_check()
+          end
+        end)
       end
     end)
   end

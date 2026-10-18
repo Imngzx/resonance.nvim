@@ -5,6 +5,15 @@ local utils = require('resonance.utils')
 
 local schedule = vim.schedule
 local system = vim.system
+local async = vim.async
+local _system_async = async.wrap(3, system)
+---@param cmd string[]
+---@param opts table
+---@return vim.SystemCompleted
+local function system_async(cmd, opts)
+  return _system_async(cmd, opts) --[[@as vim.SystemCompleted]]
+end
+local check_semaphore = async.semaphore(5)
 local pcall = pcall
 local type = type
 local tostring = tostring
@@ -49,7 +58,6 @@ function M.check_updates_network()
   start_spinner()
   render_mod.render()
 
-  -- Use offline info (which comes from vim.pack cache) for paths
   local info = st.state.info
   if not info or not info.plugins then
     finish_check()
@@ -59,61 +67,51 @@ function M.check_updates_network()
   local total = info.total
   local names = info.plugins.name
   local paths = info.plugins.path
-  local completed = 0
 
   if total == 0 then
     vim.defer_fn(finish_check, 200)
     return
   end
 
-  -- Background async git queue to prevent UI blocking
-  local max_concurrent = 5
-  local idx = 1
+  local completed = 0
 
-  local function next_task()
-    if idx > total then return end
-    local i = idx
-    idx = idx + 1
-
+  for i = 1, total do
     local name = names[i]
     local path = paths[i]
 
-    system({ 'git', 'ls-remote', 'origin', 'HEAD' }, { cwd = path, text = true }, function(out1)
-      if out1.code == 0 and out1.stdout then
-        local remote_hash = out1.stdout:match('^(%x+)')
-        if remote_hash then
-          local local_hash = st.state.commits[name]
-          if local_hash and not vim.startswith(remote_hash, local_hash) then
-            system({ 'git', 'fetch', 'origin' }, { cwd = path, text = true }, function(out2)
+    local run = async.run('resonance_check:' .. name, function()
+      check_semaphore:with(function()
+        local out1 = system_async({ 'git', 'ls-remote', 'origin', 'HEAD' },
+          { cwd = path, text = true })
+        if out1.code == 0 and out1.stdout then
+          local remote_hash = out1.stdout:match('^(%x+)')
+          if remote_hash then
+            local local_hash = st.state.commits[name]
+            if local_hash and not vim.startswith(remote_hash, local_hash) then
+              local out2 = system_async({ 'git', 'fetch', 'origin' }, { cwd = path, text = true })
               if out2.code == 0 then
-                system({ 'git', 'log', '--oneline', 'HEAD..FETCH_HEAD' }, { cwd = path, text = true },
-                  function(out3)
-                    if out3.code == 0 and out3.stdout and vim_trim(out3.stdout) ~= '' then
-                      local lines = {}
-                      for line in out3.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
-                      st.state.updates[name] = lines
-                      render_mod.schedule_render()
-                    end
-                    completed = completed + 1
-                    if completed >= total then finish_check() else next_task() end
-                  end)
-              else
-                completed = completed + 1
-                if completed >= total then finish_check() else next_task() end
+                local out3 = system_async({ 'git', 'log', '--oneline', 'HEAD..FETCH_HEAD' },
+                  { cwd = path, text = true })
+                if out3.code == 0 and out3.stdout and vim_trim(out3.stdout) ~= '' then
+                  local lines = {}
+                  for line in out3.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
+                  st.state.updates[name] = lines
+                  render_mod.schedule_render()
+                end
               end
-            end)
-            return
+            end
           end
         end
-      end
-
-      completed = completed + 1
-      if completed >= total then finish_check() else next_task() end
+        ---@diagnostic disable-next-line: missing-return
+      end)
     end)
-  end
 
-  for _ = 1, max_concurrent do
-    next_task()
+    run:on_complete(function(_)
+      completed = completed + 1
+      if completed >= total then
+        schedule(finish_check)
+      end
+    end)
   end
 end
 

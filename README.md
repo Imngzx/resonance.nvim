@@ -15,6 +15,9 @@
 - **Native Update Discovery:** Checks pending updates with `vim.pack.get()` and displays the commits from the installed revision to the resolved target revision.
 - **Fast:** Built entirely on Neovim's native `vim.pack` and modern `vim.system` APIs.
 
+> [!TIP]
+> Please enable UI2 for better experience.
+
 ## Preview Image
 
 <https://github.com/user-attachments/assets/f37b574f-6061-493b-95cb-9e9478616b05>

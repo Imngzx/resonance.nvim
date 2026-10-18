@@ -33,10 +33,11 @@ end
 local function start_spinner()
   stop_spinner()
   spinner_timer = vim.uv.new_timer()
+  if not spinner_timer then return end
   spinner_timer:start(0, 100, function()
     schedule(function()
       st.state.spinner_frame = (st.state.spinner_frame % 8) + 1
-      render_mod.schedule_render()
+      render_mod.update_spinner() -- Use targeted redraw
     end)
   end)
 end
@@ -44,49 +45,76 @@ end
 function M.check_updates_network()
   if st.state.checking then return end
   st.state.checking = true
+  st.state.updates = {} -- Clear stale state
   start_spinner()
   render_mod.render()
 
-  vim.defer_fn(function()
-    if not (vim.pack and vim.pack.get) then
-      finish_check()
-      return
-    end
+  -- Use offline info (which comes from vim.pack cache) for paths
+  local info = st.state.info
+  if not info or not info.plugins then
+    finish_check()
+    return
+  end
 
-    local ok, packs = pcall(vim.pack.get, nil, { info = true, offline = false })
-    if not ok or type(packs) ~= 'table' then
-      finish_check()
-      return
-    end
+  local total = info.total
+  local names = info.plugins.name
+  local paths = info.plugins.path
+  local completed = 0
 
-    local pending_count = 0
-    local log_completed = 0
-    for p = 1, #packs do
-      local pk = packs[p]
-      if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
-        pending_count = pending_count + 1
-        local name = pk.spec.name
-        system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
-          { cwd = pk.path, text = true },
-          function(out)
-            if out.code == 0 and out.stdout and vim_trim(out.stdout) ~= '' then
-              local lines = {}
-              for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
-              st.state.updates[name] = lines
-            end
-            log_completed = log_completed + 1
-            if log_completed >= pending_count then
-              finish_check()
-            end
-          end)
+  if total == 0 then
+    vim.defer_fn(finish_check, 200)
+    return
+  end
+
+  -- Background async git queue to prevent UI blocking
+  local max_concurrent = 5
+  local idx = 1
+
+  local function next_task()
+    if idx > total then return end
+    local i = idx
+    idx = idx + 1
+
+    local name = names[i]
+    local path = paths[i]
+
+    system({ 'git', 'ls-remote', 'origin', 'HEAD' }, { cwd = path, text = true }, function(out1)
+      if out1.code == 0 and out1.stdout then
+        local remote_hash = out1.stdout:match('^(%x+)')
+        if remote_hash then
+          local local_hash = st.state.commits[name]
+          if local_hash and not vim.startswith(remote_hash, local_hash) then
+            system({ 'git', 'fetch', 'origin' }, { cwd = path, text = true }, function(out2)
+              if out2.code == 0 then
+                system({ 'git', 'log', '--oneline', 'HEAD..FETCH_HEAD' }, { cwd = path, text = true },
+                  function(out3)
+                    if out3.code == 0 and out3.stdout and vim_trim(out3.stdout) ~= '' then
+                      local lines = {}
+                      for line in out3.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
+                      st.state.updates[name] = lines
+                      render_mod.schedule_render()
+                    end
+                    completed = completed + 1
+                    if completed >= total then finish_check() else next_task() end
+                  end)
+              else
+                completed = completed + 1
+                if completed >= total then finish_check() else next_task() end
+              end
+            end)
+            return
+          end
+        end
       end
-    end
 
-    if pending_count == 0 then
-      -- Allow spinner to animate for a bit even when no updates
-      vim.defer_fn(finish_check, 200)
-    end
-  end, 1)
+      completed = completed + 1
+      if completed >= total then finish_check() else next_task() end
+    end)
+  end
+
+  for _ = 1, max_concurrent do
+    next_task()
+  end
 end
 
 function M.toggle_details()
@@ -110,6 +138,7 @@ function M.update_plugins(names)
       if not ok then
         utils.notify('Pack update failed: ' .. tostring(err), vim_log_levels.ERROR)
       else
+        st.state.info = require('resonance.scanner').get_info()
         for i = 1, #names do
           local n = names[i]
           st.state.updates[n] = nil
@@ -139,6 +168,7 @@ function M.uninstall_plugin(name)
     local ok, err = pcall(vim.pack.del, { name }, { force = true })
     if ok then
       utils.notify('Uninstalled ' .. name, vim_log_levels.INFO)
+      st.state.info = require('resonance.scanner').get_info()
     else
       utils.notify('Uninstall failed: ' .. tostring(err), vim_log_levels.ERROR)
     end

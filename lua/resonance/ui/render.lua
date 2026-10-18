@@ -373,6 +373,7 @@ local function build_content()
   if p_idx == 0 then
     if st.state.checking then
       add('  Updates Available (0)', 'Title')
+      st.state.spinner_line_idx = line_idx
       add('  ' .. SPINNER_FRAMES[st.state.spinner_frame] .. ' Resonating...', 'DiagnosticInfo')
       nl()
     else
@@ -381,6 +382,7 @@ local function build_content()
     end
   else
     add(string_format('  Updates Available (%d)', p_idx), 'Title')
+    st.state.spinner_line_idx = line_idx
     if st.state.checking then
       add('  ' .. SPINNER_FRAMES[st.state.spinner_frame] .. ' Resonating...', 'DiagnosticInfo')
     end
@@ -439,6 +441,37 @@ function M.schedule_render()
     M.render()
     M.render_scheduled = false
   end)
+end
+
+function M.update_spinner()
+  if not st.is_valid() or not st.state.checking then return end
+  local buf = st.state.buf
+  local row = st.state.spinner_line_idx
+  if not buf or not row then return end
+
+  local p_idx = 0
+  for _, _ in pairs(st.state.updates) do p_idx = p_idx + 1 end
+
+  local text = string_format('  Updates Available (%d)', p_idx)
+  local title_len = #text
+  text = text .. '  ' .. SPINNER_FRAMES[st.state.spinner_frame] .. ' Resonating...'
+
+  vbo[buf].modifiable = true
+  nvim_buf_set_lines(buf, row, row + 1, false, { text })
+  vbo[buf].modifiable = false
+
+  local ns = st.ns
+  nvim_buf_clear_namespace(buf, ns, row, row + 1)
+  nvim_buf_set_extmark(buf, ns, row, 0, {
+    end_col = title_len,
+    hl_group = 'Title',
+    priority = 100,
+  })
+  nvim_buf_set_extmark(buf, ns, row, title_len, {
+    end_col = #text,
+    hl_group = 'DiagnosticInfo',
+    priority = 100,
+  })
 end
 
 return M

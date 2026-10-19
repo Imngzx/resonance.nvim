@@ -90,6 +90,7 @@ build.setup_packchanged_autocmd(get_plugin_dir)
 
 M.plugin_triggers = {}
 M.specs = {}
+M.spec_urls = {}  -- URL -> spec name mapping
 
 ---@param config table
 function M.load(config)
@@ -120,6 +121,12 @@ function M.load(config)
     local name = parsed_names[i]
     if name and trig_str then M.plugin_triggers[name] = trig_str end
     if name then M.specs[name] = config end
+    -- Map URL to name for dependency resolution
+    local target_url = type(pack_plugins[i]) == 'string' and pack_plugins[i] or
+      (pack_plugins[i].src or pack_plugins[i][1])
+    if target_url then
+      M.spec_urls[target_url] = name
+    end
   end
 
   -- Register build hooks
@@ -152,6 +159,8 @@ function M.load(config)
     end
     local current_name = parsed_names[1]
 
+    -- Cycle check MUST happen before early return on state.loaded
+    -- This ensures recursive loads (A→B→A) are detected even if A was already loaded
     if current_name then
       if visiting_path[current_name] then
         local msg = table_concat(path_order, ' -> ') .. ' -> ' .. current_name
@@ -179,10 +188,12 @@ function M.load(config)
 
     for i = 1, #parsed_deps do
       local dep = parsed_deps[i]
-      if M.specs[dep.name] then
-        -- Always call _force_load to check visiting_path for cycles
-        -- load_now will early-return if already loaded
-        M.specs[dep.name]._force_load(nil, visiting_path)
+      local dep_url = type(dep.raw) == 'string' and dep.raw or
+        (dep.raw.src or dep.raw[1] or dep.raw.url)
+      local spec_name = M.specs[dep.name] and dep.name or
+        (dep_url and M.spec_urls[dep_url])
+      if spec_name and M.specs[spec_name] then
+        M.specs[spec_name]._force_load(nil, visiting_path)
       else
         pcall(pack_add_safe, { dep.raw }, { confirm = false, load = false })
         pcall(nvim_cmd, { cmd = 'packadd', args = { dep.name } })

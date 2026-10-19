@@ -172,7 +172,6 @@ function M.load(config)
     if state.loaded then
       if current_name then
         visiting_path[current_name] = nil
-        -- Remove from path_order (last element)
         if path_order[#path_order] == current_name then
           path_order[#path_order] = nil
         end
@@ -264,13 +263,14 @@ function M.load(config)
     load_now(ev, visiting_path)
   end
 
-  -- Register all triggers
   triggers.register_all(config, load_now)
 end
 
 ---@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, table<string, string[]>
 function M.get_dag_data()
-  return dag.get_dag_data(M.specs, plugin_state)
+  local scanner = package.loaded['resonance.scanner'] or require('resonance.scanner')
+  local scanner_info = scanner.get_info()
+  return dag.get_dag_data(M.specs, plugin_state, scanner_info)
 end
 
 ---@return table<string, {event:string, chain:string[], replayed:boolean}>

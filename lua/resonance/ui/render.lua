@@ -41,6 +41,7 @@ _spaces_cache = setmetatable({}, {
 local TYPE_LABELS = {
   start = '󰜎 start',
   opt   = '󰢱 opt',
+  core  = '󰒇 core',
 }
 
 -- Static button definitions (never change)

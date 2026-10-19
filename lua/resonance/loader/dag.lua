@@ -50,7 +50,7 @@ function M.get_dag_data(specs, plugin_state, scanner_info)
 
   -- Build a set of all dependency names from specs
   local all_dep_names = {}
-  for name, spec in pairs(specs) do
+  for _, spec in pairs(specs) do
     if spec.dependencies then
       local dep_list = type(spec.dependencies) == 'table' and spec.dependencies or
         { spec.dependencies }
@@ -128,7 +128,7 @@ function M.get_dag_data(specs, plugin_state, scanner_info)
 end
 
 ---@return table<string, {event:string, chain:string[], replayed:boolean}>
-function M.get_replay_info(specs, plugin_triggers)
+function M.get_replay_info(specs, _)
   local info = {}
   for name, spec in pairs(specs) do
     -- Only process actual specs (those with _replay_done field)

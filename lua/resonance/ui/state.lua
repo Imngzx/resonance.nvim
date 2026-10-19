@@ -9,6 +9,7 @@ local vim_trim = vim.trim
 local uv_fs_open = uv.fs_open
 local uv_fs_close = uv.fs_close
 local uv_fs_read = uv.fs_read
+local uv_fs_fstat = uv.fs_fstat
 
 local nvim_create_namespace = api.nvim_create_namespace
 local nvim_get_hl = api.nvim_get_hl
@@ -144,7 +145,8 @@ function M.get_src_url(path)
   local fd = uv_fs_open(path .. '/.git/config', 'r', 438)
   if not fd then return 'unknown' end
 
-  local content = uv_fs_read(fd, 65536, 0) or ''
+  local stat = uv_fs_fstat(fd)
+  local content = stat and uv_fs_read(fd, stat.size, 0) or uv_fs_read(fd, 65536, 0) or ''
   uv_fs_close(fd)
 
   local url = string_match(content, '%[remote%s+"origin"%][^%[]-url%s*=%s*([^\n]+)')
@@ -157,7 +159,8 @@ function M.get_local_hash(path)
   local function fast_read(file_path)
     local fd = uv_fs_open(file_path, 'r', 438)
     if not fd then return nil end
-    local content = uv_fs_read(fd, 65536, 0)
+    local stat = uv_fs_fstat(fd)
+    local content = stat and uv_fs_read(fd, stat.size, 0) or uv_fs_read(fd, 65536, 0)
     uv_fs_close(fd)
     return content
   end

@@ -29,18 +29,18 @@ local SPINNER_FRAMES = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧',
 
 local _spaces_cache
 _spaces_cache = setmetatable({}, {
-  __index = function(_, n)
+  __index = function(t, n)
+    if n < 0 then n = 0 end
     local s = string_rep(' ', n)
-    _spaces_cache[n] = s
+    t[n] = s
     return s
   end,
 })
 
 -- Pre-computed type labels
 local TYPE_LABELS = {
-  start = '[start]',
-  opt = '[opt]',
-  core = '[core]',
+  start = '󰜎 start',
+  opt   = '󰢱 opt',
 }
 
 -- Static button definitions (never change)
@@ -62,7 +62,9 @@ local BUTTONS = {
 local _cached_stats = nil
 local function get_stats()
   if not _cached_stats then
-    _cached_stats = require('resonance').stats()
+    _cached_stats = {
+      startuptime = (package.loaded['resonance.scanner'] or require('resonance.scanner')).load_times._startup or 0
+    }
   end
   return _cached_stats
 end
@@ -76,22 +78,20 @@ local cur_col = 0
 
 local function add(text, hl)
   if not text or text == '' then return end
-  if hl then
-    local idx = #hls + 1
-    hls[idx] = line_idx
-    hls[idx + 1] = cur_col
-    hls[idx + 2] = cur_col + #text
-    hls[idx + 3] = hl
-  end
   line_parts[#line_parts + 1] = text
+  if hl then
+    hls[#hls + 1] = line_idx
+    hls[#hls + 1] = cur_col
+    hls[#hls + 1] = cur_col + #text
+    hls[#hls + 1] = hl
+  end
   cur_col = cur_col + #text
 end
 
 local function nl()
   line_idx = line_idx + 1
   lines[line_idx] = table_concat(line_parts)
-  -- Clear line_parts efficiently
-  for i = 1, #line_parts do line_parts[i] = nil end
+  line_parts = {}
   cur_col = 0
 end
 
@@ -113,6 +113,9 @@ end
 -- DAG view rendering (must be before build_content for upvalue reference)
 local function build_dag_content()
   reset_render_state()
+
+  -- Clear spinner line index for DAG view (prevents stale spinner from list view)
+  st.state.spinner_line_idx = nil
 
   local nodes = st.state.dag_data.nodes or {}
   local edges = st.state.dag_data.edges or {}

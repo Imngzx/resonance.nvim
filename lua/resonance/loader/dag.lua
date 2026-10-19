@@ -128,46 +128,35 @@ function M.get_dag_data(specs, plugin_state, scanner_info)
 end
 
 ---@return table<string, {event:string, chain:string[], replayed:boolean}>
-function M.get_replay_info(specs, _)
+function M.get_replay_info(specs, plugin_triggers)
   local info = {}
   for name, spec in pairs(specs) do
     -- Only process actual specs (those with _replay_done field)
     -- Dependency nodes from scanner don't have this field
     if spec._replay_done then
-      local trig_str = utils.parse_trigger(spec)
+      local trigger = plugin_triggers[name] or 'none'
+      local chain = {}
       -- Only process event triggers (󱐋 prefix), not cmd/keys/ft
-      if trig_str:match('^󱐋') then
-        local event_str = trig_str:match('󱐋%s+(.+)') or trig_str
-        local chain = {}
-        -- Handle multiple events (comma-separated)
-        local events = {}
-        for ev in string_gmatch(event_str, '([^,]+)') do
-          local trimmed = vim_trim(ev)
-          if trimmed ~= '' then
-            table_insert(events, trimmed)
+      if trigger:match('^󱐋') then
+        local ev = type(spec.event) == 'string' and { spec.event } or spec.event
+        if ev and ev[1] then
+          local event_name = ev[1]
+          if event_name ~= 'User' then
+            local autocmds = get_autocmds({ event = event_name })
+            for a = 1, #autocmds do
+              local autocmd = autocmds[a]
+              if autocmd.group then
+                chain[#chain + 1] = autocmd.group_name
+              end
+            end
           end
         end
-        -- For replay info, use the first non-User event for chain
-        local chain_event = nil
-        for _, ev in ipairs(events) do
-          if not ev:match('^User') then
-            chain_event = ev
-            break
-          end
-        end
-        if chain_event then
-          chain = get_event_chain(chain_event, 0, {})
-        end
-        local chain_strs = {}
-        for c = 1, #chain do
-          chain_strs[c] = chain[c].event
-        end
-        info[name] = {
-          event = event_str,
-          chain = chain_strs,
-          replayed = true,
-        }
       end
+      info[name] = {
+        event = trigger,
+        chain = chain,
+        replayed = spec._replay_done == true,
+      }
     end
   end
   return info

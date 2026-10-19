@@ -172,6 +172,11 @@ function M.load(config)
     end
     state.loaded = true
 
+    if current_name then
+      visiting_path[current_name] = true
+      path_order[#path_order + 1] = current_name
+    end
+
     for i = 1, #parsed_deps do
       local dep = parsed_deps[i]
       if M.specs[dep.name] then

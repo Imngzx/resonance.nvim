@@ -160,7 +160,7 @@ function M.load(config)
     local current_name = parsed_names[1]
 
     -- Cycle check MUST happen before early return on state.loaded
-    -- This ensures recursive loads (A→B→A) are detected even if A was already loaded
+    -- This ensures recursive loads (A->B->A) are detected even if A was already loaded
     if current_name then
       if visiting_path[current_name] then
         local msg = table_concat(path_order, ' -> ') .. ' -> ' .. current_name
@@ -243,7 +243,13 @@ function M.load(config)
           for a = 1, #autocmds do
             local autocmd = autocmds[a]
             local id = autocmd.event .. ':' .. tostring(autocmd.group or '')
-            if autocmd.group and not done[id] and not c_opts.exclude[autocmd.group_name] then
+            -- Replay ungrouped autocmds (no group) and grouped ones not in exclude
+            if not autocmd.group then
+              if not c_opts.exclude[''] then
+                exec_autocmds(c_opts.event,
+                  { buf = c_opts.buf, modeline = false, data = c_opts.data })
+              end
+            elseif not done[id] and not c_opts.exclude[autocmd.group_name] then
               done[id] = true
               exec_autocmds(c_opts.event,
                 { buf = c_opts.buf, group = autocmd.group_name, modeline = false, data = c_opts.data })

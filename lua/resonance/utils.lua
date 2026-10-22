@@ -30,10 +30,11 @@ function M.notify(msg, level, opts)
       end
       _snacks_checked = true
     end
+
     if _snacks_notifier then
-      _snacks_notifier.notify(msg, level, opts)
+      _snacks_notifier.notify(msg, level, opts or { title = 'Resonance' })
     else
-      vim_notify(msg, level, opts)
+      vim_notify('[Resonance] ' .. msg, level, opts)
     end
   end)
 end
@@ -52,7 +53,7 @@ end
 function M.normalize_pack_spec(plugin)
   if type(plugin) ~= 'table' then return plugin end
   return {
-    src = plugin.src or plugin.url or plugin[1],
+    src = plugin.src or plugin[1] or plugin.url,
     name = plugin.name,
     version = plugin.version,
     data = plugin.data,
@@ -64,16 +65,25 @@ end
 ---@return string|nil
 function M.parse_trigger(config)
   if config.event then
-    return '󰻃 ' .. (type(config.event) == 'table' and config.event[1] or config.event)
+    if type(config.event) == 'table' then
+      local ev = config.event
+      if ev[1] == 'User' then
+        return '󱐋 User(' .. (ev.pattern or ev[2] or 'Unknown') .. ')'
+      end
+      return '󱐋 ' .. table_concat(ev, ', ')
+    end
+    return '󱐋 ' .. config.event
   end
   if config.cmd then
-    return '󰘳 ' .. (type(config.cmd) == 'table' and config.cmd[1] or config.cmd)
+    local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd
+    return '󰘳 ' .. table_concat(cmds, ', ')
   end
   if config.keys then
     return '󰌌 keys'
   end
   if config.ft then
-    return '󰈔 ' .. (type(config.ft) == 'table' and config.ft[1] or config.ft)
+    local fts = type(config.ft) == 'string' and { config.ft } or config.ft
+    return '󰈔 ' .. table_concat(fts, ', ')
   end
   return nil
 end

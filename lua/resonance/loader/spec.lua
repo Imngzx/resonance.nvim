@@ -44,6 +44,12 @@ function M.parse_config(config)
     end
   end
 
+  -- cond field: boolean or function() -> boolean (lazy.nvim parity)
+  if config.cond ~= nil then
+    local ok = type(config.cond) == 'function' and config.cond() or config.cond
+    if not ok then return nil end
+  end
+
   local plugins = config.plugin
   if type(plugins) == 'string' then
     plugins = { plugins }

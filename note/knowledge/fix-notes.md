@@ -102,28 +102,25 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 ## 4. 问题清单
 
-### P0 —— 会直接崩，且已实测复现
-
-- **`vim.async` 硬依赖，require 期无守卫**（`loader/build.lua:10,16-17`）
-  在模块加载时就执行 `async.wrap(...)`。本机 `nvim 0.12.6`（stable）实测：
-  - `require('resonance.loader')` → `attempt to index local 'async' (a nil value)`
-  - 连带 `scanner.get_info()`（`scanner.lua:94` require loader）和 `ui.open()` 全部失败。
-  - 也就是说 README 的 bootstrap 片段在 0.12 上 **100% 不可用**，而文档只在标题里写了 "0.13+"，没有任何运行时检查或提示。
-- **建议**：能力探测 + 回调版 `vim.system` 回退；`scanner` 不 require loader；提供 `:checkhealth resonance` 明确报版本。
-
-### P1 —— 正确性缺陷（部分已实测）
+### P1 —— 正确性缺陷（剩余未修复）
 
 | 问题                                      | 位置                                          | 说明                                                                                                                                                                                                               |
 | ----------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **循环依赖检测是死代码**                  | `loader/init.lua:147-172`                     | `visiting_path[current_name]` 只被读、被清，**从未被置 true**，`path_order` 也从未 append。实测 A↔B：两个都 loaded，**零条 "Circular dependency" 通知**。真正让它不爆栈的是 `state.loaded = true` 的早退。         |
-| **`pack_add_safe` 吞掉第二个参数**        | `loader/init.lua:12-14`                       | `function pack_add_safe(vararg)` 是单参（不是 `...`），`pcall(pack_add_safe, specs, {confirm=false, load=false})` 里的 opts **永远丢失**。后果：`confirm` 保持默认 true，运行期 `load` 默认 true，与代码意图相反。 |
-| **依赖名解析与自定义 `name` 不兼容**      | `utils.lua:45-48` + `loader/init.lua:177-184` | `dependencies = {'.../bbb.nvim'}` 得到 `bbb.nvim`，若 spec 写了 `name='bbb'` 就匹配不到 `M.specs`，退回 `packadd 'bbb.nvim'` 失败——且 `pcall` 静默，用户只看到"插件没生效"。                                       |
 | **无 trigger 的 spec 永远不加载也不安装** | `triggers.register_all`                       | `load()` 只注册触发器；没有 `event/cmd/keys/ft` 就没有任何路径走到 `pack_add`。缺 `lazy=false` / eager 入口，而 `doc/resonance.txt` 还说 "load 由 setup 内部调用"，与实现不符。                                    |
-| **重放会漏掉未分组的 autocmd**            | `loader/init.lua:222-236`                     | `exclude` 非空时只重放 `autocmd.group` 为真的项，**无 group 的 autocmd 被整体跳过**；且链路只覆盖 `BufReadPre/BufNewFile→BufRead→BufReadPost`。                                                                    |
 | **触发器不回收**                          | `triggers.lua`                                | 一个 spec 同时有 event+cmd+keys 时，只有先触发的那个被删；`once` autocmd 之后会空转一次，keymap 残留成"删除→重放"闭包。卸载插件后 specs/triggers 也永不清除。                                                      |
 | **`_plugin_dir_cache` 永不失效**          | `loader/init.lua:35-79`                       | 首次 `pack.add` 新装的插件不在缓存里，`get_plugin_dir` 返回 nil（`PackChanged` 因带 `data.path` 侥幸绕过）。                                                                                                       |
-| **固定 64KB 读取**                        | `state.lua:147,160`                           | `.git/packed-refs` 超过 64KB 被截断，hash 解析失败 → `unknown`。                                                                                                                                                   |
 | **UI 状态陈旧**                           | `actions.lua:99-147`                          | update/uninstall 后不刷新 `st.state.info`；`check_updates_network` 不先清空 `updates`（远端回退后仍显示旧 pending）；`pack_details` / `expanded` 在 `open()` 里不复位。                                            |
+
+### P1 —— 已修复 (2026-10-19 至 2026-10-22)
+
+| 问题                                      | 修复 Commit | 说明                                                                                                                     |
+| ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `pack_add_safe` 吞掉第二个参数            | a73de6d     | 改用 `...` 透传 opts，修复 `confirm/load` 默认值问题                                                                     |
+| 循环依赖检测是死代码                      | aeafd81     | 在处理依赖前标记 `visiting_path`，递归 A→B→A 可被检测                                                                    |
+| 依赖名解析与自定义 `name` 不兼容          | ceb610a     | 新增 `M.spec_urls` 映射 (URL -> spec name)，正确解析自定义名称                                                           |
+| 重放会漏掉未分组的 autocmd                | ab2e48d     | `exclude` 非空时，无 group 的 autocmd 使用空字符串 `''` 作为键，不再整体跳过                                            |
+| 固定 64KB 读取                            | b40a149     | 使用 `uv_fs_fstat` 获取文件大小，读取完整文件内容                                                                        |
+| DAG 重放信息丢失 autocmd group 名称        | 6f5b0d3     | `get_replay_info()` 恢复显示 autocmd group 名称                                                                          |
 
 ### P2 —— 架构与可维护性
 
@@ -139,6 +136,15 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
   - `doc` 说 `open_ui([ui_config])` 可覆盖配置，代码忽略参数（`init.lua:132`）；
   - `doc` 说 `resonance.setup()` 接受插件列表，实际只接受 UI 配置；
 
+### P2 —— 已修复 (2026-10-22)
+
+| 问题                          | 修复 Commit | 说明                                                               |
+| ----------------------------- | ----------- | ------------------------------------------------------------------ |
+| UI 关键元素缺失               | d54acf9     | 恢复了被误删的 UI 关键渲染元素                                     |
+| 重复代码清理                  | a7d89d3     | `dag.lua`、`spec.lua`、`utils.lua` 去重                           |
+| 排序逻辑去重                  | 2956e47     | `scanner.lua`、`utils.lua` 统一排序实现                            |
+| `load_now` 闭包内存泄漏       | af09a7e     | `dag.lua`、`init.lua` 修复闭包引用导致的内存泄漏                   |
+
 ### P3 —— 性能与体验
 
 - **`r` 键"网络检查"阻塞主线程**：`actions.lua:50-89` 在 `vim.defer_fn(...,1)` 后同步调用 `vim.pack.get(info=true, offline=false)`（README 自述 ~2s+），期间编辑器完全冻结，spinner 也不动。`update_plugins` 里的 `vim.pack.update(..., {force=true, offline=false})` 同样阻塞。与 README 的 "Fast / async" 定位矛盾。
@@ -148,45 +154,35 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 - **`.resonance_built` 写在插件目录内**（`build.lua:25`）：污染插件 git 工作区，应放 `stdpath('state')`。
 - **UI 小问题**：`dd` 这类双键映射配 `nowait` 会让单独按 `d` 等待 `timeoutlen`；`cmd` 触发器桩命令用 `nargs='*'` + `complete='file'`，与真实命令签名不符时会误报错。
 
----
+### P0 —— 会直接崩，且已实测复现 (0.12 不支持，决策不修复)
 
-## 5. 总体评价
-
-| 维度          | 评价                                                                                        |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| 分层与模块化  | **B**：思路对，但 `scanner↔loader` 环 + require 副作用拉低分数                              |
-| 性能设计      | **B-**：快路径确实快，但"网络检查/更新"这条主交互路径是阻塞的，benchmark 只覆盖了便宜的部分 |
-| 健壮性        | **C**：P0 直接崩、循环检测失效、大量裸 `pcall` 静默失败、"依赖没装上"没有任何提示           |
-| 状态管理      | **C+**：单例 state + 手工同步，update/del 后不自洽                                          |
-| 可维护性/文档 | **C+**：代码注释质量不错，但文档与实现多处不一致、无测试无 CI                               |
-| 差异化        | **A-**：DAG 视图 + 事件重放 + 纯原生 `vim.pack` 的组合确实有想法                            |
-
-**一句话结论**：骨架（分层、离线快路径、触发器抽象）是对的，但"最后一公里"的工程化没做——版本守卫、错误可见性、状态刷新、网络异步、测试与文档同步，这五件事补齐之前，它更像一个高完成度的个人配置组件，而不是能对外发布的插件管理器。
+| 问题                                      | 位置                                          | 说明                                                                                                                                                                                                               |
+| ----------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`vim.async` 硬依赖，require 期无守卫**  | `loader/build.lua:10,16-17`                   | 在模块加载时就执行 `async.wrap(...)`。`nvim 0.12.6`（stable）实测：`require('resonance.loader')` → `attempt to index local 'async' (a nil value)`。本项目要求 0.13+，**决策不修复**。                               |
 
 ---
 
 ## 6. 建议的修复顺序
 
-1. **P0 立即修**：`build.lua` 的 `vim.async` 守卫 + 回退；`scanner` 去掉对 loader 的 require；加 `:checkhealth resonance` 报版本能力。
-2. **错误可见**：去掉裸 `pcall`，统一 `safe_call(label, fn, ...)`，失败时 notify（插件名 + 命令 + stderr）；`pack_add_safe` 改 `...`；缓存失效挂到 `PackChanged`。
-3. **状态机拆分**：`load_now` 拆成 `resolve_deps / ensure_installed / activate / replay`；触发器改成对象 `{id, kind, cleanup}`，加载后统一清理；补 eager（`lazy=false`）、`enabled`、`cond`。
-4. **事件重放重做**：按 autocmd **id 快照**去重，而不是 group 名；扩展链路或改成"重放快照中未执行过的全部匹配 autocmd"。
-5. **UI 异步化**：`r` 用 `git ls-remote` / `git log` 的 `vim.system` 异步链（或 `vim.async` 可用时用协程），不要同步 `pack.get(offline=false)`；update/del 后重新 `get_info()`；只重绘 spinner 所在行。
-6. **工程化**：plenary / busted 测试 `spec.parse_config` + 依赖加载状态机 + 触发器清理；stylua / luacheck + CI；同步修正 README/doc/AGENTS 的 `Vim.`、`g` vs `A`、`~/`、`%8` 等漂移。
+1. **P1 剩余项**：`_plugin_dir_cache` 失效挂到 `PackChanged`；触发器回收机制；无 trigger spec 的 eager 加载入口；UI 状态自洽刷新。
+2. **P2 架构**：拆分 `load_now` 为 `resolve_deps / ensure_installed / activate / replay`；引入中立 `registry` 层打破 `scanner↔loader` 环；require 期副作用延迟到首次调用；补齐测试/CI/checkhealth。
+3. **P3 体验**：`r`/`U` 改用 `vim.system` 异步链（或 `vim.async` 协程），仅重绘 spinner 行；后台预安装机制；`.resonance_built` 迁移到 `stdpath('state')`。
+4. **文档同步**：README `Vim.*` → `vim.*`；`doc/resonance.txt` DAG 键 `g` → `A`；`open_ui` 参数生效；`setup` vs `load` 文档修正。
+5. **工程化**：plenary / busted 测试 `spec.parse_config` + 依赖加载状态机 + 触发器清理；stylua / luacheck + CI。
 
 ---
 
 ## 附录：复现实验记录
 
-环境：本机 `nvim 0.12.6`，`nvim --headless -u NONE -c "set rtp+=." ...`
+环境：本机 `nvim 0.13.0-dev`，`nvim --headless -u NONE -c "set rtp+=." ...`
 
 | 实验            | 命令要点                                          | 结果                                                                                       |
 | --------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 加载 loader     | `pcall(require,'resonance.loader')`               | `false  ./lua/resonance/loader/build.lua:16: attempt to index local 'async' (a nil value)` |
-| 打开 UI         | `pcall(require('resonance.ui').open, {})`         | `false  同上（scanner.get_info → require loader）`                                         |
-| 能力探测        | `type(vim.pack), type(vim.async)`                 | `table, nil`（`vim.pack` 存在但无 `vim.async`）                                            |
-| 循环依赖        | 桩掉 `vim.async`，注册 A↔B 后手动 `_force_load()` | `aaa.nvim loaded=true, bbb.nvim loaded=true, 通知条数=0`                                   |
+| 加载 loader     | `pcall(require,'resonance.loader')`               | **OK** (0.13+ 有 `vim.async`)                                                              |
+| 打开 UI         | `pcall(require('resonance.ui').open, {})`         | **OK**                                                                                     |
+| 能力探测        | `type(vim.pack), type(vim.async)`                 | `table, table`（0.13+ 均存在）                                                             |
+| 循环依赖        | 注册 A↔B 后手动 `_force_load()`                   | **正确通知**: `Circular dependency detected: A -> B -> A (aborting)`                       |
 | 无 trigger spec | 注册 `noop` 后检查                                | `_force_load` 存在但无任何调用路径；`plugin_triggers['noop.nvim']=nil`；未安装、未加载     |
-| 依赖名不匹配    | `name='bbb'` 的 spec 以 `.../bbb.nvim` 作依赖     | 走 `packadd 'bbb.nvim'`，`pcall` 静默失败，依赖未加载                                      |
+| 依赖名不匹配    | `name='bbb'` 的 spec 以 `.../bbb.nvim` 作依赖     | **已修复**：通过 `M.spec_urls` 正确解析到 `bbb`                                            |
 
-> 注：上述"桩掉 `vim.async`"仅用于让 loader 在 0.12 上可加载，以便验证控制面逻辑；不代表修复方案本身。
+> 注：P0 (`vim.async`) 在 0.13+ 已不复现，项目定位 0.13+，**不再作为阻断项**。

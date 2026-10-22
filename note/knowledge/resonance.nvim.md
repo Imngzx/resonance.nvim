@@ -1,7 +1,7 @@
 # resonance.nvim — AI Agent Knowledge Base
 
 > **Purpose**: Enable future AI agents to work on this codebase without re-discovering patterns.
-> **Last Updated**: 2026-08-16
+> **Last Updated**: 2026-10-22
 
 ---
 
@@ -27,6 +27,7 @@
 ## 2. Key Architecture Patterns
 
 ### Plugin Spec (via `resonance.load()`)
+
 ```lua
 resonance.load({
   {
@@ -56,6 +57,7 @@ resonance.load({
 | `ft` | `create_autocmd('FileType', { pattern=ft, once=true, callback=load_now })` |
 
 ### DAG Resolution
+
 ```lua
 -- Recursive DFS with cycle detection (FIXED: ordered path tracking + abort on cycle)
 load_now(ev, visiting_path)
@@ -80,7 +82,9 @@ load_now(ev, visiting_path)
 ```
 
 ### Event Replay
+
 When plugin loads via `event` trigger, autocmds for that event may have already fired.
+
 ```lua
 -- Re-fires chain: BufReadPre → BufRead → BufReadPost
 for c in chain do
@@ -115,6 +119,7 @@ M.state = {
 ## 4. Rendering Pipeline (`render.lua`)
 
 ### Module-Level State (reused across renders)
+
 ```lua
 local line_parts = {}  -- cleared via index assignment
 local lines = {}
@@ -124,12 +129,14 @@ local cur_col = 0
 ```
 
 ### Two Views
+
 | View | Function | Key |
 |------|----------|-----|
 | List | `build_content()` | default |
-| DAG | `build_dag_content()` | `g` |
+| DAG | `build_dag_content()` | `A` |
 
 ### Performance Patterns
+
 - `reset_render_state()` clears arrays in-place (no allocation)
 - `add()`/`nl()`/`mark_row()` are upvalues (no closure creation)
 - `_spaces_cache` metatable for O(1) space strings
@@ -140,6 +147,7 @@ local cur_col = 0
 ## 5. Development Workflow
 
 ### Test Commands
+
 ```bash
 # Quick smoke test
 nvim --headless -c "lua require('resonance').setup()" -c "lua require('resonance').load({{src='https://github.com/nvim-lua/plenary.nvim', name='plenary'}})" -c "lua require('resonance.ui').open({width=0.8})" -c "qa"
@@ -152,6 +160,7 @@ nvim --headless -c "lua local t=vim.uv.hrtime(); require('resonance').setup(); r
 ```
 
 ### Code Style (from AGENTS.md)
+
 - Localize globals at top: `local uv = vim.uv`, `local api = vim.api`
 - Tables over multiple returns
 - Early returns, flat conditionals
@@ -160,6 +169,7 @@ nvim --headless -c "lua local t=vim.uv.hrtime(); require('resonance').setup(); r
 - Comments only for *why*, not *what*
 
 ### Commit Convention
+
 ```
 feat(ui): add DAG visualization
 fix(ui): reset view_mode on reopen
@@ -173,15 +183,14 @@ perf(render): reuse module-level state arrays
 | Issue | Location | Notes |
 |-------|----------|-------|
 | Spec key collision | `loader/init.lua:298` | Uses repo name only; `owner/repo` collides with `other/repo` |
-| Circular dependency abort | `loader/init.lua:362` | Detects cycles via ordered `visiting_path._order`, aborts with full path |
-| Spec mutation fixed | `loader/init.lua:52` | Uses `plugin_state` table keyed by config, no longer mutates user spec |
+| Spec mutation | `loader/init.lua:52` | `plugin_state` table used but `_force_load`/`_replay_done` still written to user config |
 | No spec.lua parsing | `scanner.lua` | Misses lazy triggers defined in plugin's `plugin/spec.lua` |
 | `cmd`/`keys`/`ft` no replay | `loader/init.lua` | Only `event` triggers replay missed autocmds |
 | UI state not persisted | `state.lua` | `view_mode`, `expanded` reset on reopen |
 
 ---
 
-## 7. Performance Baselines (2026-08-16)
+## 7. Performance Baselines (2026-10-22)
 
 | Operation | Avg Time |
 |-----------|----------|
@@ -189,6 +198,8 @@ perf(render): reuse module-level state arrays
 | `get_replay_info()` | ~3.4 ms |
 | DAG render (5 plugins) | ~11.8 ms |
 | List render (5 plugins) | ~13.1 ms |
+| UI open (offline) | ~7-10 ms |
+| Startup overhead | ~0.88 ms |
 
 All lua_ls diagnostics: **clean** (`.luarc.json` with LuaJIT + Neovim globals)
 
@@ -197,16 +208,19 @@ All lua_ls diagnostics: **clean** (`.luarc.json` with LuaJIT + Neovim globals)
 ## 8. Quick Reference: Adding Features
 
 ### New UI Action
+
 1. Add function to `actions.lua`
 2. Add key binding in `init.lua:bind_keys()`
 3. Add button to `render.lua:BUTTONS` if needed
 
 ### New Lazy Trigger Type
+
 1. Add parsing in `loader/spec.lua:parse_trigger()`
 2. Register autocmd/command/keymap in `loader/triggers.lua`
 3. Handle replay in `load_now()` if applicable
 
 ### New Render View
+
 1. Add `view_mode` value to `state.lua`
 2. Add `build_<view>_content()` before `build_content()`
 3. Add branch in `build_content()`: `if view_mode == 'x' then return build_x() end`
@@ -214,41 +228,69 @@ All lua_ls diagnostics: **clean** (`.luarc.json` with LuaJIT + Neovim globals)
 
 ---
 
-## 9. Recent Fixes (2026-08-16)
+## 9. Recent Fixes (2026-10-19 to 2026-10-22)
 
-### Fix 1: PackChanged Handler Defensive Checks
-**File:** `loader.lua:146-164`
-- Added validation for `data.spec` and `data.spec.name` before accessing
-- Per vim.pack help: `PackChanged` event data has `spec` field with resolved name
+### Fix: `pack_add_safe` passes options correctly
+**Commit:** a73de6d
+**File:** `lua/resonance/loader/init.lua`
+- Changed `pack_add_safe(vararg)` to `pack_add_safe(...)` to forward all arguments
+- Fixes `confirm=false, load=false` being dropped, which broke lazy-loading
 
-### Fix 2: Circular Dependency Detection
-**File:** `loader/init.lua:347-378`
-- Uses `visiting_path._order` array to track visit order
-- On cycle: builds full path `A -> B -> C -> A` and aborts with ERROR level
-- Returns early without marking loaded, leaving plugin unloaded
+### Fix: Circular dependency detection now works
+**Commit:** aeafd81
+**File:** `lua/resonance/loader/init.lua`
+- Marks `visiting_path` before processing dependencies
+- Recursive A→B→A now correctly detected and reported with full path
 
-### Fix 3: Buffer-Local Keymap Restoration
-**File:** `loader/init.lua:472-507`
-- Preserves original `opts` table (including `buffer`/`buf`) via `vim.tbl_extend('keep', {}, opts)`
-- Tracks `is_buffer` and `target_buf` before callback mutates `opts`
-- Uses preserved `restore_opts` for re-mapping after plugin loads
+### Fix: Dependency resolution works with custom plugin names
+**Commit:** ceb610a
+**File:** `lua/resonance/loader/init.lua`
+- Added `M.spec_urls` mapping (URL → spec name)
+- Dependencies specified by URL now resolve to custom-named specs correctly
 
-### Fix 4: Spec Mutation Prevention
-**File:** `loader/init.lua:52-53`
-- Added `plugin_state = {}` table keyed by config table reference
-- Stores `loaded`, `replay_done` internally instead of on user config
-- `get_dag_data()` reads from `plugin_state[spec]`
+### Fix: Replay ungrouped autocmds in event replay
+**Commit:** ab2e48d
+**File:** `lua/resonance/loader/init.lua`
+- When `exclude` table non-empty, ungrouped autocmds (`group == nil`) now use empty string `''` as key
+- Previously they were skipped entirely
 
-### Fix 5: Event Replay Chain (InsertEnter Fix)
-**File:** `loader/dag.lua`, `loader/init.lua`
-- `get_event_chain()` now accepts `buf` and `data` parameters (matches original)
-- Call site fixed: `dag._get_event_chain_internal(ev.event, ev.buf, ev.data)`
+### Fix: Read full .git files instead of 64KB limit
+**Commit:** b40a149
+**File:** `lua/resonance/ui/state.lua`
+- Uses `uv_fs_fstat` to get file size, then reads entire content
+- Fixes hash/URL truncation for repos with large `.git/config` or `packed-refs`
 
-### Fix 6: Build System PackChanged Handler
-**File:** `loader/build.lua`
-- Restored `data.path or get_plugin_dir(name)` fallback
-- Added `group = api.nvim_create_augroup('ResonanceBuilder', { clear = true })`
-- Matches original single-file loader behavior exactly
+### Fix: Restore autocmd group names in replay info
+**Commit:** 6f5b0d3
+**File:** `lua/resonance/loader/dag.lua`
+- `get_replay_info()` now shows autocmd group names (filetypedetect, nvim.autoread, etc.)
+- Uses `plugin_triggers` parameter instead of re-parsing trigger from spec
+- Skips User events (no standard autocmd chain)
+
+### Fix: UI restored important elements
+**Commit:** d54acf9
+**File:** `lua/resonance/utils.lua`
+- Restored key rendering elements accidentally removed
+
+### Fix: Code deduplication
+**Commit:** a7d89d3
+**Files:** `lua/resonance/loader/dag.lua`, `lua/resonance/loader/spec.lua`, `lua/resonance/utils.lua`
+- Removed duplicate logic across modules
+
+### Fix: Sorting logic deduplication
+**Commit:** 2956e47
+**Files:** `lua/resonance/scanner.lua`, `lua/resonance/utils.lua`
+- Unified sorting implementation
+
+### Fix: load_now closure memory leak
+**Commit:** af09a7e
+**Files:** `lua/resonance/loader/dag.lua`, `lua/resonance/loader/init.lua`
+- Fixed closure references causing memory leak
+
+### Fix: Sorting numeric loops optimization
+**Commit:** d1f5db7
+**File:** `lua/resonance/utils.lua`
+- `apply_sort`: replaced `ipairs` with numeric `for i = 1, #fields` loops
 
 ---
 

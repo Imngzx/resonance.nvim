@@ -4,6 +4,8 @@ local pcall = pcall
 local type = type
 local string_match = string.match
 local table_concat = table.concat
+local table_sort = table.sort
+local string_lower = string.lower
 local vim_notify = vim.notify
 
 local _snacks_checked = false
@@ -120,4 +122,42 @@ function M.resolve_plugin_spec(plugin)
   return name, target_url, pack_spec
 end
 
+-- Sort plugins: loaded first, then alphabetically by name (case-insensitive)
+---@param plugins table SOA table with name[], loaded[] arrays
+---@param total integer number of plugins
+---@return table sorted indices
+function M.sort_plugins(plugins, total)
+  local indices = {}
+  local lower_names = {}
+  for i = 1, total do
+    indices[i] = i
+    lower_names[i] = string_lower(plugins.name[i])
+  end
+
+  table_sort(indices, function(a, b)
+    if plugins.loaded[a] ~= plugins.loaded[b] then return plugins.loaded[a] end
+    return lower_names[a] < lower_names[b]
+  end)
+
+  return indices
+end
+
+-- Apply sorted indices to plugin SOA table
+---@param plugins table SOA table
+---@param indices table sorted indices
+---@param total integer
+---@param fields table list of field names to sort
+---@return table new sorted plugins table
+function M.apply_sort(plugins, indices, total, fields)
+  local sorted = {}
+  for _, field in ipairs(fields) do
+    sorted[field] = {}
+    for i = 1, total do
+      sorted[field][i] = plugins[field][indices[i]]
+    end
+  end
+  return sorted
+end
+
 return M
+

@@ -27,6 +27,23 @@ function M.parse_config(config)
   end
   config.setup = config.setup or config.config
 
+  -- lazy field: false = eager (VimEnter), true = VeryLazy default
+  if config.lazy ~= nil then
+    if config.lazy == false then
+      -- Eager: must not have explicit triggers
+      if config.event or config.cmd or config.keys or config.ft then
+        error('lazy=false cannot be used with event/cmd/keys/ft')
+      end
+      config.event = 'VimEnter'
+    elseif config.lazy == true then
+      -- Default lazy = VeryLazy
+      if config.event or config.cmd or config.keys or config.ft then
+        error('lazy=true cannot be used with event/cmd/keys/ft (use VeryLazy instead)')
+      end
+      config.event = { 'User', pattern = 'VeryLazy' }
+    end
+  end
+
   local plugins = config.plugin
   if type(plugins) == 'string' then
     plugins = { plugins }

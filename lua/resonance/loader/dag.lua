@@ -92,7 +92,7 @@ function M.get_dag_data(specs, plugin_state, scanner_info)
     end
 
     local trig_str = utils.parse_trigger(spec)
-    local state = plugin_state[spec]
+    local state = plugin_state[name]
     nodes[name] = {
       name = name,
       deps = deps,

@@ -1,6 +1,5 @@
 local M = {}
 local utils = require('resonance.utils')
-
 local spec = require('resonance.loader.spec')
 local triggers = require('resonance.loader.triggers')
 local build = require('resonance.loader.build')
@@ -29,8 +28,11 @@ local pcall = pcall
 
 local pack_dir_base = utils.fast_normalize(fn_stdpath('data') .. '/site/pack')
 
--- Internal plugin state (separate from user config to avoid mutation)
+-- Internal plugin state (keyed by plugin name, not config table, to avoid memory leaks)
 local plugin_state = {}
+
+-- Force-load functions keyed by plugin name
+local force_load_fns = {}
 
 local _plugin_dir_cache = nil
 
@@ -141,11 +143,14 @@ function M.load(config)
     end
   end
 
+  local current_name = parsed_names[1]
+
   local function load_now(ev, visiting_path)
-    local state = plugin_state[config]
+    -- Use name as key to avoid retaining config table
+    local state = plugin_state[current_name]
     if not state then
       state = { loaded = false }
-      plugin_state[config] = state
+      plugin_state[current_name] = state
     end
 
     -- Initialize visiting_path if nil
@@ -157,7 +162,6 @@ function M.load(config)
       path_order = {}
       visiting_path._order = path_order
     end
-    local current_name = parsed_names[1]
 
     -- Cycle check MUST happen before early return on state.loaded
     -- This ensures recursive loads (A->B->A) are detected even if A was already loaded
@@ -192,7 +196,8 @@ function M.load(config)
       local spec_name = M.specs[dep.name] and dep.name or
         (dep_url and M.spec_urls[dep_url])
       if spec_name and M.specs[spec_name] then
-        M.specs[spec_name]._force_load(nil, visiting_path)
+        local fn = force_load_fns[spec_name]
+        if fn then fn(nil, visiting_path) end
       else
         pcall(pack_add_safe, { dep.raw }, { confirm = false, load = false })
         pcall(nvim_cmd, { cmd = 'packadd', args = { dep.name } })
@@ -259,9 +264,8 @@ function M.load(config)
     end
   end
 
-  config._force_load = function(ev, visiting_path)
-    load_now(ev, visiting_path)
-  end
+  -- Store force_load by name, not on config table (avoids reference cycle)
+  force_load_fns[current_name] = load_now
 
   triggers.register_all(config, load_now)
 end
@@ -278,8 +282,8 @@ function M.get_replay_info()
   return dag.get_replay_info(M.specs, M.plugin_triggers)
 end
 
-function M._get_event_chain_internal(event)
-  return dag._get_event_chain_internal(event)
+function M._get_event_chain_internal(event, buf, data)
+  return dag._get_event_chain_internal(event, buf, data)
 end
 
 return M

@@ -30,11 +30,10 @@ function M.notify(msg, level, opts)
       end
       _snacks_checked = true
     end
-
     if _snacks_notifier then
-      _snacks_notifier.notify(msg, level, opts or { title = 'Resonance' })
+      _snacks_notifier.notify(msg, level, opts)
     else
-      vim_notify('[Resonance] ' .. msg, level, opts)
+      vim_notify(msg, level, opts)
     end
   end)
 end
@@ -53,7 +52,7 @@ end
 function M.normalize_pack_spec(plugin)
   if type(plugin) ~= 'table' then return plugin end
   return {
-    src = plugin.src or plugin[1] or plugin.url,
+    src = plugin.src or plugin.url or plugin[1],
     name = plugin.name,
     version = plugin.version,
     data = plugin.data,
@@ -65,25 +64,16 @@ end
 ---@return string|nil
 function M.parse_trigger(config)
   if config.event then
-    if type(config.event) == 'table' then
-      local ev = config.event
-      if ev[1] == 'User' then
-        return '󱐋 User(' .. (ev.pattern or ev[2] or 'Unknown') .. ')'
-      end
-      return '󱐋 ' .. table_concat(ev, ', ')
-    end
-    return '󱐋 ' .. config.event
+    return '󰻃 ' .. (type(config.event) == 'table' and config.event[1] or config.event)
   end
   if config.cmd then
-    local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd
-    return '󰘳 ' .. table_concat(cmds, ', ')
+    return '󰘳 ' .. (type(config.cmd) == 'table' and config.cmd[1] or config.cmd)
   end
   if config.keys then
     return '󰌌 keys'
   end
   if config.ft then
-    local fts = type(config.ft) == 'string' and { config.ft } or config.ft
-    return '󰈔 ' .. table_concat(fts, ', ')
+    return '󰈔 ' .. (type(config.ft) == 'table' and config.ft[1] or config.ft)
   end
   return nil
 end
@@ -106,6 +96,18 @@ function M.parse_dependencies(config)
     end
   end
   return deps
+end
+
+-- Resolve a plugin spec to name, url, and normalized pack_spec
+---@param plugin string|table
+---@return string|nil name, string|nil url, table|string pack_spec
+function M.resolve_plugin_spec(plugin)
+  local pack_spec = M.normalize_pack_spec(plugin)
+  local target_url = type(pack_spec) == 'string' and pack_spec or
+    (pack_spec.src or pack_spec[1])
+  local name = (type(pack_spec) == 'table' and pack_spec.name) or
+    M.extract_name(target_url)
+  return name, target_url, pack_spec
 end
 
 return M

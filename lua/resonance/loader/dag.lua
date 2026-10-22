@@ -55,9 +55,7 @@ function M.get_dag_data(specs, plugin_state, scanner_info)
       local dep_list = type(spec.dependencies) == 'table' and spec.dependencies or
         { spec.dependencies }
       for i = 1, #dep_list do
-        local dep = utils.normalize_pack_spec(dep_list[i])
-        local target_url = type(dep) == 'string' and dep or (dep.src or dep[1])
-        local dep_name = (type(dep) == 'table' and dep.name) or utils.extract_name(target_url)
+        local dep_name = utils.resolve_plugin_spec(dep_list[i])
         if dep_name then
           all_dep_names[dep_name] = true
         end
@@ -86,9 +84,7 @@ function M.get_dag_data(specs, plugin_state, scanner_info)
       local dep_list = type(spec.dependencies) == 'table' and spec.dependencies or
         { spec.dependencies }
       for i = 1, #dep_list do
-        local dep = utils.normalize_pack_spec(dep_list[i])
-        local target_url = type(dep) == 'string' and dep or (dep.src or dep[1])
-        local dep_name = (type(dep) == 'table' and dep.name) or utils.extract_name(target_url)
+        local dep_name = utils.resolve_plugin_spec(dep_list[i])
         if dep_name then
           deps[#deps + 1] = dep_name
         end

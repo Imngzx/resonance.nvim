@@ -46,17 +46,17 @@ nvim --headless -c "luafile lua/resonance/init.lua" \
 nvim --headless -c "lua local t=vim.uv.hrtime(); require('resonance.scanner').get_info(); print('get_info:', (vim.uv.hrtime()-t)/1e6, 'ms')" -c "qall"
 
 # LSP diagnostics
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/loader/init.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/loader/build.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/loader/triggers.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/loader/spec.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/loader/dag.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/scanner.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/init.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/ui/init.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/ui/actions.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/ui/render.lua
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/ui/state.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/loader/init.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/loader/build.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/loader/triggers.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/loader/spec.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/loader/dag.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/scanner.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/init.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/ui/init.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/ui/actions.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/ui/render.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/ui/state.lua
 ```
 
 ---
@@ -215,7 +215,7 @@ vim-startuptime -count 10 -warmup 3 -- -u NONE -c "luafile ~/.local/share/nvim/s
 
 ### Step 3: Make Changes
 
-- Edit files in **project root** (`/home/alice/Projects/code/lua/resonance.nvim/`)
+- Edit files in **project root** (`~/Projects/code/lua/resonance.nvim/`)
 - Test in **installed location** (`~/.local/share/nvim/site/pack/core/opt/resonance.nvim/`)
 - Sync: `cp lua/resonance/*.lua ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/`
 - Sync loader: `cp lua/resonance/loader/*.lua ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/loader/`
@@ -229,7 +229,7 @@ nvim --headless -c "luafile lua/resonance/init.lua" -c "lua require('resonance')
 nvim --headless -c "lua vim.pack=nil" -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); local info=require('resonance.scanner').get_info(); print('fallback:', info.total)" -c "qall"
 
 # LSP diagnostics (lua-language-server via pacman)
-lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/loader/init.lua
+lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/loader/init.lua
 
 # Benchmarks (must not regress)
 vim-startuptime -count 10 -warmup 3 -- -u NONE -c "luafile ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/init.lua" -c "lua require('resonance').setup()" -c "qall"
@@ -238,7 +238,7 @@ vim-startuptime -count 10 -warmup 3 -- -u NONE -c "luafile ~/.local/share/nvim/s
 ### Step 5: Commit
 
 ```bash
-cd /home/alice/Projects/code/lua/resonance.nvim
+cd ~/Projects/code/lua/resonance.nvim
 git add lua/resonance/loader/ lua/resonance/scanner.lua lua/resonance/ui/init.lua lua/resonance/ui/render.lua lua/resonance/loader/dag.lua doc/
 git commit -S -m "perf: LuaJIT low-level optimizations across all modules"
 ```
@@ -502,9 +502,9 @@ end)
 ## 11. Sync Locations
 
 | Source (Edit Here) | Installed (Test Here) |
-|--------------------|----------------------|
-| `/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/` | `~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/` |
-| `/home/alice/Projects/code/lua/resonance.nvim/doc/` | `~/.local/share/nvim/site/pack/core/opt/resonance.nvim/doc/` |
+|---|---|
+| `~/Projects/code/lua/resonance.nvim/lua/resonance/` | `~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/` |
+| `~/Projects/code/lua/resonance.nvim/doc/` | `~/.local/share/nvim/site/pack/core/opt/resonance.nvim/doc/` |
 
 **Always test in installed location** — that's what users run.
 
@@ -514,7 +514,7 @@ end)
 
 ```bash
 # From git HEAD
-cd /home/alice/Projects/code/lua/resonance.nvim
+cd ~/Projects/code/lua/resonance.nvim
 git show HEAD:lua/resonance/scanner.lua > ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/scanner.lua
 git show HEAD:lua/resonance/loader/init.lua > ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/loader/init.lua
 git show HEAD:lua/resonance/loader/build.lua > ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/loader/build.lua
@@ -613,7 +613,7 @@ nvim --headless -c "luafile lua/resonance/init.lua" \
 #### Headless UI test (with frame capture)
 
 ```bash
-nvim --headless -c "set rtp+=/home/alice/Projects/code/lua/resonance.nvim" \
+nvim --headless -c "set rtp+=~/Projects/code/lua/resonance.nvim" \
   -c "lua require('resonance').setup(); require('resonance').open_ui(); local a=require('resonance.ui.actions'); a.check_updates_network(); local st=require('resonance.ui.state'); for i=1,12 do vim.wait(50); local buf=st.state.buf; if buf then local lines=vim.api.nvim_buf_get_lines(buf, 11, 14, false); print('T+'..(i*50)..'ms checking='..tostring(st.state.checking)..' frame='..st.state.spinner_frame..' '..vim.inspect(lines[1])) end end" -c "sleep 5000m" -c "qall"
 ```
 

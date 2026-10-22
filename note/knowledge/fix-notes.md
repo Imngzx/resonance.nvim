@@ -13,7 +13,7 @@
 
 代码分五层：
 
-```
+```text
              ┌──────────────────────────────┐
              │  resonance/init.lua (门面)    │ setup / load / stats / open_ui / verylazy
              └──────────────┬───────────────┘
@@ -49,7 +49,7 @@
 
 ### A. 注册链路（启动期，几乎零成本）
 
-```
+```text
 load(spec)
   → spec.parse_config        -- 就地归一（url/plugin/config → src/plugin/setup）
   → extract_names            -- 生成 pack_plugins + parsed_names
@@ -62,7 +62,7 @@ load(spec)
 
 ### B. 触发链路（首次使用）
 
-```
+```text
 trigger 命中
   → load_now
   → 循环检查
@@ -76,7 +76,7 @@ trigger 命中
 
 ### C. UI 链路
 
-```
+```text
 scanner.get_info()                     -- 同步 ~1ms，离线快路径
   → 建 buf / win（snacks → nui → open_win）
   → Pass 1: pack.get(info=false)       -- commit / url / rev
@@ -138,7 +138,6 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
   - `doc/resonance.txt:198` 与 `note/` 写 DAG 键是 `g`，代码是 `A`（`ui/init.lua:97`）；
   - `doc` 说 `open_ui([ui_config])` 可覆盖配置，代码忽略参数（`init.lua:132`）；
   - `doc` 说 `resonance.setup()` 接受插件列表，实际只接受 UI 配置；
-  - `AGENTS.md` 全是 `/home/alice/...`，且 spinner 写"10 帧"，代码 `% 8`（`actions.lua:38`）只用到 8 帧。
 
 ### P3 —— 性能与体验
 
@@ -173,7 +172,7 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 3. **状态机拆分**：`load_now` 拆成 `resolve_deps / ensure_installed / activate / replay`；触发器改成对象 `{id, kind, cleanup}`，加载后统一清理；补 eager（`lazy=false`）、`enabled`、`cond`。
 4. **事件重放重做**：按 autocmd **id 快照**去重，而不是 group 名；扩展链路或改成"重放快照中未执行过的全部匹配 autocmd"。
 5. **UI 异步化**：`r` 用 `git ls-remote` / `git log` 的 `vim.system` 异步链（或 `vim.async` 可用时用协程），不要同步 `pack.get(offline=false)`；update/del 后重新 `get_info()`；只重绘 spinner 所在行。
-6. **工程化**：plenary / busted 测试 `spec.parse_config` + 依赖加载状态机 + 触发器清理；stylua / luacheck + CI；同步修正 README/doc/AGENTS 的 `Vim.`、`g` vs `A`、`/home/alice`、`%8` 等漂移。
+6. **工程化**：plenary / busted 测试 `spec.parse_config` + 依赖加载状态机 + 触发器清理；stylua / luacheck + CI；同步修正 README/doc/AGENTS 的 `Vim.`、`g` vs `A`、`~/`、`%8` 等漂移。
 
 ---
 

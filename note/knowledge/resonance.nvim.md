@@ -148,7 +148,7 @@ nvim --headless -c "lua require('resonance').setup()" -c "lua require('resonance
 nvim --headless -c "lua local t=vim.uv.hrtime(); require('resonance').setup(); require('resonance').load({{src='https://github.com/nvim-lua/plenary.nvim', name='plenary'}}); require('resonance.ui').open({width=0.8}); local st=require('resonance.ui.state'); st.refresh_dag_data(); st.state.view_mode='dag'; require('resonance.ui.render').render(); print('render:', (vim.uv.hrtime()-t)/1e6, 'ms')" -c "qa"
 
 # lua_ls diagnostics
-/home/alice/.local/share/nvim/mason/bin/lua-language-server --check=/home/alice/Projects/code/lua/resonance.nvim/lua/resonance/ui/render.lua
+~/Projects/code/lua/resonance.nvim/lua/resonance/ui/render.lua
 ```
 
 ### Code Style (from AGENTS.md)

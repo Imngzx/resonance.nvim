@@ -150,14 +150,14 @@ end
 ---@return table new sorted plugins table
 function M.apply_sort(plugins, indices, total, fields)
   local sorted = {}
-  for _, field in ipairs(fields) do
+  for i = 1, #fields do
+    local field = fields[i]
     sorted[field] = {}
-    for i = 1, total do
-      sorted[field][i] = plugins[field][indices[i]]
+    for j = 1, total do
+      sorted[field][j] = plugins[field][indices[j]]
     end
   end
   return sorted
 end
 
 return M
-

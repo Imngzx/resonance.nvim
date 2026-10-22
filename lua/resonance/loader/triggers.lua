@@ -80,8 +80,12 @@ end
 function M.register_keys(config, load_now)
   if not config.keys then return end
 
-  for k = 1, #config.keys do
-    local key_cfg = config.keys[k]
+  local keys = config.keys
+  if type(keys) == 'function' then
+    keys = keys()
+  end
+  for k = 1, #keys do
+    local key_cfg = keys[k]
     local mode = key_cfg[1] or key_cfg.mode or 'n'
     local lhs = key_cfg[2] or key_cfg.lhs
     local rhs = key_cfg[3] or key_cfg.rhs

@@ -2,7 +2,7 @@
 
 > **Purpose**: Step-by-step reference for AI assistants working on this codebase.  
 > **Audience**: Any AI agent (Cursor, Claude, Copilot, etc.) editing `resonance.nvim`.  
-> **Last Updated**: 2026-08-18
+> **Last Updated**: 2026-10-23
 
 ---
 
@@ -224,6 +224,12 @@ vim-startuptime -count 10 -warmup 3 -- -u NONE -c "luafile ~/.local/share/nvim/s
 ### Step 4: Verify
 
 ```bash
+# Run test suite (77 tests)
+./test/run_all.sh
+
+# Or directly
+nvim --headless -c "luafile test/run_all.lua" -c "qall"
+
 # Functional tests
 nvim --headless -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); local info=require('resonance.scanner').get_info(); print(info.total, info.loaded)" -c "qall"
 nvim --headless -c "lua vim.pack=nil" -c "luafile lua/resonance/init.lua" -c "lua require('resonance').setup(); local info=require('resonance.scanner').get_info(); print('fallback:', info.total)" -c "qall"
@@ -609,6 +615,26 @@ nvim --headless -c "luafile lua/resonance/init.lua" \
 ---
 
 ### Testing Patterns
+
+#### Test Suite (77 tests)
+
+```bash
+# Run all tests
+./test/run_all.sh
+
+# Or directly
+nvim --headless -c "luafile test/run_all.lua" -c "qall"
+```
+
+Test files:
+- `test/spec_spec.lua` — 19 tests (parse_config, extract_names, lazy, cond, keys=function)
+- `test/triggers_spec.lua` — 10 tests (register_event, register_cmd, register_keys, register_ft, register_all)
+- `test/build_spec.lua` — 5 tests (mark_build_success, check_and_build, run_build)
+- `test/scanner_spec.lua` — 7 tests (get_info, get_detailed_info, structure validation)
+- `test/loader_spec.lua` — 8 tests (get_plugin_dir, get_dag_data, get_replay_info)
+- `test/integration_spec.lua` — 16 tests (setup, load, all config fields)
+- `test/ui_spec.lua` — 12 tests (state, actions, render, ui module exports)
+
 
 #### Headless UI test (with frame capture)
 

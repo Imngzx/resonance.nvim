@@ -36,11 +36,24 @@ function M.parse_config(config)
       end
       config.event = 'VimEnter'
     elseif config.lazy == true then
-      -- Default lazy = VeryLazy
-      if config.event or config.cmd or config.keys or config.ft then
-        error('lazy=true cannot be used with event/cmd/keys/ft (use VeryLazy instead)')
+      -- Default lazy = VeryLazy (add as additional trigger, not replacement)
+      local has_triggers = config.event or config.cmd or config.keys or config.ft
+      if has_triggers then
+        -- Add VeryLazy to existing events
+        if config.event then
+          if type(config.event) == 'table' and config.event[1] then
+            table.insert(config.event, { 'User', pattern = 'VeryLazy' })
+          else
+            config.event = { config.event, { 'User', pattern = 'VeryLazy' } }
+          end
+        else
+          -- No event, but has other triggers (cmd/keys/ft)
+          -- Add VeryLazy as fallback event
+          config.event = { 'User', pattern = 'VeryLazy' }
+        end
+      else
+        config.event = { 'User', pattern = 'VeryLazy' }
       end
-      config.event = { 'User', pattern = 'VeryLazy' }
     end
   end
 
@@ -53,6 +66,21 @@ function M.parse_config(config)
       ok = config.cond
     end
     if not ok then return nil end
+  end
+
+  -- Normalize keys: convert shorthand strings to full key spec tables
+  if config.keys then
+    local keys = config.keys
+    if type(keys) == 'function' then
+      -- Function returning keymaps: keep as-is, will be called at registration time
+    else
+      for i = 1, #keys do
+        if type(keys[i]) == 'string' then
+          -- Shorthand: "<leader>x" -> {"n", "<leader>x"}
+          keys[i] = {'n', keys[i]}
+        end
+      end
+    end
   end
 
   local plugins = config.plugin

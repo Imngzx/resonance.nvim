@@ -46,7 +46,12 @@ function M.parse_config(config)
 
   -- cond field: boolean or function() -> boolean (lazy.nvim parity)
   if config.cond ~= nil then
-    local ok = type(config.cond) == 'function' and config.cond() or config.cond
+    local ok
+    if type(config.cond) == 'function' then
+      ok = config.cond()
+    else
+      ok = config.cond
+    end
     if not ok then return nil end
   end
 

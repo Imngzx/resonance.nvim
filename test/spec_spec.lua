@@ -90,7 +90,19 @@ test.run_suite('resonance.loader.spec', {
       local config = {src = 'test/repo', lazy = false, cmd = 'TestCmd'}
       test.assert_error(function()
         spec.parse_config(config)
-      end, 'lazy=false cannot be used with event/cmd/keys/ft')
+      end, 'lazy=false cannot be used with event/cmd/ft')
+    end,
+  },
+
+  {
+    name = 'parse_config: lazy=false allows keys',
+    fn = function()
+      local config = {src = 'test/repo', lazy = false, keys = {'<leader>x'}}
+      local result = spec.parse_config(config)
+      test.assert_not_nil(result)
+      test.assert_eq(result.event, 'VimEnter')
+      test.assert_eq(result.keys[1][1], 'n')
+      test.assert_eq(result.keys[1][2], '<leader>x')
     end,
   },
 

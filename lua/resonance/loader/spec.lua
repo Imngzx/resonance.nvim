@@ -30,9 +30,10 @@ function M.parse_config(config)
   -- lazy field: false = eager (VimEnter), true = VeryLazy default
   if config.lazy ~= nil then
     if config.lazy == false then
-      -- Eager: must not have explicit triggers
-      if config.event or config.cmd or config.keys or config.ft then
-        error('lazy=false cannot be used with event/cmd/keys/ft')
+      -- Eager: must not have explicit load triggers (event/cmd/ft)
+      -- keys is allowed since keymaps work after eager load
+      if config.event or config.cmd or config.ft then
+        error('lazy=false cannot be used with event/cmd/ft')
       end
       config.event = 'VimEnter'
     elseif config.lazy == true then

@@ -82,6 +82,18 @@ Basic setup in your init.lua:
           vim.cmd('TSUpdate')
         end,
       },
+      {
+        src = 'https://github.com/user/optional-plugin',
+        cond = function() return vim.fn.executable('rg') == 1 end,  -- Load only if ripgrep exists
+      },
+      {
+        src = 'https://github.com/user/eager-plugin',
+        lazy = false,                  -- Eager load on VimEnter
+      },
+      {
+        src = 'https://github.com/user/lazy-plugin',
+        lazy = true,                   -- Lazy load on VeryLazy
+      },
     })
 
     -- Open UI with :Resonance or lua
@@ -102,12 +114,14 @@ Common fields:
     event (string|table) Lazy load on autocmd event(s)
     cmd (string|table)  Lazy load on command(s)
     ft (string|table)   Lazy load on filetype(s)
-    keys (table)        Lazy load on keymap(s)
+    keys (table|function) Lazy load on keymap(s) or function returning keymaps
     dependencies (table) List of dependency plugin URLs
     build (string|function) Build command or function(dir)
     config (function)   Called after plugin loads (alias for setup)
     setup (function)    Called after plugin loads
     plugin (table)      Alternative spec format (lazy.nvim compatible)
+    lazy (boolean)      false = eager (VimEnter), true = VeryLazy default
+    cond (boolean|function) Conditional loading: false/nil skips plugin
 
 Multiple plugins can be passed as separate arguments or as a list:
 
@@ -140,6 +154,17 @@ Multiple plugins can be passed as separate arguments or as a list:
 |keys| - Load when keymap is pressed:
     keys = {'<leader>g', '<leader>gg'}
     keys = {{'n', '<leader>g', func, {desc = 'Git'}}}  -- Full keymap spec
+    keys = function() return {{'n', '<leader>g', func}} end  -- Function returning keymaps
+
+|cond| - Conditionally load plugin:
+    cond = true          -- Load (default)
+    cond = false         -- Skip plugin entirely
+    cond = function() return vim.fn.has('nvim-0.10') == 1 end  -- Conditional
+
+|lazy| - Shorthand for common lazy-loading patterns:
+    lazy = false         -- Eager load on VimEnter (no triggers allowed)
+    lazy = true          -- Lazy load on VeryLazy (User VeryLazy event)
+    -- Cannot combine with explicit event/cmd/keys/ft
 
 Triggers can be combined. Plugin loads on FIRST matching trigger.
 
@@ -226,8 +251,8 @@ Press <CR> on a plugin to expand details showing:
 
     resonance.load(config)
         Load a single plugin specification (called internally by setup).
+        Supports all config fields including lazy, cond, keys as function.
         Returns: nothing
-
 6.2 Loader Module                                  *resonance-api-loader*
 
     local loader = require('resonance.loader')

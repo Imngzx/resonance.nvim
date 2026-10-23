@@ -54,7 +54,7 @@ local resonance = require('resonance')
 resonance.load({
   'https://github.com/Imngzx/resonance.nvim',
   version = 'main',
-  event = 'VimEnter',
+  lazy = false,
   keys = {
     { 'n', '<leader>pL', '<cmd>Resonance<cr>', { desc = '[Float] Resonance UI' } },
   },
@@ -71,7 +71,6 @@ resonance.load({
 
 -- NOTE: must put this at the end of your init.lua!
 resonance.trigger_verylazy()
-
 ```
 
 ## ⚡ Lazy Loading by Events
@@ -137,17 +136,18 @@ resonance.load({
 
     cmd = {'cmd1', 'cmd2'},
 
-    -- Only receives function
+    -- Conditional loading: boolean or function
     cond = function() return vim.fn.has('nvim-0.9') == 1 end,
 
-    -- if true, return VeryLazy
-    -- else, UIEnter
-    -- NOTE: this can't be used with other events
+    -- lazy = true: adds VeryLazy as FALLBACK (works with other triggers)
     lazy = true,
 
+    -- Keys: shorthand strings normalized to {'n', 'key'}
     keys = {
-      { 'n', '<leader>Tg', '<cmd>cmd1<CR>', { desc = 'Open something' } },
-      { 'n', '<leader>TL', '<cmd>cmd2<CR>', { desc = 'Do something' } },
+      '<leader>Tg',  -- shorthand for {'n', '<leader>Tg'}
+      '<leader>TL',  -- shorthand for {'n', '<leader>TL'}
+      -- Or full spec:
+      { 'n', '<leader>Tc', '<cmd>cmd3<CR>', { desc = 'Open something' } },
     },
 
     event = { "BufReadPre", "BufNewFile" },
@@ -161,6 +161,18 @@ resonance.load({
       })
 
     end
+  },
+
+  { -- Version pinning examples
+    "https://github.com/<author>/<plugin_versioned>",
+    version = 'v1.0.0',  -- Tag
+    -- version = 'main',     -- Branch
+    -- version = 'abc1234',  -- Commit hash
+  },
+
+  { -- lazy = false: eager load on VimEnter (no other triggers allowed)
+    "https://github.com/<author>/<eager_plugin>",
+    lazy = false,
   },
 
   { -- another plugin...},

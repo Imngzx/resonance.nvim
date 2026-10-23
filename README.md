@@ -129,13 +129,21 @@ local resonance = require('resonance')
 
 resonance.load({
   {
-    src = "https://github.com/<author>/<plugin1_name>",
+    "https://github.com/<author>/<plugin1_name>",
 
     dependencies = "https://github.com/<author>/<plugin2_name>",
 
     build = 'make', -- npm i or others based on plugin's docs
 
     cmd = {'cmd1', 'cmd2'},
+
+    -- Only receives function
+    cond = function() return vim.fn.has('nvim-0.9') == 1 end,
+
+    -- if true, return VeryLazy
+    -- else, UIEnter
+    -- NOTE: this can't be used with other events
+    lazy = true,
 
     keys = {
       { 'n', '<leader>Tg', '<cmd>cmd1<CR>', { desc = 'Open something' } },

@@ -616,7 +616,7 @@ nvim --headless -c "luafile lua/resonance/init.lua" \
 
 ### Testing Patterns
 
-#### Test Suite (77 tests)
+#### Test Suite (93 tests)
 
 ```bash
 # Run all tests
@@ -627,14 +627,14 @@ nvim --headless -c "luafile test/run_all.lua" -c "qall"
 ```
 
 Test files:
-- `test/spec_spec.lua` — 19 tests (parse_config, extract_names, lazy, cond, keys=function)
-- `test/triggers_spec.lua` — 10 tests (register_event, register_cmd, register_keys, register_ft, register_all)
+- `test/spec_spec.lua` — 20 tests (parse_config, extract_names, lazy, cond, keys)
+- `test/triggers_spec.lua` — 10 tests (register_event, cmd, keys, ft, all)
 - `test/build_spec.lua` — 5 tests (mark_build_success, check_and_build, run_build)
-- `test/scanner_spec.lua` — 7 tests (get_info, get_detailed_info, structure validation)
+- `test/scanner_spec.lua` — 7 tests (get_info, get_detailed_info, structure)
 - `test/loader_spec.lua` — 8 tests (get_plugin_dir, get_dag_data, get_replay_info)
 - `test/integration_spec.lua` — 16 tests (setup, load, all config fields)
 - `test/ui_spec.lua` — 12 tests (state, actions, render, ui module exports)
-
+- `test/integration_deep_spec.lua` — 15 tests (lazy load triggers, dependency order, cond, eager load, version pinning, fallback mode)
 
 #### Headless UI test (with frame capture)
 

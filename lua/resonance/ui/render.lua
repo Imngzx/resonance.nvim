@@ -41,8 +41,8 @@ _spaces_cache = setmetatable({}, {
 -- Pre-computed type labels
 local TYPE_LABELS = {
   start = '󰜎 start',
-  opt   = '󰢱 opt',
-  core  = '󰒇 core',
+  opt = '󰢱 opt',
+  core = '󰒇 core',
 }
 
 -- Static button definitions (never change)
@@ -169,8 +169,8 @@ local function build_dag_content()
 
     -- Dependencies (edges)
     if deps and #deps > 0 then
-      for i = 1, #deps do
-        local dep = deps[i]
+      for j = 1, #deps do
+        local dep = deps[j]
         add('    ├─ ', 'Comment')
         add(dep, 'Function')
         if nodes[dep] and nodes[dep].loaded then

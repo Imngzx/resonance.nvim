@@ -13,7 +13,13 @@ local schedule = vim.schedule
 local vim_trim = vim.trim
 local type = type
 local tostring = tostring
-local system_async = async.wrap(3, system)
+local _system_async = async.wrap(3, system)
+---@param cmd string[]
+---@param opts table
+---@return vim.SystemCompleted
+local function system_async(cmd, opts)
+  return _system_async(cmd, opts) --[[@as vim.SystemCompleted]]
+end
 local build_semaphore = async.semaphore(2)
 
 M.build_hooks = {}

@@ -30,6 +30,7 @@ M.ns = nvim_create_namespace('resonance_ui')
 ---@class ResonanceScannerInfo
 ---@field plugins ResonancePluginSOA
 ---@field total integer
+---@field loaded integer
 ---@field pack_dir string
 ---@field load_times table<string, number>
 ---@class ResonanceUIState
@@ -44,6 +45,8 @@ M.ns = nvim_create_namespace('resonance_ui')
 ---@field checking boolean
 ---@field updating boolean
 ---@field spinner_frame integer
+---@field spinner_line_idx? integer
+---@field pending_count integer
 ---@field restore_cursor_name? string
 ---@field pack_details table<string, table>
 ---@field line_to_name table<number, string>
@@ -64,6 +67,8 @@ M.state = {
   checking = false,
   updating = false,
   spinner_frame = 1,
+  spinner_line_idx = nil,
+  pending_count = 0,
   line_to_name = {},
   name_to_line = {},
   restore_cursor_name = nil,
@@ -78,11 +83,14 @@ function M.init_hls()
   local cm = nvim_get_hl(0, { name = 'Comment' })
   local di = nvim_get_hl(0, { name = 'DiagnosticInfo' })
   local er = nvim_get_hl(0, { name = 'DiagnosticError' })
+  ---@diagnostic disable-next-line: unused-local
   local wa = nvim_get_hl(0, { name = 'DiagnosticWarn' })
+  ---@diagnostic disable-next-line: unused-local
   local ok = nvim_get_hl(0, { name = 'DiagnosticOk' })
   local hi = nvim_get_hl(0, { name = 'DiagnosticHint' })
   local st = nvim_get_hl(0, { name = 'Statement' })
   local ty = nvim_get_hl(0, { name = 'Type' })
+  ---@diagnostic disable-next-line: unused-local
   local co = nvim_get_hl(0, { name = 'Constant' })
   local sp = nvim_get_hl(0, { name = 'Special' })
 

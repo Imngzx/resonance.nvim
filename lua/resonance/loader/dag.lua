@@ -6,9 +6,6 @@ local get_autocmds = api.nvim_get_autocmds
 
 local type = type
 local pairs = pairs
-local string_gmatch = string.gmatch
-local vim_trim = vim.trim
-local table_insert = table.insert
 
 local function get_event_chain(event, buf, data)
   local chain = {}

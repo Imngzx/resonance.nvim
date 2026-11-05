@@ -42,10 +42,11 @@ function M.parse_config(config)
       if has_triggers then
         -- Add VeryLazy to existing events
         if config.event then
-          if type(config.event) == 'table' and config.event[1] then
-            table.insert(config.event, { 'User', pattern = 'VeryLazy' })
+          local event = config.event
+          if type(event) == 'table' and event[1] then
+            table.insert(event, { 'User', pattern = 'VeryLazy' })
           else
-            config.event = { config.event, { 'User', pattern = 'VeryLazy' } }
+            config.event = { event, { 'User', pattern = 'VeryLazy' } }
           end
         else
           -- No event, but has other triggers (cmd/keys/ft)

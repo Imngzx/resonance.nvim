@@ -74,10 +74,12 @@ local function populate_plugin_dir_cache()
 end
 
 local function get_plugin_dir(name)
-  if not _plugin_dir_cache then
+  local cache = _plugin_dir_cache
+  if not cache then
     populate_plugin_dir_cache()
+    cache = _plugin_dir_cache
   end
-  return _plugin_dir_cache[name]
+  return cache and cache[name] or nil
 end
 
 -- Public API: get_plugin_dir for build module

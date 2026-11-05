@@ -16,6 +16,7 @@ local vbo = vim.bo
 
 local nvim_win_is_valid = api.nvim_win_is_valid
 local nvim_win_get_width = api.nvim_win_get_width
+local nvim_buf_is_valid = api.nvim_buf_is_valid
 local nvim_buf_set_lines = api.nvim_buf_set_lines
 local nvim_buf_clear_namespace = api.nvim_buf_clear_namespace
 local nvim_buf_set_extmark = api.nvim_buf_set_extmark
@@ -63,9 +64,7 @@ local BUTTONS = {
 local _cached_stats = nil
 local function get_stats()
   if not _cached_stats then
-    _cached_stats = {
-      startuptime = (package.loaded['resonance.scanner'] or require('resonance.scanner')).load_times._startup or 0
-    }
+    _cached_stats = require('resonance').stats()
   end
   return _cached_stats
 end

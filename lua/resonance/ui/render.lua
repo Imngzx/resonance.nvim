@@ -169,8 +169,8 @@ local function build_dag_content()
 
     -- Dependencies (edges)
     if deps and #deps > 0 then
-      for j = 1, #deps do
-        local dep = deps[j]
+      for i = 1, #deps do
+        local dep = deps[i]
         add('    ├─ ', 'Comment')
         add(dep, 'Function')
         if nodes[dep] and nodes[dep].loaded then
@@ -265,6 +265,7 @@ local function build_content()
       clean_idx[c_idx] = i
     end
   end
+  st.state.pending_count = p_idx
 
   -- draw_plugin moved outside for reuse
   local function draw_plugin(idx, is_pending)
@@ -419,6 +420,7 @@ function M.render()
   nvim_buf_set_lines(buf, 0, -1, false, l)
   vbo[buf].modifiable = false
   vbo[buf].modified = false
+
   nvim_buf_clear_namespace(buf, ns, 0, -1)
 
   for i = 1, #h, 4 do
@@ -450,10 +452,10 @@ function M.update_spinner()
   if not st.is_valid() or not st.state.checking then return end
   local buf = st.state.buf
   local row = st.state.spinner_line_idx
-  if not buf or not row then return end
+  if not buf or not nvim_buf_is_valid(buf) then return end
+  if not row then return end
 
-  local p_idx = 0
-  for _, _ in pairs(st.state.updates) do p_idx = p_idx + 1 end
+  local p_idx = st.state.pending_count or 0
 
   local text = string_format('  Updates Available (%d)', p_idx)
   local title_len = #text

@@ -94,7 +94,7 @@ build.setup_packchanged_autocmd(get_plugin_dir)
 
 M.plugin_triggers = {}
 M.specs = {}
-M.spec_urls = {}  -- URL -> spec name mapping
+M.spec_urls = {} -- URL -> spec name mapping
 
 ---@param config table
 function M.load(config)
@@ -145,14 +145,24 @@ function M.load(config)
     end
   end
 
+  -- Create a single load_now function that loads all plugins in the group
+  -- This ensures force_load_fns works for dependency resolution for any plugin in the group
   local current_name = parsed_names[1]
 
   local function load_now(ev, visiting_path)
-    -- Use name as key to avoid retaining config table
+    -- Track each member independently while sharing one group load callback.
     local state = plugin_state[current_name]
     if not state then
       state = { loaded = false }
       plugin_state[current_name] = state
+    end
+    local member_loaded = {}
+    local all_loaded = true
+    for i = 1, #parsed_names do
+      local member_state = plugin_state[parsed_names[i]]
+      local loaded = member_state and member_state.loaded or false
+      member_loaded[i] = loaded
+      if not loaded then all_loaded = false end
     end
 
     -- Initialize visiting_path if nil
@@ -175,15 +185,7 @@ function M.load(config)
       end
     end
 
-    if state.loaded then
-      if current_name then
-        visiting_path[current_name] = nil
-        if path_order[#path_order] == current_name then
-          path_order[#path_order] = nil
-        end
-      end
-      return
-    end
+    if all_loaded then return end
     state.loaded = true
 
     if current_name then
@@ -216,9 +218,32 @@ function M.load(config)
       pcall(nvim_cmd, { cmd = 'packadd', args = { parsed_names[i] } })
     end
 
-    if config.setup then
-      local ok, err = pcall(config.setup)
-      if not ok then utils.notify('Setup error: ' .. tostring(err), vim_log_levels.ERROR) end
+    -- Call setup once per member that was not already loaded.
+    for pi = 1, #parsed_names do
+      if not member_loaded[pi] then
+        local plugin_spec = plugins[pi]
+        local plugin_setup = type(plugin_spec) == 'table' and plugin_spec.setup
+        if plugin_setup then
+          local ok, err = pcall(plugin_setup)
+          if not ok then
+            utils.notify('Setup error for ' .. parsed_names[pi] .. ': ' .. tostring(err),
+              vim_log_levels.ERROR)
+          end
+        elseif config.setup and pi == 1 then
+          -- Only call config.setup once (for first plugin) as fallback
+          local ok, err = pcall(config.setup)
+          if not ok then utils.notify('Setup error: ' .. tostring(err), vim_log_levels.ERROR) end
+        end
+      end
+    end
+
+    for i = 1, #parsed_names do
+      local member_state = plugin_state[parsed_names[i]]
+      if not member_state then
+        member_state = {}
+        plugin_state[parsed_names[i]] = member_state
+      end
+      member_state.loaded = true
     end
 
     if current_name then
@@ -266,8 +291,10 @@ function M.load(config)
     end
   end
 
-  -- Store force_load by name, not on config table (avoids reference cycle)
-  force_load_fns[current_name] = load_now
+  -- Store force_load for ALL plugins in the group (so dependency resolution works for any of them)
+  for i = 1, #parsed_names do
+    force_load_fns[parsed_names[i]] = load_now
+  end
 
   triggers.register_all(config, load_now)
 end

@@ -52,7 +52,7 @@ test.run_suite('resonance.loader.deep', {
       local load_order = {}
       resonance.load({
         src = 'https://github.com/test/keymap-plugin',
-        keys = {{'n', '<leader>testload', function() table.insert(load_order, 'rhs') end}},
+        keys = { { 'n', '<leader>testload', function() table.insert(load_order, 'rhs') end } },
         setup = function() table.insert(load_order, 'setup') end,
       })
 
@@ -180,14 +180,14 @@ test.run_suite('resonance.loader.deep', {
       local load_order = {}
       resonance.load({
         src = 'https://github.com/test/top-plugin',
-        dependencies = {'https://github.com/test/mid-plugin'},
+        dependencies = { 'https://github.com/test/mid-plugin' },
         event = { 'User', pattern = 'TransitiveTest' },
         setup = function() table.insert(load_order, 'top-plugin') end,
       })
 
       resonance.load({
         src = 'https://github.com/test/mid-plugin',
-        dependencies = {'https://github.com/test/bottom-plugin'},
+        dependencies = { 'https://github.com/test/bottom-plugin' },
         setup = function() table.insert(load_order, 'mid-plugin') end,
       })
 
@@ -223,7 +223,7 @@ test.run_suite('resonance.loader.deep', {
       })
 
       -- Try to trigger load
-      resonance.load({src = 'https://github.com/test/cond-fake-trigger', event = { 'User', pattern = 'CondTest' }})
+      resonance.load({ src = 'https://github.com/test/cond-fake-trigger', event = { 'User', pattern = 'CondTest' } })
       vim.api.nvim_exec_autocmds('User', { pattern = 'CondTest', modeline = false })
       vim.wait(100)
 
@@ -268,9 +268,32 @@ test.run_suite('resonance.loader.deep', {
   },
 
   {
+    name = 'grouped plugins: setup and loaded state apply to every member',
+    fn = function()
+      local setup_a, setup_b = 0, 0
+      resonance.load({
+        plugin = {
+          { src = 'https://github.com/test/group-a', setup = function() setup_a = setup_a + 1 end },
+          { src = 'https://github.com/test/group-b', setup = function() setup_b = setup_b + 1 end },
+        },
+        event = { 'User', pattern = 'GroupedPluginTest' },
+      })
+
+      vim.api.nvim_exec_autocmds('User', { pattern = 'GroupedPluginTest', modeline = false })
+      vim.wait(100)
+
+      local nodes = loader.get_dag_data()
+      test.assert_eq(setup_a, 1)
+      test.assert_eq(setup_b, 1)
+      test.assert_true(nodes['group-a'].loaded)
+      test.assert_true(nodes['group-b'].loaded)
+    end,
+  },
+
+  {
     name = 'version pinning: tag version works',
     fn = function()
-      resonance.load({src = 'https://github.com/test/version-plugin', version = 'v1.0.0'})
+      resonance.load({ src = 'https://github.com/test/version-plugin', version = 'v1.0.0' })
       local spec = loader.specs['version-plugin']
       test.assert_not_nil(spec)
       test.assert_eq(spec.version, 'v1.0.0')
@@ -280,7 +303,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'version pinning: branch version works',
     fn = function()
-      resonance.load({src = 'https://github.com/test/version-plugin2', version = 'main'})
+      resonance.load({ src = 'https://github.com/test/version-plugin2', version = 'main' })
       local spec = loader.specs['version-plugin2']
       test.assert_not_nil(spec)
       test.assert_eq(spec.version, 'main')
@@ -290,7 +313,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'version pinning: commit hash version works',
     fn = function()
-      resonance.load({src = 'https://github.com/test/version-plugin3', version = 'abc1234'})
+      resonance.load({ src = 'https://github.com/test/version-plugin3', version = 'abc1234' })
       local spec = loader.specs['version-plugin3']
       test.assert_not_nil(spec)
       test.assert_eq(spec.version, 'abc1234')

@@ -152,16 +152,16 @@ Applied LuaJIT optimization patterns across all modules:
 
 ## 4. Benchmark Comparisons
 
-### Startup Time (`vim-startuptime`, 10 runs, `-u NONE`)
+### Startup Time (`vim-startuptime`, 10 runs, 3 warmup, `-u NONE`)
 
 | Version | Avg (ms) | Min (ms) | Max (ms) |
 |---------|----------|----------|----------|
 | Original scanner | 0.947 | 0.808 | 1.252 |
-| **Optimized scanner** | **0.919** | **0.786** | **1.129** |
-| **Modular loader** | **0.87** | **0.77** | **1.27** |
-| **LuaJIT optimized (current)** | **0.88** | **0.79** | **1.20** |
+| Optimized scanner | 0.919 | 0.786 | 1.129 |
+| Modular loader | 0.87 | 0.77 | 1.27 |
+| **LuaJIT optimized (current)** | **~6.9** | **~6.6** | **~7.4** |
 
-> **No startup regression** — lazy-loading happens post-setup.
+> **No startup regression** — lazy-loading happens post-setup. Total startup ~6.9ms includes Neovim core init; resonance setup adds ~0.4ms (inits 1).
 
 ### UI Open Time
 
@@ -169,19 +169,18 @@ Applied LuaJIT optimization patterns across all modules:
 |---------|------|
 | Original scanner (online `vim.pack.get`) | ~5000 ms |
 | Optimized scanner (offline default) | ~15 ms |
-| **Two-pass async** | **~12 ms** |
-| **LuaJIT optimized (current)** | **~7-10 ms** |
-| Fallback (`vim.pack = nil`) | ~15 ms |
+| Two-pass async | ~12 ms |
+| **LuaJIT optimized (current)** | **~12-15 ms** |
+| Fallback (`vim.pack = nil`) | ~14 ms |
 
 ### `vim.pack.get()` Latency
 
 | Call | Time |
 |------|------|
 | `info=true, offline=false` (network) | ~2150 ms |
-| `info=true, offline=true` | ~318 ms |
-| `info=false, offline=true` (default) | **~0.3 ms** |
-| Filesystem scan (43 plugins) | **~0.1 ms** |
-
+| `info=true, offline=true` | ~420 ms |
+| `info=false, offline=true` (default) | **~1.5 ms** |
+| Filesystem scan (49 plugins) | **~0.1 ms** |
 ---
 
 ## 5. Development Workflow

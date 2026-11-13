@@ -45,7 +45,7 @@ local function start_spinner()
   if not spinner_timer then return end
   spinner_timer:start(0, 100, function()
     schedule(function()
-      st.state.spinner_frame = (st.state.spinner_frame % 8) + 1
+      st.state.spinner_frame = (st.state.spinner_frame % 10) + 1
       render_mod.update_spinner() -- Use targeted redraw
     end)
   end)

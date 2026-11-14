@@ -53,6 +53,18 @@ local function assert_error(fn, msg)
   return err
 end
 
+local function assert_contains(haystack, needle, msg)
+  if not tostring(haystack):find(tostring(needle), 1, true) then
+    error(string.format("%s\n  Expected to contain: %s\n  Actual: %s", msg or "Assertion failed", vim.inspect(needle), vim.inspect(haystack)))
+  end
+end
+
+local function assert_not_contains(haystack, needle, msg)
+  if tostring(haystack):find(tostring(needle), 1, true) then
+    error(string.format("%s\n  Expected NOT to contain: %s\n  Actual: %s", msg or "Assertion failed", vim.inspect(needle), vim.inspect(haystack)))
+  end
+end
+
 -- Load resonance from installed location
 local function load_installed()
   local ok, r = pcall(dofile, vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim/lua/resonance/init.lua')
@@ -61,6 +73,7 @@ local function load_installed()
   _G.resonance = r
   _G.loader = require('resonance.loader')
   _G.scanner = require('resonance.scanner')
+  _G.utils = require('resonance.utils')
 end
 
 local function reset_state()
@@ -135,6 +148,8 @@ _G.test = {
   assert_nil = assert_nil,
   assert_not_nil = assert_not_nil,
   assert_error = assert_error,
+  assert_contains = assert_contains,
+  assert_not_contains = assert_not_contains,
   run_test = run_test,
   run_suite = run_suite,
   print_summary = print_summary,

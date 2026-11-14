@@ -300,7 +300,7 @@ test.run_suite('resonance.integration', {
       local lines = vim.api.nvim_buf_get_lines(st.state.buf, 0, -1, false)
       local found = false
       for _, l in ipairs(lines) do
-        if l:find('ui-icon') and l:find('') then
+        if l:find('ui-icon', 1, true) and l:find('', 1, true) then
           found = true
           break
         end
@@ -321,7 +321,7 @@ test.run_suite('resonance.integration', {
       local lines = vim.api.nvim_buf_get_lines(st.state.buf, 0, -1, false)
       local found = false
       for _, l in ipairs(lines) do
-        if l:find('ui-status') and l:find('status: disabled%(cond%)') then
+        if l:find('ui-status', 1, true) and l:find('status: disabled(cond)', 1, true) then
           found = true
           break
         end
@@ -342,7 +342,7 @@ test.run_suite('resonance.integration', {
       local lines = vim.api.nvim_buf_get_lines(st.state.buf, 0, -1, false)
       local found = false
       for _, l in ipairs(lines) do
-        if l:find('disabled: 2') then
+        if l:find('disabled: 2', 1, true) then
           found = true
           break
         end
@@ -365,8 +365,8 @@ test.run_suite('resonance.integration', {
       local found_enabled = false
       local disabled_after_enabled = false
       for _, l in ipairs(lines) do
-        if l:find('a-disabled') then found_disabled = true end
-        if l:find('z-enabled') then found_enabled = true end
+        if l:find('a-disabled', 1, true) then found_disabled = true end
+        if l:find('z-enabled', 1, true) then found_enabled = true end
         if found_enabled and found_disabled then disabled_after_enabled = true end
       end
       test.assert_true(disabled_after_enabled)
@@ -386,7 +386,7 @@ test.run_suite('resonance.integration', {
       local lines = vim.api.nvim_buf_get_lines(st.state.buf, 0, -1, false)
       local found = false
       for _, l in ipairs(lines) do
-        if l:find('dag-disabled') and l:find('disabled %(cond%)') then
+        if l:find('dag-disabled', 1, true) and l:find('disabled (cond)', 1, true) then
           found = true
           break
         end

@@ -22,9 +22,9 @@
 
 <https://github.com/user-attachments/assets/f37b574f-6061-493b-95cb-9e9478616b05>
 
-![Preview Image](https://github.com/user-attachments/assets/d109dc38-1cbe-4396-9b4f-ed19088ac586)
+![Preview Image](https://github.com/user-attachments/assets/61066efd-71df-4499-af05-2b8984015ad3)
 
-| ![Build notifications](https://github.com/user-attachments/assets/36ec5afb-23c4-4c3f-a1ae-88eaac56a88f) | ![DAG UI](https://github.com/user-attachments/assets/7c919ec8-91bf-420f-a10d-fc439917b2d7) |
+| ![Build notifications](https://github.com/user-attachments/assets/36ec5afb-23c4-4c3f-a1ae-88eaac56a88f) | ![DAG UI](https://github.com/user-attachments/assets/985d85a1-6fc4-4a6f-81f5-213ce737f12e) |
 | -------------- | --------------- |
 
 ## 📦 Installation and Configuration

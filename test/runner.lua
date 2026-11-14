@@ -66,6 +66,11 @@ end
 local function reset_state()
   if _G.loader and _G.loader._reset then _G.loader._reset() end
   if _G.resonance and _G.resonance._reset then _G.resonance._reset() end
+  -- Close any open UI window from previous test
+  local state = package.loaded['resonance.ui.state']
+  if state and state.state and state.state.win and vim.api.nvim_win_is_valid(state.state.win) then
+    pcall(vim.api.nvim_win_close, state.state.win, true)
+  end
   package.loaded['resonance.ui.state'] = nil
   local state = require('resonance.ui.state')
   if state._reset then state._reset() end

@@ -33,8 +33,18 @@ local plugin_state = {}
 
 -- Force-load functions keyed by plugin name
 local force_load_fns = {}
+
 -- Plugins disabled by a false cond predicate
 local disabled_plugins = {}
+
+-- Plugin triggers registered by loader
+local plugin_triggers = {}
+
+-- Specs registered by loader
+local specs = {}
+
+-- URL -> spec name mapping
+local spec_urls = {}
 
 
 local _plugin_dir_cache = nil
@@ -95,10 +105,11 @@ M.mark_build_success = build.mark_build_success
 M.setup_packchanged_autocmd = build.setup_packchanged_autocmd
 build.setup_packchanged_autocmd(get_plugin_dir)
 
-M.plugin_triggers = {}
-M.specs = {}
-M.spec_urls = {} -- URL -> spec name mapping
+M.plugin_triggers = plugin_triggers
+M.specs = specs
+M.spec_urls = spec_urls
 M.disabled_plugins = disabled_plugins
+M.force_load_fns = force_load_fns
 
 -- Reset all internal state (for testing)
 function M._reset()

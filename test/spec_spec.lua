@@ -202,6 +202,75 @@ test.run_suite('resonance.loader.spec', {
       test.assert_eq(pack_plugins[1].src, 'test/repo')
     end,
   },
+
+  -- cond edge cases
+  {
+    name = 'parse_config: cond=function returning nil returns nil',
+    fn = function()
+      local config = {src = 'test/repo', cond = function() return nil end}
+      local result = spec.parse_config(config)
+      test.assert_nil(result)
+    end,
+  },
+
+  {
+    name = 'parse_config: cond=false with lazy=false skips lazy validation',
+    fn = function()
+      local config = {src = 'test/repo', lazy = false, cond = false}
+      local result = spec.parse_config(config)
+      test.assert_nil(result)
+    end,
+  },
+
+  {
+    name = 'parse_config: cond=false with lazy=true returns nil',
+    fn = function()
+      local config = {src = 'test/repo', lazy = true, cond = false}
+      local result = spec.parse_config(config)
+      test.assert_nil(result)
+    end,
+  },
+
+  {
+    name = 'parse_config: cond=false preserves trigger for disabled tracking',
+    fn = function()
+      local config = {src = 'test/repo', event = 'LspAttach', cond = false}
+      local result = spec.parse_config(config)
+      test.assert_nil(result)
+      -- Original config should still have event for loader to extract trigger
+      test.assert_eq(config.event, 'LspAttach')
+    end,
+  },
+
+  {
+    name = 'parse_config: cond=false with cmd preserves trigger',
+    fn = function()
+      local config = {src = 'test/repo', cmd = 'TestCmd', cond = false}
+      local result = spec.parse_config(config)
+      test.assert_nil(result)
+      test.assert_eq(config.cmd, 'TestCmd')
+    end,
+  },
+
+  {
+    name = 'parse_config: cond=false with ft preserves trigger',
+    fn = function()
+      local config = {src = 'test/repo', ft = 'lua', cond = false}
+      local result = spec.parse_config(config)
+      test.assert_nil(result)
+      test.assert_eq(config.ft, 'lua')
+    end,
+  },
+
+  {
+    name = 'parse_config: cond=false with keys function preserves trigger',
+    fn = function()
+      local config = {src = 'test/repo', keys = function() return {{'n', '<leader>x', function() end}} end, cond = false}
+      local result = spec.parse_config(config)
+      test.assert_nil(result)
+      test.assert_true(type(config.keys) == 'function')
+    end,
+  },
 })
 
 test.print_summary()

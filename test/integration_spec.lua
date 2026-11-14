@@ -1,10 +1,7 @@
--- Integration tests for resonance.nvim full workflow
--- Run with: nvim --headless -c "luafile test/runner.lua" -c "luafile test/integration_spec.lua" -c "lua test.print_summary()" -c "qall"
-
-local resonance = require('resonance')
-local loader = require('resonance.loader')
-local scanner = require('resonance.scanner')
-
+package.path = './lua/?.lua;./lua/?/init.lua;' .. package.path
+ local resonance = _G.resonance
+ local loader = _G.loader
+ local scanner = _G.scanner
 test.run_suite('resonance.integration', {
 
   {
@@ -190,6 +187,109 @@ test.run_suite('resonance.integration', {
       })
       test.assert_not_nil(resonance.config.ui)
       test.assert_eq(resonance.config.ui.border, 'rounded')
+    end,
+  },
+
+  {
+    name = 'load: cond=false with lazy=false skips lazy validation',
+    fn = function()
+      resonance.load({src = 'https://github.com/test/cond-lazy-false', lazy = false, cond = false})
+      test.assert_nil(loader.specs['cond-lazy-false'])
+      test.assert_not_nil(loader.disabled_plugins['cond-lazy-false'])
+    end,
+  },
+
+  {
+    name = 'load: cond=function returning nil treated as false',
+    fn = function()
+      resonance.load({src = 'https://github.com/test/cond-nil', event = 'BufReadPre', cond = function() return nil end})
+      test.assert_nil(loader.specs['cond-nil'])
+      test.assert_not_nil(loader.disabled_plugins['cond-nil'])
+    end,
+  },
+
+  {
+    name = 'load: cond=false with dependencies tracks both',
+    fn = function()
+      resonance.load({src = 'https://github.com/test/dep-cond', cond = false})
+      resonance.load({src = 'https://github.com/test/main-cond', event = 'BufReadPre', dependencies = {'https://github.com/test/dep-cond'}})
+      local disabled = loader.disabled_plugins['dep-cond']
+      test.assert_not_nil(disabled)
+      local info = scanner.get_info()
+      local found = false
+      for i = 1, info.total do
+        if info.plugins.name[i] == 'dep-cond' then
+          found = true
+          test.assert_true(info.plugins.disabled[i])
+        end
+      end
+      test.assert_true(found)
+      local nodes = loader.get_dag_data()
+      test.assert_true(nodes['dep-cond'].disabled)
+      test.assert_false(nodes['main-cond'].disabled)
+    end,
+  },
+
+  {
+    name = 'load: disabled plugin URL present in scanner',
+    fn = function()
+      resonance.load({src = 'https://github.com/test/disabled-url', event = 'BufReadPre', cond = false})
+      local info = scanner.get_info()
+      local found = false
+      for i = 1, info.total do
+        if info.plugins.name[i] == 'disabled-url' then
+          found = true
+          test.assert_eq(info.plugins.path[i], '')
+          test.assert_true(info.plugins.disabled[i])
+        end
+      end
+      test.assert_true(found)
+    end,
+  },
+
+  {
+    name = 'load: mixed list with some disabled',
+    fn = function()
+      resonance.load({
+        {src = 'https://github.com/test/mixed-enabled', event = 'BufReadPre'},
+        {src = 'https://github.com/test/mixed-disabled', event = 'BufReadPre', cond = false},
+        {src = 'https://github.com/test/mixed-enabled2', event = 'BufReadPre'},
+      })
+      test.assert_not_nil(loader.specs['mixed-enabled'])
+      test.assert_not_nil(loader.specs['mixed-enabled2'])
+      test.assert_nil(loader.specs['mixed-disabled'])
+      test.assert_not_nil(loader.disabled_plugins['mixed-disabled'])
+      local info = scanner.get_info()
+      local disabled = 0
+      for i = 1, info.total do
+        if info.plugins.name[i]:find('mixed') and info.plugins.disabled[i] then
+          disabled = disabled + 1
+        end
+      end
+      test.assert_eq(disabled, 1)
+    end,
+  },
+
+  {
+    name = 'load: lazy=true with cond=false skips plugin',
+    fn = function()
+      resonance.load({src = 'https://github.com/test/lazy-cond', lazy = true, cond = false})
+      test.assert_nil(loader.specs['lazy-cond'])
+      test.assert_not_nil(loader.disabled_plugins['lazy-cond'])
+    end,
+  },
+
+  {
+    name = 'load: keys as function with cond=false extracts trigger',
+    fn = function()
+      resonance.load({
+        src = 'https://github.com/test/keys-cond',
+        keys = function() return {{'n', '<leader>test', function() end}} end,
+        cond = false,
+      })
+      local disabled = loader.disabled_plugins['keys-cond']
+      test.assert_not_nil(disabled)
+      test.assert_eq(disabled.trigger, '󰌌 keys')
     end,
   },
 })

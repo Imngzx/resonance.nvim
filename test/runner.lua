@@ -102,6 +102,17 @@ _G.test = {
   exit_with_status = exit_with_status,
 }
 
--- Load resonance
-dofile(vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim/lua/resonance/init.lua')
-require('resonance').setup()
+package.path = './lua/?.lua;./lua/?/init.lua;' .. package.path
+ package.loaded['resonance'] = nil
+ package.loaded['resonance.loader'] = nil
+ package.loaded['resonance.ui'] = nil
+ package.loaded['resonance.ui.state'] = nil
+ package.loaded['resonance.ui.render'] = nil
+ package.loaded['resonance.ui.actions'] = nil
+ package.loaded['resonance.scanner'] = nil
+ package.loaded['resonance.utils'] = nil
+ local resonance = require('resonance')
+ resonance.setup()
+ _G.resonance = resonance
+ _G.loader = require('resonance.loader')
+ _G.scanner = require('resonance.scanner')

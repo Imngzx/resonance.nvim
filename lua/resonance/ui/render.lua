@@ -159,12 +159,16 @@ local function build_dag_content()
 
     -- Plugin node
     local loaded = node and node.loaded or false
+    local disabled = node and node.disabled or false
     add('  ', 'Normal')
     add(loaded and '● ' or '○ ', loaded and 'Statement' or 'Comment')
-    add(name, loaded and 'Normal' or 'Comment')
+    add(name, disabled and 'Comment' or (loaded and 'Normal' or 'Comment'))
 
     local trigger = node and node.trigger or 'none'
     add('  [' .. trigger .. ']', 'Special')
+    if disabled then
+      add(' disabled (cond)', 'Comment')
+    end
     nl()
 
     -- Dependencies (edges)
@@ -239,9 +243,12 @@ local function build_content()
 
   local pending_idx = {}
   local clean_idx = {}
+  local disabled_idx = {}
   local p_idx = 0
   local c_idx = 0
+  local d_idx = 0
   local max_name_len = 0
+
 
   local info = st.state.info
   if not info then return {}, {} end
@@ -250,14 +257,19 @@ local function build_content()
   local types = info.plugins.type
   local paths = info.plugins.path
   local loadeds = info.plugins.loaded
+  local disableds = info.plugins.disabled or {}
   local triggers = info.plugins.trigger
   local updates = st.state.updates
   if not info.total then return {}, {} end
+
   for i = 1, info.total do
     local n = names[i]
     local nlen = #n
     if nlen > max_name_len then max_name_len = nlen end
-    if updates[n] then
+    if disableds[i] then
+      d_idx = d_idx + 1
+      disabled_idx[d_idx] = i
+    elseif updates[n] then
       p_idx = p_idx + 1
       pending_idx[p_idx] = i
     else
@@ -265,10 +277,8 @@ local function build_content()
       clean_idx[c_idx] = i
     end
   end
-  st.state.pending_count = p_idx
 
-  -- draw_plugin moved outside for reuse
-  local function draw_plugin(idx, is_pending)
+  local function draw_plugin(idx, is_pending, is_disabled)
     local p_name = names[idx]
     local p_type = types[idx]
     local p_path = paths[idx]
@@ -277,10 +287,17 @@ local function build_content()
 
     mark_row(p_name, false)
 
-    add(is_loaded and '  ● ' or '  ○ ', is_loaded and 'Statement' or 'Comment')
-    add('󰏗 ', is_loaded and 'Function' or 'Comment')
+    if is_disabled then
+      add('   ', 'DiagnosticError')
+    else
+      add(is_loaded and '  ● ' or '  ○ ', is_loaded and 'Statement' or 'Comment')
+    end
+    add('󰏗 ', is_disabled and 'Comment' or (is_loaded and 'Function' or 'Comment'))
 
-    add(p_name, is_pending and 'DiagnosticWarn' or (is_loaded and 'Normal' or 'Comment'))
+    add(p_name,
+      is_disabled and 'Comment' or
+      (is_pending and 'DiagnosticWarn' or (is_loaded and 'Normal' or 'Comment')))
+
     add(_spaces_cache[math_max(0, max_name_len - #p_name + 2)])
     local type_label = TYPE_LABELS[p_type]
     add(type_label and type_label or string_format('[%s]', p_type), 'Comment')
@@ -301,6 +318,7 @@ local function build_content()
     else
       add(p_trigger, 'Special')
     end
+
     nl()
 
     if is_pending then
@@ -331,8 +349,13 @@ local function build_content()
 
     if st.state.expanded[p_name] then
       add('      status: ', 'Comment')
-      add(is_loaded and 'active' or 'inactive', is_loaded and 'String' or 'Comment')
+      if is_disabled then
+        add('disabled(cond)', 'DiagnosticError')
+      else
+        add(is_loaded and 'active' or 'inactive', is_loaded and 'String' or 'Comment')
+      end
       nl()
+
 
       local pk = st.state.pack_details[p_name]
       if pk then
@@ -398,9 +421,14 @@ local function build_content()
   add(string_format('  Up To Date (%d)', c_idx), 'Title')
   add('    ● ', 'Statement')
   add(string_format('Loaded: %d', info.loaded), 'Comment')
+  if d_idx > 0 then
+    add('     ', 'DiagnosticError')
+    add(string_format('disabled: %d', d_idx), 'Comment')
+  end
   nl()
 
-  for i = 1, c_idx do draw_plugin(clean_idx[i], false) end
+  for i = 1, c_idx do draw_plugin(clean_idx[i], false, false) end
+  for i = 1, d_idx do draw_plugin(disabled_idx[i], false, true) end
 
   return lines, hls
 end

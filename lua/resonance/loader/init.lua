@@ -33,6 +33,9 @@ local plugin_state = {}
 
 -- Force-load functions keyed by plugin name
 local force_load_fns = {}
+-- Plugins disabled by a false cond predicate
+local disabled_plugins = {}
+
 
 local _plugin_dir_cache = nil
 
@@ -95,6 +98,8 @@ build.setup_packchanged_autocmd(get_plugin_dir)
 M.plugin_triggers = {}
 M.specs = {}
 M.spec_urls = {} -- URL -> spec name mapping
+M.disabled_plugins = disabled_plugins
+
 
 ---@param config table
 function M.load(config)
@@ -112,9 +117,33 @@ function M.load(config)
     return
   end
 
-  local parsed_config = spec.parse_config(config)
-  if not parsed_config then return end
+  local parsed_config, parse_reason, rejected_config = spec.parse_config(config)
+  if not parsed_config then
+    if parse_reason == 'disabled' and rejected_config then
+      local rejected_plugins = rejected_config.plugin
+      if type(rejected_plugins) == 'string' then
+        rejected_plugins = { rejected_plugins }
+      elseif type(rejected_plugins) == 'table' and rejected_plugins[1] == nil then
+        rejected_plugins = { rejected_plugins }
+      end
+      local disabled_trigger = utils.parse_trigger(rejected_config) or 'none'
+      local disabled_names, disabled_specs = spec.extract_names(rejected_plugins or {})
+      for i = 1, #disabled_names do
+        local name = disabled_names[i]
+        local disabled_spec = disabled_specs[i]
+        local disabled_url = type(disabled_spec) == 'string' and disabled_spec or
+          (disabled_spec and (disabled_spec.src or disabled_spec.url or disabled_spec[1]))
+        disabled_plugins[name] = {
+          trigger = disabled_trigger,
+          reason = 'cond',
+          url = disabled_url,
+        }
+      end
+    end
+    return
+  end
   config = parsed_config
+
 
   local plugins = config.plugin
   local parsed_deps = utils.parse_dependencies(config)
@@ -123,6 +152,7 @@ function M.load(config)
 
   for i = 1, #parsed_names do
     local name = parsed_names[i]
+    disabled_plugins[name] = nil
     if name and trig_str then M.plugin_triggers[name] = trig_str end
     if name then M.specs[name] = config end
     -- Map URL to name for dependency resolution
@@ -303,7 +333,7 @@ end
 function M.get_dag_data()
   local scanner = package.loaded['resonance.scanner'] or require('resonance.scanner')
   local scanner_info = scanner.get_info()
-  return dag.get_dag_data(M.specs, plugin_state, scanner_info)
+  return dag.get_dag_data(M.specs, plugin_state, scanner_info, disabled_plugins)
 end
 
 ---@return table<string, {event:string, chain:string[], replayed:boolean}>

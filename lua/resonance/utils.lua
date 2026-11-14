@@ -135,6 +135,9 @@ function M.sort_plugins(plugins, total)
   end
 
   table_sort(indices, function(a, b)
+    local a_disabled = plugins.disabled and plugins.disabled[a] or false
+    local b_disabled = plugins.disabled and plugins.disabled[b] or false
+    if a_disabled ~= b_disabled then return not a_disabled end
     if plugins.loaded[a] ~= plugins.loaded[b] then return plugins.loaded[a] end
     return lower_names[a] < lower_names[b]
   end)

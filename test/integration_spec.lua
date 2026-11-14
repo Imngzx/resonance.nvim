@@ -61,6 +61,33 @@ test.run_suite('resonance.integration', {
   },
 
   {
+    name = 'load: tracks cond-disabled plugins for UI state',
+    fn = function()
+      resonance.load({
+        src = 'https://github.com/test/ui-disabled-cond',
+        event = 'BufReadPre',
+        cond = false,
+      })
+      local disabled = loader.disabled_plugins['ui-disabled-cond']
+      test.assert_not_nil(disabled)
+      test.assert_eq(disabled.reason, 'cond')
+      local info = scanner.get_info()
+      local found = false
+      for i = 1, info.total do
+        if info.plugins.name[i] == 'ui-disabled-cond' then
+          found = true
+          test.assert_true(info.plugins.disabled[i])
+          test.assert_eq(info.plugins.trigger[i], '󱐋 BufReadPre')
+        end
+      end
+      test.assert_true(found)
+      local nodes = loader.get_dag_data()
+      test.assert_true(nodes['ui-disabled-cond'].disabled)
+      test.assert_eq(nodes['ui-disabled-cond'].trigger, '󱐋 BufReadPre')
+    end,
+  },
+
+  {
     name = 'load: handles cond=function returning true',
     fn = function()
       resonance.load({src = 'https://github.com/test/integration6', cond = function() return true end})

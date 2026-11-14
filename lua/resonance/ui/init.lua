@@ -139,11 +139,17 @@ function M.open(ui_config)
       local end_idx = math_min(i + 10, total)
       for j = i, end_idx do
         local p_name, p_path = st.state.info.plugins.name[j], st.state.info.plugins.path[j]
-        if not st.state.commits[p_name] then
-          st.state.commits[p_name] = st.get_local_hash(p_path) or 'unknown'
-        end
-        if not st.state.urls[p_name] then
-          st.state.urls[p_name] = st.get_src_url(p_path) or 'unknown'
+        if p_path and p_path ~= '' then
+          if not st.state.commits[p_name] then
+            st.state.commits[p_name] = st.get_local_hash(p_path) or 'unknown'
+          end
+          if not st.state.urls[p_name] then
+            st.state.urls[p_name] = st.get_src_url(p_path) or 'unknown'
+          end
+        else
+          local loader = package.loaded['resonance.loader'] or require('resonance.loader')
+          local disabled = loader.disabled_plugins and loader.disabled_plugins[p_name]
+          if disabled and disabled.url then st.state.urls[p_name] = disabled.url end
         end
       end
       i = end_idx + 1

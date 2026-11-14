@@ -25,6 +25,7 @@ M.ns = nvim_create_namespace('resonance_ui')
 ---@field type string[]
 ---@field path string[]
 ---@field loaded boolean[]
+---@field disabled boolean[]
 ---@field trigger string[]
 
 ---@class ResonanceScannerInfo

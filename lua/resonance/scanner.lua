@@ -21,8 +21,35 @@ local function build_loaded_set()
   return loaded_set
 end
 
-local function fallback_scan(plugin_triggers)
-  local plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {} }
+local function append_disabled(plugins, total, disabled_plugins, loader)
+  local seen = {}
+  for i = 1, total do
+    seen[plugins.name[i]] = true
+  end
+
+  for name, disabled in pairs(disabled_plugins) do
+    if not seen[name] then
+      total = total + 1
+      plugins.name[total] = name
+      plugins.type[total] = 'opt'
+      plugins.path[total] = loader.get_plugin_dir(name) or ''
+      plugins.loaded[total] = false
+      plugins.disabled[total] = true
+      plugins.trigger[total] = disabled.trigger or 'none'
+      if plugins.rev then
+        plugins.rev[total] = nil
+        plugins.rev_to[total] = nil
+        plugins.manifest[total] = nil
+      end
+    end
+  end
+
+  return total
+end
+
+local function fallback_scan(plugin_triggers, disabled_plugins)
+  local plugins = { name = {}, type = {}, path = {}, loaded = {}, disabled = {}, trigger = {} }
+
   local loaded_set = build_loaded_set()
   local loaded_count, total_count = 0, 0
 
@@ -43,20 +70,26 @@ local function fallback_scan(plugin_triggers)
             plugins.name[total_count] = pname
             plugins.path[total_count] = ppath
             plugins.type[total_count] = name
-            local is_loaded = loaded_set[utils.fast_normalize(ppath)]
-            plugins.loaded[total_count] = is_loaded or false
+            local is_disabled = disabled_plugins[pname] ~= nil
+            local is_loaded = not is_disabled and loaded_set[utils.fast_normalize(ppath)] or false
+            plugins.loaded[total_count] = is_loaded
+            plugins.disabled[total_count] = is_disabled
             if is_loaded then loaded_count = loaded_count + 1 end
+
             plugins.trigger[total_count] = plugin_triggers[pname] or
-              (name == 'start' and '󰜎 start' or '󰢱 opt')
+              (is_disabled and disabled_plugins[pname].trigger or
+                (name == 'start' and '󰜎 start' or '󰢱 opt'))
           end
         end
       end
     end
   end
 
+  total_count = append_disabled(plugins, total_count, disabled_plugins, require('resonance.loader'))
   local indices = utils.sort_plugins(plugins, total_count)
+
   local sorted_plugins = utils.apply_sort(plugins, indices, total_count,
-    { 'name', 'type', 'path', 'loaded', 'trigger' })
+    { 'name', 'type', 'path', 'loaded', 'disabled', 'trigger' })
 
   return {
     plugins = sorted_plugins,
@@ -73,11 +106,12 @@ function M.get_info(opts)
   local offline = opts.offline ~= false
   local loader = require('resonance.loader')
   local plugin_triggers = loader.plugin_triggers or {}
+  local disabled_plugins = loader.disabled_plugins or {}
 
   if vim.pack and vim.pack.get then
     local ok, packs = pcall(vim.pack.get, nil, { info = info_mode, offline = offline })
     if ok and type(packs) == 'table' then
-      local plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {}, rev = {}, rev_to = {}, manifest = {} }
+      local plugins = { name = {}, type = {}, path = {}, loaded = {}, disabled = {}, trigger = {}, rev = {}, rev_to = {}, manifest = {} }
       local loaded_count, total_count = 0, 0
 
       local loaded_set = build_loaded_set()
@@ -90,8 +124,10 @@ function M.get_info(opts)
 
         plugins.name[total_count] = name
         plugins.path[total_count] = p.path
-        local is_loaded = loaded_set[utils.fast_normalize(p.path)]
-        plugins.loaded[total_count] = is_loaded or false
+        local is_disabled = disabled_plugins[name] ~= nil
+        local is_loaded = not is_disabled and loaded_set[utils.fast_normalize(p.path)] or false
+        plugins.loaded[total_count] = is_loaded
+        plugins.disabled[total_count] = is_disabled
         plugins.rev[total_count] = p.rev
         plugins.rev_to[total_count] = info_mode and p.rev_to or nil
         plugins.manifest[total_count] = info_mode and p.manifest or nil
@@ -110,14 +146,16 @@ function M.get_info(opts)
         end
 
         plugins.trigger[total_count] = plugin_triggers[name] or
-          (plugins.type[total_count] == 'start' and '󰜎 start' or '󰢱 opt')
+          (is_disabled and disabled_plugins[name].trigger or
+            (plugins.type[total_count] == 'start' and '󰜎 start' or '󰢱 opt'))
 
         if plugins.loaded[total_count] then loaded_count = loaded_count + 1 end
       end
 
+      total_count = append_disabled(plugins, total_count, disabled_plugins, loader)
       local indices = utils.sort_plugins(plugins, total_count)
       local sorted_plugins = utils.apply_sort(plugins, indices, total_count,
-        { 'name', 'type', 'path', 'loaded', 'trigger', 'rev', 'rev_to', 'manifest' })
+        { 'name', 'type', 'path', 'loaded', 'disabled', 'trigger', 'rev', 'rev_to', 'manifest' })
 
       return {
         plugins = sorted_plugins,
@@ -129,7 +167,7 @@ function M.get_info(opts)
     end
   end
 
-  return fallback_scan(plugin_triggers)
+  return fallback_scan(plugin_triggers, disabled_plugins)
 end
 
 -- Get detailed info for update checking (slow, fetches rev_to, manifest, branches, tags)
@@ -138,3 +176,4 @@ function M.get_detailed_info()
 end
 
 return M
+

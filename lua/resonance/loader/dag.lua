@@ -40,8 +40,9 @@ local function get_event_chain(event, buf, data)
   return chain
 end
 
----@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, table<string, string[]>
-function M.get_dag_data(specs, plugin_state, scanner_info)
+---@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean, disabled:boolean}>, table<string, string[]>
+function M.get_dag_data(specs, plugin_state, scanner_info, disabled_plugins)
+
   local nodes = {}
   local edges = {}
 
@@ -64,6 +65,8 @@ function M.get_dag_data(specs, plugin_state, scanner_info)
   local scanner_loaded = {}
   local scanner_trigger = {}
   local scanner_type = {}
+  local scanner_disabled = {}
+
   if scanner_info and scanner_info.plugins then
     local sp = scanner_info.plugins
     for i = 1, scanner_info.total do
@@ -71,6 +74,7 @@ function M.get_dag_data(specs, plugin_state, scanner_info)
       scanner_loaded[name] = sp.loaded[i]
       scanner_trigger[name] = sp.trigger[i]
       scanner_type[name] = sp.type[i]
+      scanner_disabled[name] = sp.disabled and sp.disabled[i] or false
     end
   end
 
@@ -90,27 +94,44 @@ function M.get_dag_data(specs, plugin_state, scanner_info)
 
     local trig_str = utils.parse_trigger(spec)
     local state = plugin_state[name]
+    local disabled = disabled_plugins and disabled_plugins[name] ~= nil or false
     nodes[name] = {
       name = name,
       deps = deps,
       trigger = trig_str or 'none',
       loaded = state and state.loaded or false,
+      disabled = disabled,
     }
     edges[name] = deps
+
   end
+  for name, disabled in pairs(disabled_plugins or {}) do
+    if not nodes[name] then
+      nodes[name] = {
+        name = name,
+        deps = {},
+        trigger = disabled.trigger or 'none',
+        loaded = false,
+        disabled = true,
+      }
+      edges[name] = {}
+    end
+  end
+
 
   -- Second pass: add dependency nodes that are installed but not in specs
   -- These are plugins that are dependencies of other plugins but not explicitly configured
   if scanner_info and scanner_info.plugins then
     for i = 1, scanner_info.total do
       local name = scanner_info.plugins.name[i]
-      if not nodes[name] and (all_dep_names[name] or scanner_loaded[name]) then
+      if not nodes[name] and (all_dep_names[name] or scanner_loaded[name] or scanner_disabled[name]) then
         -- This is a dependency plugin not explicitly in specs
         nodes[name] = {
           name = name,
           deps = {},
           trigger = scanner_trigger[name] or (scanner_type[name] == 'start' and '󰜎 start' or '󰢱 opt'),
           loaded = scanner_loaded[name] or false,
+          disabled = scanner_disabled[name] or false,
         }
         edges[name] = {}
       end

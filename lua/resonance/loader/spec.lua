@@ -67,7 +67,7 @@ function M.parse_config(config)
     else
       ok = config.cond
     end
-    if not ok then return nil end
+    if not ok then return nil, 'disabled', config end
   end
 
   -- Normalize keys: convert shorthand strings to full key spec tables

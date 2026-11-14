@@ -100,6 +100,24 @@ M.specs = {}
 M.spec_urls = {} -- URL -> spec name mapping
 M.disabled_plugins = disabled_plugins
 
+-- Reset all internal state (for testing)
+function M._reset()
+  for k in pairs(plugin_state) do plugin_state[k] = nil end
+  for k in pairs(force_load_fns) do force_load_fns[k] = nil end
+  for k in pairs(disabled_plugins) do disabled_plugins[k] = nil end
+  for k in pairs(M.specs) do M.specs[k] = nil end
+  for k in pairs(M.plugin_triggers) do M.plugin_triggers[k] = nil end
+  for k in pairs(M.spec_urls) do M.spec_urls[k] = nil end
+  _plugin_dir_cache = nil
+end
+
+-- Export module table for testing state
+M._internal = {
+  plugin_state = plugin_state,
+  force_load_fns = force_load_fns,
+  disabled_plugins = disabled_plugins,
+}
+
 
 ---@param config table
 function M.load(config)

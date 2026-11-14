@@ -45,10 +45,43 @@ local function assert_error(fn, msg)
   if ok then
     error(msg or "Expected function to error")
   end
+  if msg and type(msg) == 'string' then
+    if not tostring(err):find(msg, 1, true) then
+      error(string.format("Expected error containing %q, got: %s", msg, err))
+    end
+  end
   return err
 end
 
+-- Load resonance from installed location
+local function load_installed()
+  local ok, r = pcall(dofile, vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim/lua/resonance/init.lua')
+  if not ok then error('Failed to load installed resonance: ' .. r) end
+  r.setup()
+  _G.resonance = r
+  _G.loader = require('resonance.loader')
+  _G.scanner = require('resonance.scanner')
+end
+
+local function reset_state()
+  if _G.loader and _G.loader._reset then _G.loader._reset() end
+  if _G.resonance and _G.resonance._reset then _G.resonance._reset() end
+  package.loaded['resonance.ui.state'] = nil
+  local state = require('resonance.ui.state')
+  if state._reset then state._reset() end
+  package.loaded['resonance'] = nil
+  package.loaded['resonance.loader'] = nil
+  package.loaded['resonance.ui'] = nil
+  package.loaded['resonance.ui.state'] = nil
+  package.loaded['resonance.ui.render'] = nil
+  package.loaded['resonance.ui.actions'] = nil
+  package.loaded['resonance.scanner'] = nil
+  package.loaded['resonance.utils'] = nil
+  load_installed()
+end
+
 local function run_test(name, fn)
+  reset_state()
   local ok, err = pcall(fn)
   if ok then
     test_results.passed = test_results.passed + 1
@@ -66,6 +99,7 @@ local function run_suite(name, tests)
     run_test(t.name, t.fn)
   end
 end
+
 local function print_summary()
   print(string.format("\n=== SUMMARY ==="))
   print(string.format("Passed: %d", test_results.passed))
@@ -102,17 +136,4 @@ _G.test = {
   exit_with_status = exit_with_status,
 }
 
-package.path = './lua/?.lua;./lua/?/init.lua;' .. package.path
- package.loaded['resonance'] = nil
- package.loaded['resonance.loader'] = nil
- package.loaded['resonance.ui'] = nil
- package.loaded['resonance.ui.state'] = nil
- package.loaded['resonance.ui.render'] = nil
- package.loaded['resonance.ui.actions'] = nil
- package.loaded['resonance.scanner'] = nil
- package.loaded['resonance.utils'] = nil
- local resonance = require('resonance')
- resonance.setup()
- _G.resonance = resonance
- _G.loader = require('resonance.loader')
- _G.scanner = require('resonance.scanner')
+load_installed()

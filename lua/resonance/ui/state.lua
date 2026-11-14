@@ -75,8 +75,31 @@ M.state = {
   restore_cursor_name = nil,
   view_mode = 'list',
   dag_data = { nodes = {}, edges = {} },
-  replay_info = {},
 }
+
+-- Reset all UI state (for testing)
+function M._reset()
+  M.state.buf = nil
+  M.state.win = nil
+  M.state.win_width = 80
+  M.state.info = nil
+  for k in pairs(M.state.commits) do M.state.commits[k] = nil end
+  for k in pairs(M.state.updates) do M.state.updates[k] = nil end
+  for k in pairs(M.state.urls) do M.state.urls[k] = nil end
+  for k in pairs(M.state.expanded) do M.state.expanded[k] = nil end
+  for k in pairs(M.state.pack_details) do M.state.pack_details[k] = nil end
+  M.state.checking = false
+  M.state.updating = false
+  M.state.spinner_frame = 1
+  M.state.spinner_line_idx = nil
+  M.state.pending_count = 0
+  for k in pairs(M.state.line_to_name) do M.state.line_to_name[k] = nil end
+  for k in pairs(M.state.name_to_line) do M.state.name_to_line[k] = nil end
+  M.state.restore_cursor_name = nil
+  M.state.view_mode = 'list'
+  M.state.dag_data = { nodes = {}, edges = {} }
+  M.state.replay_info = {}
+end
 
 function M.init_hls()
   local cl = nvim_get_hl(0, { name = 'CursorLine' })

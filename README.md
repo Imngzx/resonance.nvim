@@ -33,9 +33,16 @@ Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is do
 
 ```lua
 -- =====================================================================
--- 🎵 Bootstrap Resonance.nvim
+-- 🎵 Install Resonance.nvim
 -- =====================================================================
 -- You can also use the link from codeberg
+
+-- Method 1: 
+vim.pack.add({'https://github.com/Imngzx/resonance.nvim'})
+
+--OR ...
+
+-- Method 2 (for custom message):
 local plugin_url = 'https://github.com/Imngzx/resonance.nvim'
 local pack_path = vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim'
 
@@ -46,6 +53,7 @@ if not vim.uv.fs_stat(pack_path) then
 end
 
 vim.opt.rtp:prepend(pack_path)
+-- Don't worry, both method works well (≧◡≦)
 
 -- =====================================================================
 -- 🚀 Configuration

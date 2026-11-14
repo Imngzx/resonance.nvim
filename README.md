@@ -37,7 +37,7 @@ Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is do
 -- =====================================================================
 -- You can also use the link from codeberg
 
--- Method 1: 
+-- Method 1:
 vim.pack.add({'https://github.com/Imngzx/resonance.nvim'})
 
 --OR ...

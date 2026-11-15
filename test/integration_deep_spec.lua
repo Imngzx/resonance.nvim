@@ -182,6 +182,150 @@ test.run_suite('resonance.loader.deep', {
   },
 
   {
+    name = 'dependency: two-node cycle is detected and aborted',
+    fn = function()
+      local load_order = {}
+      local notices = {}
+      local utils = require('resonance.utils')
+      local orig_notify = utils.notify
+      utils.notify = function(msg, ...)
+        table.insert(notices, msg)
+        return orig_notify(msg, ...)
+      end
+
+      _G.resonance.load({
+        src = 'https://github.com/test/cyc-a',
+        dependencies = {'https://github.com/test/cyc-b'},
+        event = { 'User', pattern = 'CycleTest' },
+        setup = function() table.insert(load_order, 'a') end,
+      })
+      _G.resonance.load({
+        src = 'https://github.com/test/cyc-b',
+        dependencies = {'https://github.com/test/cyc-a'},
+        setup = function() table.insert(load_order, 'b') end,
+      })
+
+      vim.api.nvim_exec_autocmds('User', { pattern = 'CycleTest', modeline = false })
+      vim.wait(200)
+      utils.notify = orig_notify
+
+      test.assert_true(#notices >= 1)
+      test.assert_contains(notices[1], 'Circular dependency detected')
+      test.assert_contains(notices[1], 'cyc-a')
+      test.assert_contains(notices[1], 'cyc-b')
+    end,
+  },
+
+  {
+    name = 'dependency: self-cycle is detected',
+    fn = function()
+      local notices = {}
+      local utils = require('resonance.utils')
+      local orig_notify = utils.notify
+      utils.notify = function(msg, ...)
+        table.insert(notices, msg)
+        return orig_notify(msg, ...)
+      end
+
+      _G.resonance.load({
+        src = 'https://github.com/test/self-cyc',
+        dependencies = {'https://github.com/test/self-cyc'},
+        event = { 'User', pattern = 'SelfCycleTest' },
+        setup = function() end,
+      })
+
+      vim.api.nvim_exec_autocmds('User', { pattern = 'SelfCycleTest', modeline = false })
+      vim.wait(200)
+      utils.notify = orig_notify
+
+      test.assert_true(#notices >= 1)
+      test.assert_contains(notices[1], 'Circular dependency detected')
+      test.assert_contains(notices[1], 'self-cyc')
+    end,
+  },
+
+  {
+    name = 'dependency: multi-node cycle does not recurse infinitely',
+    fn = function()
+      local notices = {}
+      local utils = require('resonance.utils')
+      local orig_notify = utils.notify
+      utils.notify = function(msg, ...)
+        table.insert(notices, msg)
+        return orig_notify(msg, ...)
+      end
+
+      -- Cycle of 10 nodes: cyc10-1 -> cyc10-2 -> ... -> cyc10-10 -> cyc10-1
+      for i = 1, 10 do
+        local dep = 'https://github.com/test/cyc10-' .. (i % 10 + 1)
+        _G.resonance.load({
+          src = 'https://github.com/test/cyc10-' .. i,
+          dependencies = { dep },
+          event = (i == 1 and { 'User', pattern = 'Cycle10Test' } or nil),
+          setup = function() end,
+        })
+      end
+
+      local ok = pcall(vim.api.nvim_exec_autocmds, 'User', { pattern = 'Cycle10Test', modeline = false })
+      vim.wait(300)
+      utils.notify = orig_notify
+
+      test.assert_true(ok)
+      test.assert_true(#notices >= 1)
+      test.assert_contains(notices[1], 'Circular dependency detected')
+    end,
+  },
+
+  {
+    name = 'dependency: diamond graph is not a false cycle',
+    fn = function()
+      local load_order = {}
+      local notices = {}
+      local utils = require('resonance.utils')
+      local orig_notify = utils.notify
+      utils.notify = function(msg, ...)
+        table.insert(notices, msg)
+        return orig_notify(msg, ...)
+      end
+
+      _G.resonance.load({
+        src = 'https://github.com/test/dia-top',
+        dependencies = {'https://github.com/test/dia-left', 'https://github.com/test/dia-right'},
+        event = { 'User', pattern = 'DiamondTest' },
+        setup = function() table.insert(load_order, 'top') end,
+      })
+      _G.resonance.load({
+        src = 'https://github.com/test/dia-left',
+        dependencies = {'https://github.com/test/dia-base'},
+        setup = function() table.insert(load_order, 'left') end,
+      })
+      _G.resonance.load({
+        src = 'https://github.com/test/dia-right',
+        dependencies = {'https://github.com/test/dia-base'},
+        setup = function() table.insert(load_order, 'right') end,
+      })
+      _G.resonance.load({
+        src = 'https://github.com/test/dia-base',
+        setup = function() table.insert(load_order, 'base') end,
+      })
+
+      vim.api.nvim_exec_autocmds('User', { pattern = 'DiamondTest', modeline = false })
+      vim.wait(200)
+      utils.notify = orig_notify
+
+      -- A shared dependency is not a cycle.
+      test.assert_eq(#notices, 0)
+      -- The shared dependency loads exactly once.
+      local base_count = 0
+      for i = 1, #load_order do
+        if load_order[i] == 'base' then base_count = base_count + 1 end
+      end
+      test.assert_eq(base_count, 1)
+      test.assert_eq(load_order[#load_order], 'top')
+    end,
+  },
+
+  {
     name = 'cond: function returning false skips plugin entirely',
     fn = function()
       local load_count = 0

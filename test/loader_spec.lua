@@ -25,6 +25,31 @@ test.run_suite('resonance.loader.init', {
   },
 
   {
+    name = 'get_plugin_dir: fallback scan resolves real plugin dirs',
+    fn = function()
+      -- vim.pack is lazily rehydrated by the vim metatable, so nil it out via
+      -- rawset to actually exercise the filesystem fallback.
+      local orig_pack = rawget(vim, 'pack')
+      rawset(vim, 'pack', nil)
+      loader._reset()
+      package.loaded['resonance.loader'] = nil
+      local fallback_loader = require('resonance.loader')
+
+      local dir = fallback_loader.get_plugin_dir('resonance.nvim')
+      test.assert_not_nil(dir)
+      -- The resolved path must point at the plugin itself, not a pack segment.
+      test.assert_not_eq(dir:match('/opt$'), '/opt')
+      test.assert_not_eq(dir:match('/start$'), '/start')
+      test.assert_true(dir:match('/opt/resonance%.nvim$') ~= nil)
+      test.assert_true(vim.uv.fs_stat(dir) ~= nil)
+
+      rawset(vim, 'pack', orig_pack)
+      loader._reset()
+      package.loaded['resonance.loader'] = nil
+    end,
+  },
+
+  {
     name = 'plugin_triggers: table exists',
     fn = function()
       test.assert_not_nil(loader.plugin_triggers)

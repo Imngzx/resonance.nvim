@@ -28,6 +28,9 @@ local pcall = pcall
 
 local pack_dir_base = utils.fast_normalize(fn_stdpath('data') .. '/site/pack')
 
+-- Pack layout segments: <data>/site/pack/<group>/<opt|start>/<plugin>
+local SUB_DIRS = { 'opt', 'start' }
+
 -- Internal plugin state (keyed by plugin name, not config table, to avoid memory leaks)
 local plugin_state = {}
 
@@ -65,20 +68,23 @@ local function populate_plugin_dir_cache()
     return
   end
 
-  -- Fallback: filesystem scan
+  -- Fallback: filesystem scan of <data>/site/pack/<group>/<opt|start>/<plugin>
   local req = fs_scandir(pack_dir_base)
   if req then
     while true do
-      local name, typ = fs_scandir_next(req)
-      if not name then break end
-      if typ == 'directory' then
-        local sub = fs_scandir(pack_dir_base .. '/' .. name)
-        if sub then
-          while true do
-            local pname, ptyp = fs_scandir_next(sub)
-            if not pname then break end
-            if ptyp == 'directory' then
-              _plugin_dir_cache[pname] = pack_dir_base .. '/' .. name .. '/' .. pname
+      local group, group_type = fs_scandir_next(req)
+      if not group then break end
+      if group_type == 'directory' or group_type == 'link' then
+        for i = 1, #SUB_DIRS do
+          local target_dir = pack_dir_base .. '/' .. group .. '/' .. SUB_DIRS[i]
+          local sub = fs_scandir(target_dir)
+          if sub then
+            while true do
+              local pname, ptyp = fs_scandir_next(sub)
+              if not pname then break end
+              if ptyp == 'directory' or ptyp == 'link' then
+                _plugin_dir_cache[pname] = target_dir .. '/' .. pname
+              end
             end
           end
         end

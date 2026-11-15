@@ -101,6 +101,71 @@ test.run_suite('resonance.loader.init', {
       test.assert_eq(type(chain), 'table')
     end,
   },
+
+  {
+    name = '_get_event_chain_internal: BufReadPre chain advances through BufRead',
+    fn = function()
+      -- Register global autocmds on the BufReadPre -> BufRead -> BufReadPost path.
+      local group = vim.api.nvim_create_augroup('ResonanceChainTest', { clear = true })
+      vim.api.nvim_create_autocmd('BufReadPre', { group = group, callback = function() end })
+      vim.api.nvim_create_autocmd('BufRead', { group = group, callback = function() end })
+      vim.api.nvim_create_autocmd('BufReadPost', { group = group, callback = function() end })
+
+      -- A real buffer is passed, as it is when a trigger autocmd fires.
+      local buf = vim.api.nvim_create_buf(false, true)
+      local live_loader = require('resonance.loader')
+      local chain = live_loader._get_event_chain_internal('BufReadPre', buf, {})
+
+      local events = {}
+      for i = 1, #chain do
+        events[#events + 1] = chain[i].event
+      end
+
+      -- The chain must walk the whole documented path, not stop at the first.
+      test.assert_eq(events[1], 'BufReadPre')
+      test.assert_eq(events[2], 'BufRead')
+      test.assert_eq(events[3], 'BufReadPost')
+      test.assert_eq(#events, 3)
+    end,
+  },
+
+  {
+    name = '_get_event_chain_internal: chain stops at a non-buffer event',
+    fn = function()
+      local group = vim.api.nvim_create_augroup('ResonanceChainStopTest', { clear = true })
+      vim.api.nvim_create_autocmd('User', {
+        group = group,
+        pattern = 'ResonanceChainStop',
+        callback = function() end,
+      })
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      local live_loader = require('resonance.loader')
+      local chain = live_loader._get_event_chain_internal('User', buf, {})
+
+      -- 'User' has no successor, so the chain must contain exactly one entry.
+      test.assert_eq(#chain, 1)
+      test.assert_eq(chain[1].event, 'User')
+    end,
+  },
+
+  {
+    name = '_get_event_chain_internal: chain does not repeat an event',
+    fn = function()
+      local group = vim.api.nvim_create_augroup('ResonanceChainCycleTest', { clear = true })
+      vim.api.nvim_create_autocmd('BufRead', { group = group, callback = function() end })
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      local live_loader = require('resonance.loader')
+      local chain = live_loader._get_event_chain_internal('BufRead', buf, {})
+
+      local seen = {}
+      for i = 1, #chain do
+        test.assert_nil(seen[chain[i].event])
+        seen[chain[i].event] = true
+      end
+    end,
+  },
 })
 
 test.print_summary()

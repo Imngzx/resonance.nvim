@@ -14,7 +14,9 @@ local function get_event_chain(event, buf, data)
 
   while current and not visited[current] do
     visited[current] = true
-    local autocmds = get_autocmds({ event = current, buf = buf })
+    -- Query without a buffer filter: global autocmds are excluded by the
+    -- `buf` option, and most plugin triggers are global.
+    local autocmds = get_autocmds({ event = current })
     if #autocmds > 0 then
       local exclude = {}
       for a = 1, #autocmds do

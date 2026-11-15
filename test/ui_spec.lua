@@ -5,6 +5,33 @@ local ui = require('resonance.ui')
 local state = require('resonance.ui.state')
 local actions = require('resonance.ui.actions')
 local render = require('resonance.ui.render')
+local utils = require('resonance.utils')
+
+-- The runner clears package.loaded between tests, so module tables captured at
+-- file scope can be a different generation than the one under test. Always
+-- re-require inside a test when touching module state.
+local function live()
+  return {
+    state = require('resonance.ui.state'),
+    actions = require('resonance.ui.actions'),
+    utils = require('resonance.utils'),
+  }
+end
+
+-- Capture notifications emitted by the module under test.
+local function with_capture(fn)
+  local u = live().utils
+  local notices = {}
+  local orig_notify = u.notify
+  u.notify = function(msg, ...)
+    table.insert(notices, msg)
+    return orig_notify(msg, ...)
+  end
+  local ok, err = pcall(fn)
+  u.notify = orig_notify
+  if not ok then error(err) end
+  return notices
+end
 
 test.run_suite('resonance.ui', {
 
@@ -100,6 +127,311 @@ test.run_suite('resonance.ui', {
     fn = function()
       test.assert_not_nil(ui.open)
       test.assert_eq(type(ui.open), 'function')
+    end,
+  },
+
+  {
+    name = 'actions: update_plugins clears pending state after update',
+    fn = function()
+      -- Stub pack.update: a real update would mutate the installed plugin tree.
+      local l = live()
+      local update_called = false
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return {
+          update = function()
+            update_called = true
+            return true
+          end,
+          get = function()
+            return {}
+          end,
+        }
+      end
+
+      l.state.state.info = { total = 0, loaded = 0, plugins = { name = {}, path = {} } }
+      l.state.state.updates = { ['some-plugin'] = { 'abc1234 some commit' } }
+      l.state.state.updating = false
+
+      with_capture(function()
+        l.actions.update_plugins({ 'some-plugin' })
+      end)
+      vim.wait(1000)
+
+      l.utils.get_pack = orig_get_pack
+
+      test.assert_true(update_called)
+      test.assert_false(l.state.state.updating)
+      test.assert_nil(l.state.state.updates['some-plugin'])
+    end,
+  },
+
+  {
+    name = 'actions: update_plugins ignores empty name list',
+    fn = function()
+      local l = live()
+      l.state.state.updating = false
+      local notices = with_capture(function()
+        l.actions.update_plugins({})
+      end)
+      test.assert_eq(#notices, 0)
+      test.assert_false(l.state.state.updating)
+    end,
+  },
+
+  {
+    name = 'actions: update_plugins is a no-op while already updating',
+    fn = function()
+      local l = live()
+      l.state.state.updating = true
+      local notices = with_capture(function()
+        l.actions.update_plugins({ 'resonance.nvim' })
+      end)
+      test.assert_eq(#notices, 0)
+      l.state.state.updating = false
+    end,
+  },
+
+  {
+    name = 'actions: uninstall_plugin declines when confirm is rejected',
+    fn = function()
+      local orig_confirm = vim.fn.confirm
+      -- actions.lua captures vim.fn.confirm at module load, so stub before
+      -- requiring it.
+      vim.fn.confirm = function() return 2 end -- 'No'
+      local l = live()
+
+      -- Stub pack.del: a real delete would remove an installed plugin.
+      local del_called = false
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return {
+          del = function()
+            del_called = true
+            return true
+          end,
+        }
+      end
+
+      local notices = with_capture(function()
+        l.actions.uninstall_plugin('resonance.nvim')
+      end)
+      vim.fn.confirm = orig_confirm
+      l.utils.get_pack = orig_get_pack
+
+      test.assert_false(del_called)
+      -- No uninstall notification should have been emitted.
+      for i = 1, #notices do
+        test.assert_not_contains(notices[i], 'Uninstalling')
+      end
+    end,
+  },
+
+  {
+    name = 'actions: uninstall_plugin ignores nil name',
+    fn = function()
+      local orig_confirm = vim.fn.confirm
+      local confirm_called = false
+      vim.fn.confirm = function()
+        confirm_called = true
+        return 2
+      end
+      local l = live()
+
+      with_capture(function()
+        l.actions.uninstall_plugin(nil)
+      end)
+      vim.fn.confirm = orig_confirm
+
+      test.assert_false(confirm_called)
+    end,
+  },
+
+  {
+    name = 'actions: uninstall_plugin deletes when confirm is accepted',
+    fn = function()
+      local orig_confirm = vim.fn.confirm
+      vim.fn.confirm = function() return 1 end -- 'Yes'
+      local l = live()
+
+      local deleted_name = nil
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return {
+          del = function(names)
+            deleted_name = names[1]
+            return true
+          end,
+        }
+      end
+
+      with_capture(function()
+        l.actions.uninstall_plugin('some-plugin')
+      end)
+      vim.fn.confirm = orig_confirm
+      l.utils.get_pack = orig_get_pack
+
+      test.assert_eq(deleted_name, 'some-plugin')
+    end,
+  },
+
+  {
+    name = 'actions: check_updates_network clears stale pending state',
+    fn = function()
+      local l = live()
+      -- Use an empty plugin list so no real git fetch is issued.
+      l.state.state.info = { total = 0, loaded = 0, plugins = { name = {}, path = {} } }
+      l.state.state.updates = { ['stale-plugin'] = { 'deadbeef old commit' } }
+      l.state.state.checking = false
+
+      l.actions.check_updates_network()
+      -- The stale entry must be dropped synchronously, before any fetch.
+      test.assert_nil(l.state.state.updates['stale-plugin'])
+      test.assert_true(l.state.state.checking)
+
+      l.state.state.checking = false
+    end,
+  },
+
+  {
+    name = 'actions: check_updates_network detects pending updates',
+    fn = function()
+      -- Build a real git repo so `git log rev..rev_to` yields a commit.
+      local dir = '/tmp/resonance_pending_' .. os.time()
+      vim.fn.mkdir(dir, 'p')
+      vim.fn.system({ 'git', 'init', '-q', dir })
+      vim.fn.system({ 'git', '-C', dir, 'config', 'user.email', 't@t.t' })
+      vim.fn.system({ 'git', '-C', dir, 'config', 'user.name', 't' })
+      vim.fn.system({ 'git', '-C', dir, 'commit', '-q', '--allow-empty', '-m', 'first' })
+      local rev = vim.trim(vim.fn.system({ 'git', '-C', dir, 'rev-parse', 'HEAD' }))
+      vim.fn.system({ 'git', '-C', dir, 'commit', '-q', '--allow-empty', '-m', 'second' })
+      local rev_to = vim.trim(vim.fn.system({ 'git', '-C', dir, 'rev-parse', 'HEAD' }))
+
+      -- Re-require after the runner reset so we share the live module tables.
+      local l = live()
+
+      -- Stub vim.pack.get to report a plugin whose rev differs from rev_to.
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return {
+          get = function()
+            return {
+              {
+                rev = rev,
+                rev_to = rev_to,
+                path = dir,
+                spec = { name = 'pending-plugin' },
+              },
+            }
+          end,
+        }
+      end
+
+      l.state.state.info = { total = 1, loaded = 0, plugins = { name = { 'pending-plugin' }, path = { dir } } }
+      l.state.state.updates = {}
+      l.state.state.checking = false
+
+      l.actions.check_updates_network()
+      vim.wait(2000)
+
+      l.utils.get_pack = orig_get_pack
+
+      test.assert_true(l.state.state.updates['pending-plugin'] ~= nil)
+      test.assert_true(#l.state.state.updates['pending-plugin'] > 0)
+      test.assert_contains(l.state.state.updates['pending-plugin'][1], 'second')
+
+      l.state.state.checking = false
+      vim.fn.delete(dir, 'rf')
+    end,
+  },
+
+  {
+    name = 'actions: check_updates_network ignores up-to-date plugins',
+    fn = function()
+      local dir = '/tmp/resonance_current_' .. os.time()
+      vim.fn.mkdir(dir, 'p')
+      vim.fn.system({ 'git', 'init', '-q', dir })
+      vim.fn.system({ 'git', '-C', dir, 'config', 'user.email', 't@t.t' })
+      vim.fn.system({ 'git', '-C', dir, 'config', 'user.name', 't' })
+      vim.fn.system({ 'git', '-C', dir, 'commit', '-q', '--allow-empty', '-m', 'only' })
+      local rev = vim.trim(vim.fn.system({ 'git', '-C', dir, 'rev-parse', 'HEAD' }))
+
+      -- Re-require after the runner reset so we share the live module tables.
+      local l = live()
+
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return {
+          get = function()
+            return { { rev = rev, rev_to = rev, path = dir, spec = { name = 'current-plugin' } } }
+          end,
+        }
+      end
+
+      l.state.state.info = { total = 1, loaded = 0, plugins = { name = { 'current-plugin' }, path = { dir } } }
+      l.state.state.updates = {}
+      l.state.state.checking = false
+
+      l.actions.check_updates_network()
+      vim.wait(2000)
+
+      l.utils.get_pack = orig_get_pack
+
+      test.assert_nil(l.state.state.updates['current-plugin'])
+
+      l.state.state.checking = false
+      vim.fn.delete(dir, 'rf')
+    end,
+  },
+
+  {
+    name = 'actions: check_updates_network is a no-op while already checking',
+    fn = function()
+      local l = live()
+      l.state.state.checking = true
+      local notices = with_capture(function()
+        l.actions.check_updates_network()
+      end)
+      test.assert_eq(#notices, 0)
+      l.state.state.checking = false
+    end,
+  },
+
+  {
+    name = 'render: DAG view marks loaded nodes with the filled icon',
+    fn = function()
+      local l = live()
+      l.state.state.dag_data = {
+        nodes = {
+          ['loaded-node'] = { name = 'loaded-node', deps = {}, trigger = 'event', loaded = true },
+          ['idle-node'] = { name = 'idle-node', deps = {}, trigger = 'cmd', loaded = false },
+        },
+        edges = {},
+      }
+      l.state.state.view_mode = 'dag'
+
+      -- build_dag_content is module-local; drive it through the public render.
+      local l2 = live()
+      l2.state.state.buf = vim.api.nvim_create_buf(false, true)
+      l2.state.state.win = vim.api.nvim_get_current_win()
+      l2.state.state.view_mode = 'dag'
+      l2.state.state.dag_data = l.state.state.dag_data
+
+      require('resonance.ui.render').render()
+
+      local lines = vim.api.nvim_buf_get_lines(l2.state.state.buf, 0, -1, false)
+      local loaded_line, idle_line
+      for i = 1, #lines do
+        if lines[i]:find('loaded%-node') then loaded_line = lines[i] end
+        if lines[i]:find('idle%-node') then idle_line = lines[i] end
+      end
+
+      test.assert_not_nil(loaded_line)
+      test.assert_not_nil(idle_line)
+      test.assert_contains(loaded_line, '●')
+      test.assert_contains(idle_line, '○')
+      -- The unloaded node must not carry the filled icon.
+      test.assert_not_contains(idle_line, '●')
     end,
   },
 })

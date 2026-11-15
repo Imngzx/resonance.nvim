@@ -48,15 +48,30 @@ test.run_suite('resonance.loader.deep', {
       _G.resonance.load({
         src = 'https://github.com/test/keymap-plugin',
         keys = function()
-          return {{'n', '<leader>test', function() table.insert(load_order, 'setup') end}}
+          return {{'n', '<leader>test', function() table.insert(load_order, 'rhs') end}}
         end,
+        setup = function() table.insert(load_order, 'setup') end,
       })
 
-      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<leader>test', true, false, true), 'n', false)
+      -- Headless Neovim does not dispatch mappings from injected keys; invoke the
+      -- registered callback directly.
+      local want = vim.api.nvim_replace_termcodes('<leader>test', true, false, true)
+      vim.wait(50)
+      local fired = false
+      for _, km in ipairs(vim.api.nvim_get_keymap('n')) do
+        if km.lhs == want and km.callback then
+          km.callback()
+          fired = true
+          break
+        end
+      end
+      test.assert_true(fired)
       vim.wait(100)
 
-      test.assert_eq(#load_order, 1)
+      -- The plugin must load (setup) before its rhs runs.
+      test.assert_eq(#load_order, 2)
       test.assert_eq(load_order[1], 'setup')
+      test.assert_eq(load_order[2], 'rhs')
     end,
   },
 
@@ -70,7 +85,8 @@ test.run_suite('resonance.loader.deep', {
         setup = function() table.insert(load_order, 'setup') end,
       })
 
-      vim.api.nvim_exec_autocmds('User', { pattern = 'TestLoadPlugin', modeline = false })
+      -- Execute the command to trigger the lazy load.
+      vim.cmd('TestLoadPlugin')
       vim.wait(100)
 
       test.assert_eq(#load_order, 1)
@@ -126,9 +142,11 @@ test.run_suite('resonance.loader.deep', {
       _G.resonance.load({
         src = 'https://github.com/test/plugin-a',
         dependencies = {'https://github.com/test/dep-b', 'https://github.com/test/dep-c'},
+        event = { 'User', pattern = 'DepTestEvent' },
         setup = function() table.insert(load_order, 'plugin-a') end,
       })
 
+      vim.api.nvim_exec_autocmds('User', { pattern = 'DepTestEvent', modeline = false })
       vim.wait(100)
 
       test.assert_eq(load_order[1], 'dep-b')
@@ -150,9 +168,11 @@ test.run_suite('resonance.loader.deep', {
       _G.resonance.load({
         src = 'https://github.com/test/top-plugin',
         dependencies = {'https://github.com/test/mid-plugin'},
+        event = { 'User', pattern = 'TransitiveTest' },
         setup = function() table.insert(load_order, 'top') end,
       })
 
+      vim.api.nvim_exec_autocmds('User', { pattern = 'TransitiveTest', modeline = false })
       vim.wait(100)
 
       test.assert_eq(load_order[1], 'bottom')
@@ -164,15 +184,24 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'cond: function returning false skips plugin entirely',
     fn = function()
-      _G.resonance.load({src = 'https://github.com/test/cond-fake-trigger', event = 'BufReadPre', cond = function() return false end})
-      local info = _G.scanner.get_info()
-      local found = false
-      for i = 1, info.total do
-        if info.plugins.name[i] == 'cond-fake-trigger' then
-          found = true
-        end
-      end
-      test.assert_false(found)
+      local load_count = 0
+      _G.resonance.load({
+        src = 'https://github.com/test/cond-fake-trigger',
+        event = 'BufReadPre',
+        cond = function() return false end,
+        setup = function() load_count = load_count + 1 end,
+      })
+
+      -- Never registered for loading: no spec, no force-load entry, no trigger.
+      test.assert_nil(_G.loader.specs['cond-fake-trigger'])
+      test.assert_nil(_G.loader.force_load_fns['cond-fake-trigger'])
+      test.assert_nil(_G.loader.plugin_triggers['cond-fake-trigger'])
+      test.assert_not_nil(_G.loader.disabled_plugins['cond-fake-trigger'])
+
+      -- Firing the trigger must not load it.
+      vim.api.nvim_exec_autocmds('BufReadPre', { modeline = false })
+      vim.wait(100)
+      test.assert_eq(load_count, 0)
     end,
   },
 
@@ -245,15 +274,21 @@ test.run_suite('resonance.loader.deep', {
   },
 
   {
-    name = 'fallback mode: works when vim.pack is nil',
+    name = 'fallback mode: works when vim.pack is unavailable',
     fn = function()
-      local original_pack = vim.pack
-      vim.pack = nil
+      -- vim.pack is lazily rehydrated by the vim metatable, so nil it out via
+      -- rawset to actually exercise the filesystem fallback.
+      local original_pack = rawget(vim, 'pack')
+      rawset(vim, 'pack', nil)
       _G.resonance.setup({})
       _G.resonance.load({src = 'https://github.com/test/fallback', event = 'BufReadPre'})
       local info = _G.scanner.get_info()
       test.assert_true(info.total > 0)
-      vim.pack = original_pack
+      for i = 1, info.total do
+        test.assert_not_eq(info.plugins.name[i], 'opt')
+        test.assert_not_eq(info.plugins.name[i], 'start')
+      end
+      rawset(vim, 'pack', original_pack)
     end,
   },
 })

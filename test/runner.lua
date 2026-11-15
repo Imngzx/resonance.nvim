@@ -22,6 +22,12 @@ local function assert_true(val, msg)
   end
 end
 
+local function assert_not_eq(actual, expected, msg)
+  if actual == expected then
+    error(string.format("%s\n  Expected: anything but %s", msg or "Assertion failed", vim.inspect(expected)))
+  end
+end
+
 local function assert_false(val, msg)
   if val then
     error(msg or "Expected falsy value")
@@ -74,6 +80,43 @@ local function load_installed()
   _G.loader = require('resonance.loader')
   _G.scanner = require('resonance.scanner')
   _G.utils = require('resonance.utils')
+end
+
+-- The suite exercises the installed copy, not this repo. A stale sync means the
+-- tests silently validate old code, so fail loudly instead.
+local MODULE_FILES = {
+  'init.lua', 'scanner.lua', 'utils.lua',
+  'loader/init.lua', 'loader/spec.lua', 'loader/triggers.lua',
+  'loader/build.lua', 'loader/dag.lua',
+  'ui/init.lua', 'ui/state.lua', 'ui/render.lua', 'ui/actions.lua',
+}
+
+local function installed_root()
+  return vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim'
+end
+
+local function assert_trees_in_sync()
+  -- Escape hatch for mutation testing, which intentionally edits the installed
+  -- copy only. Never set this in normal runs.
+  if vim.env.RESONANCE_TEST_ALLOW_STALE == '1' then return end
+  local repo_root = vim.fn.getcwd()
+  local inst_root = installed_root()
+  local stale = {}
+  for i = 1, #MODULE_FILES do
+    local rel = MODULE_FILES[i]
+    local repo_file = repo_root .. '/lua/resonance/' .. rel
+    local inst_file = inst_root .. '/lua/resonance/' .. rel
+    if vim.uv.fs_stat(repo_file) and vim.uv.fs_stat(inst_file) then
+      local a = table.concat(vim.fn.readfile(repo_file, 'b'), '\n')
+      local b = table.concat(vim.fn.readfile(inst_file, 'b'), '\n')
+      if a ~= b then stale[#stale + 1] = rel end
+    end
+  end
+  if #stale > 0 then
+    error(string.format(
+      'Installed resonance is stale for: %s\nSync with: cp -r lua/resonance/*.lua %s/lua/resonance/ && cp -r lua/resonance/loader/*.lua %s/lua/resonance/loader/ && cp -r lua/resonance/ui/*.lua %s/lua/resonance/ui/',
+      table.concat(stale, ', '), inst_root, inst_root, inst_root))
+  end
 end
 
 local function reset_state()
@@ -143,6 +186,7 @@ end
 -- Global test API
 _G.test = {
   assert_eq = assert_eq,
+  assert_not_eq = assert_not_eq,
   assert_true = assert_true,
   assert_false = assert_false,
   assert_nil = assert_nil,
@@ -154,6 +198,8 @@ _G.test = {
   run_suite = run_suite,
   print_summary = print_summary,
   exit_with_status = exit_with_status,
+  assert_trees_in_sync = assert_trees_in_sync,
 }
 
+assert_trees_in_sync()
 load_installed()

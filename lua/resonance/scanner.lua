@@ -53,32 +53,45 @@ local function fallback_scan(plugin_triggers, disabled_plugins)
   local loaded_set = build_loaded_set()
   local loaded_count, total_count = 0, 0
 
+  -- Layout is <data>/site/pack/<group>/<opt|start>/<plugin>.
   local req = fs_scandir(pack_dir_base)
   if req then
     while true do
-      local name = fs_scandir_next(req)
-      if not name then break end
-      local pack_subdir = pack_dir_base .. '/' .. name
-      local sub_req = fs_scandir(pack_subdir)
-      if sub_req then
-        while true do
-          local pname, ptyp2 = fs_scandir_next(sub_req)
-          if not pname then break end
-          if ptyp2 == 'directory' then
-            local ppath = pack_subdir .. '/' .. pname
-            total_count = total_count + 1
-            plugins.name[total_count] = pname
-            plugins.path[total_count] = ppath
-            plugins.type[total_count] = name
-            local is_disabled = disabled_plugins[pname] ~= nil
-            local is_loaded = not is_disabled and loaded_set[utils.fast_normalize(ppath)] or false
-            plugins.loaded[total_count] = is_loaded
-            plugins.disabled[total_count] = is_disabled
-            if is_loaded then loaded_count = loaded_count + 1 end
+      local group, group_type = fs_scandir_next(req)
+      if not group then break end
+      if group_type == 'directory' then
+        local group_dir = pack_dir_base .. '/' .. group
+        local group_req = fs_scandir(group_dir)
+        if group_req then
+          while true do
+            local kind, kind_type = fs_scandir_next(group_req)
+            if not kind then break end
+            if kind_type == 'directory' and (kind == 'opt' or kind == 'start') then
+              local kind_dir = group_dir .. '/' .. kind
+              local kind_req = fs_scandir(kind_dir)
+              if kind_req then
+                while true do
+                  local pname, ptype = fs_scandir_next(kind_req)
+                  if not pname then break end
+                  if ptype == 'directory' or ptype == 'link' then
+                    local ppath = kind_dir .. '/' .. pname
+                    total_count = total_count + 1
+                    plugins.name[total_count] = pname
+                    plugins.path[total_count] = ppath
+                    plugins.type[total_count] = kind
+                    local is_disabled = disabled_plugins[pname] ~= nil
+                    local is_loaded = not is_disabled and loaded_set[utils.fast_normalize(ppath)] or false
+                    plugins.loaded[total_count] = is_loaded
+                    plugins.disabled[total_count] = is_disabled
+                    if is_loaded then loaded_count = loaded_count + 1 end
 
-            plugins.trigger[total_count] = plugin_triggers[pname] or
-              (is_disabled and disabled_plugins[pname].trigger or
-                (name == 'start' and '󰜎 start' or '󰢱 opt'))
+                    plugins.trigger[total_count] = plugin_triggers[pname] or
+                      (is_disabled and disabled_plugins[pname].trigger or
+                        (kind == 'start' and '󰜎 start' or '󰢱 opt'))
+                  end
+                end
+              end
+            end
           end
         end
       end
@@ -108,8 +121,9 @@ function M.get_info(opts)
   local plugin_triggers = loader.plugin_triggers or {}
   local disabled_plugins = loader.disabled_plugins or {}
 
-  if vim.pack and vim.pack.get then
-    local ok, packs = pcall(vim.pack.get, nil, { info = info_mode, offline = offline })
+  local pack = utils.get_pack()
+  if pack then
+    local ok, packs = pcall(pack.get, nil, { info = info_mode, offline = offline })
     if ok and type(packs) == 'table' then
       local plugins = { name = {}, type = {}, path = {}, loaded = {}, disabled = {}, trigger = {}, rev = {}, rev_to = {}, manifest = {} }
       local loaded_count, total_count = 0, 0

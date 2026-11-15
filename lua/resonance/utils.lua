@@ -18,6 +18,18 @@ M.fast_normalize = function(path)
   return vim.fs.normalize(path)
 end
 
+--- Resolve the native vim.pack module, if available.
+--- `vim.pack` is lazily rehydrated by the `vim` metatable's __index, so assigning
+--- nil to it is silently undone on the next read. Reading the raw field avoids
+--- that rehydration: a raw nil means vim.pack was explicitly disabled and the
+--- caller should use the filesystem fallback.
+---@return table|nil
+function M.get_pack()
+  local pack = rawget(vim, 'pack')
+  if type(pack) ~= 'table' or type(pack.get) ~= 'function' then return nil end
+  return pack
+end
+
 ---@param msg string
 ---@param level integer
 ---@param opts table|nil

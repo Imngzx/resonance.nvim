@@ -83,9 +83,10 @@ local function bind_keys(win_close_fn)
     end
   end, 'Open Dir')
   map('C', function()
-    if vim.pack and vim.pack.update then
+    local pack = utils.get_pack()
+    if pack and pack.update then
       win_close_fn()
-      vim.pack.update(nil, { offline = true })
+      pack.update(nil, { offline = true })
     else
       utils.notify('Native vim.pack is not available.', vim_log_levels.WARN)
     end
@@ -120,8 +121,9 @@ function M.open(ui_config)
   st.state.view_mode = 'list'
   local function load_commits_async()
     -- First pass: fast load with info=false (commits, urls, rev) ~1ms
-    if vim.pack and vim.pack.get then
-      local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = false })
+    local pack = utils.get_pack()
+    if pack then
+      local ok, packs = pcall(pack.get, nil, { offline = true, info = false })
       if ok and type(packs) == 'table' then
         for p = 1, #packs do
           local pk = packs[p]
@@ -163,8 +165,9 @@ function M.open(ui_config)
 
     -- Second pass: fetch branches/tags asynchronously (info=true is slow ~300ms)
     vim_defer_fn(function()
-      if vim.pack and vim.pack.get then
-        local ok, packs = pcall(vim.pack.get, nil, { offline = true, info = true })
+      local pack2 = utils.get_pack()
+      if pack2 then
+        local ok, packs = pcall(pack2.get, nil, { offline = true, info = true })
         if ok and type(packs) == 'table' then
           for p = 1, #packs do
             local pk = packs[p]

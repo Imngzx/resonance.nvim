@@ -319,14 +319,14 @@ test.run_suite('resonance.integration', {
       st.state.expanded['ui-status'] = true
       render.render()
       local lines = vim.api.nvim_buf_get_lines(st.state.buf, 0, -1, false)
-      local found = false
+      local found_name = false
+      local found_status = false
       for _, l in ipairs(lines) do
-        if l:find('ui-status', 1, true) and l:find('status: disabled(cond)', 1, true) then
-          found = true
-          break
-        end
+        if l:find('ui-status', 1, true) then found_name = true end
+        if l:find('status: disabled(cond)', 1, true) then found_status = true end
       end
-      test.assert_true(found)
+      test.assert_true(found_name)
+      test.assert_true(found_status)
     end,
   },
 
@@ -361,15 +361,43 @@ test.run_suite('resonance.integration', {
       local render = require('resonance.ui.render')
       render.render()
       local lines = vim.api.nvim_buf_get_lines(st.state.buf, 0, -1, false)
-      local found_disabled = false
-      local found_enabled = false
-      local disabled_after_enabled = false
-      for _, l in ipairs(lines) do
-        if l:find('a-disabled', 1, true) then found_disabled = true end
-        if l:find('z-enabled', 1, true) then found_enabled = true end
-        if found_enabled and found_disabled then disabled_after_enabled = true end
+
+      -- The scanner's sorted SOA must place disabled plugins after enabled ones.
+      local info = st.state.info
+      local last_enabled_idx = nil
+      local first_disabled_idx = nil
+      for i = 1, info.total do
+        if info.plugins.disabled[i] then
+          if first_disabled_idx == nil then first_disabled_idx = i end
+        else
+          last_enabled_idx = i
+        end
       end
-      test.assert_true(disabled_after_enabled)
+      test.assert_not_nil(first_disabled_idx)
+      test.assert_not_nil(last_enabled_idx)
+      test.assert_true(last_enabled_idx < first_disabled_idx)
+
+      -- Locate the rendered row of the disabled plugin and of any enabled plugin.
+      local disabled_line = nil
+      local enabled_line = nil
+      for i = 1, info.total do
+        local name = info.plugins.name[i]
+        local disabled = info.plugins.disabled[i]
+        for ln, text in ipairs(lines) do
+          if text:find(name, 1, true) then
+            if disabled then
+              disabled_line = disabled_line or ln
+            else
+              enabled_line = enabled_line or ln
+            end
+            break
+          end
+        end
+      end
+
+      test.assert_not_nil(disabled_line)
+      test.assert_not_nil(enabled_line)
+      test.assert_true(disabled_line > enabled_line)
     end,
   },
 

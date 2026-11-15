@@ -91,12 +91,13 @@ function M.check_updates_network()
       if completed_fetches >= total then
         schedule(function()
           -- Network fetches are done. Ask native vim.pack to calculate rev_to offline
-          if not (vim.pack and vim.pack.get) then
+          local pack = utils.get_pack()
+          if not pack then
             finish_check()
             return
           end
 
-          local ok, packs = pcall(vim.pack.get, nil, { info = true, offline = true })
+          local ok, packs = pcall(pack.get, nil, { info = true, offline = true })
           if not ok or type(packs) ~= 'table' then
             finish_check()
             return
@@ -148,12 +149,13 @@ end
 function M.update_plugins(names)
   if #names == 0 or st.state.updating then return end
 
-  if vim.pack and vim.pack.update then
+  local pack = utils.get_pack()
+  if pack and pack.update then
     st.state.updating = true
     utils.notify('Updating ' .. table_concat(names, ', ') .. '...', vim_log_levels.INFO)
 
     schedule(function()
-      local ok, err = pcall(vim.pack.update, names, { force = true, offline = false })
+      local ok, err = pcall(pack.update, names, { force = true, offline = false })
       st.state.updating = false
 
       if not ok then
@@ -184,9 +186,10 @@ function M.uninstall_plugin(name)
   local choice = fn_confirm('Uninstall ' .. name .. ' from disk?', '&Yes\n&No', 2)
   if choice ~= 1 then return end
 
-  if vim.pack and vim.pack.del then
+  local pack = utils.get_pack()
+  if pack and pack.del then
     utils.notify('Uninstalling ' .. name .. '...', vim_log_levels.INFO)
-    local ok, err = pcall(vim.pack.del, { name }, { force = true })
+    local ok, err = pcall(pack.del, { name }, { force = true })
     if ok then
       utils.notify('Uninstalled ' .. name, vim_log_levels.INFO)
       st.state.info = require('resonance.scanner').get_info()

@@ -7,9 +7,9 @@ local dag = require('resonance.loader.dag')
 
 local api = vim.api
 local uv = vim.uv
-local pack_add = vim.pack and vim.pack.add or nil
 local function pack_add_safe(...)
-  if pack_add then return pack_add(...) end
+  local pack = utils.get_pack()
+  if pack and pack.add then return pack.add(...) end
 end
 
 local nvim_cmd = api.nvim_cmd
@@ -53,8 +53,9 @@ local function populate_plugin_dir_cache()
   if _plugin_dir_cache then return end
   _plugin_dir_cache = {}
 
-  if vim.pack and vim.pack.get then
-    local packs = vim.pack.get(nil, { info = false, offline = true })
+  local pack = utils.get_pack()
+  if pack then
+    local packs = pack.get(nil, { info = false, offline = true })
     for i = 1, #packs do
       local p = packs[i]
       if p.path and p.spec and p.spec.name then

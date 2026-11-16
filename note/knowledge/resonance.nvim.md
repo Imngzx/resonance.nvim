@@ -1,7 +1,8 @@
 # resonance.nvim — AI Agent Knowledge Base
 
-> **Purpose**: Enable future AI agents to work on this codebase without re-discovering patterns.
-> **Last Updated**: 2026-10-22
+> **Purpose:** Enable future AI agents to work on this codebase without re-discovering patterns.
+> **Last Updated:** 2026-11-16
+> **Active plan:** `note/knowledge/plan-2026-11-17.md`
 
 ---
 
@@ -87,10 +88,22 @@ When plugin loads via `event` trigger, autocmds for that event may have already 
 
 ```lua
 -- Re-fires chain: BufReadPre → BufRead → BufReadPost
+-- Rules (fixed 2026-11-16):
+--   - skip the origin event (the trigger that is currently running)
+--   - skip events that have not fired for this buffer yet
+--   - fire ONLY grouped autocmds; never the whole event
 for c in chain do
   exec_autocmds(c.event, { buf=c.buf, group=c.group, data=c.data })
 end
 ```
+
+Fired-event tracking lives in `loader/init.lua` (`fired_events`, per buffer).
+Tracked events: `BufReadPre`, `BufReadPost`, `BufNewFile`. `BufRead` is an
+alias of `BufReadPost` and is mapped onto it.
+
+**Why the group-only rule matters:** firing the whole event re-runs the
+ungrouped trigger that is currently executing. Two plugins sharing an event
+then replay each other until Neovim raises E218.
 
 ---
 
@@ -176,6 +189,25 @@ fix(ui): reset view_mode on reopen
 perf(render): reuse module-level state arrays
 ```
 
+### Async (`vim.async`)
+
+`vim.async` is already used in two modules:
+
+| Module | Usage |
+|--------|-------|
+| `loader/build.lua` | `async.wrap(3, system)`, `async.semaphore(2)`, `async.run` |
+| `ui/actions.lua` | `async.wrap(3, system)`, `async.semaphore(5)`, `async.run` |
+
+Remaining `vim.schedule` paths (loader `vim.pack.add`, scanner deferred info
+pass, UI deferred second pass) are candidates for conversion — see
+`note/knowledge/plan-2026-11-17.md` item 4.
+
+**Stability:** `vim.async` is new in Neovim 0.13 but carries **no experimental
+marker** and is **not deprecated** (`lua-async.txt`, absent from
+`deprecated.txt`). `vim.pack` *is* explicitly experimental (`pack.txt:211`).
+Resonance targets 0.13+ (`README.md:3`), so adopting `vim.async` costs
+nothing in compatibility.
+
 ---
 
 ## 6. Known Limitations / Gotchas
@@ -187,6 +219,10 @@ perf(render): reuse module-level state arrays
 | No spec.lua parsing | `scanner.lua` | Misses lazy triggers defined in plugin's `plugin/spec.lua` |
 | `cmd`/`keys`/`ft` no replay | `loader/init.lua` | Only `event` triggers replay missed autocmds |
 | UI state not persisted | `state.lua` | `view_mode`, `expanded` reset on reopen |
+| **Triggers are ungrouped** | `loader/triggers.lua:29` | Makes the replay's `exclude[group_name]` lookup unable to address them. Planned fix: `plan-2026-11-17.md` item 1 |
+| **Fired-event state is private** | `loader/init.lua:65` | `fired_events` is module-local, so user configs re-fire events blindly. Planned fix: `plan-2026-11-17.md` item 2 |
+| **User config double-fires events** | `~/.config/nvim/lua/config/resonance.lua:133-144` | Manual replay re-fires `BufReadPre`/`BufReadPost`/`FileType`; treesitter attaches twice. Fixed via item 2's helper |
+| snacks `nested = true` | `folke/snacks.nvim` 2.31.0 `lua/snacks/init.lua:189` | Snacks-side, not resonance. No open upstream issue. Investigation: `plan-2026-11-17.md` item 3 |
 
 ---
 
@@ -253,6 +289,14 @@ All lua_ls diagnostics: **clean** (`.luarc.json` with LuaJIT + Neovim globals)
 **File:** `lua/resonance/loader/init.lua`
 - When `exclude` table non-empty, ungrouped autocmds (`group == nil`) now use empty string `''` as key
 - Previously they were skipped entirely
+- **SUPERSEDED (2026-11-16):** this fix caused the E218 recursion. Firing the
+  whole event to cover ungrouped autocmds re-ran the trigger that was
+  currently executing, so two plugins on one event replayed each other
+  indefinitely. The replay now fires only grouped autocmds and skips the
+  origin event. Covered by the regression tests in `test/behavior_spec.lua`
+  (`replay: an ungrouped successor trigger is not fired by the replay`,
+  `replay: an ungrouped trigger that re-fires the event does not recurse`).
+  See `note/knowledge/plan-2026-11-17.md` item 1.
 
 ### Fix: Read full .git files instead of 64KB limit
 **Commit:** b40a149

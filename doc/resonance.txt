@@ -279,6 +279,35 @@ actually has.
         Load a single plugin specification (called internally by setup).
         Supports all config fields including lazy, cond, keys as function.
         Returns: nothing
+
+    resonance.has_fired(event, buf)
+        Whether an event has already fired for a buffer.
+        event: event name, e.g. "BufReadPost"
+        buf: buffer number
+        Returns: boolean
+
+        Use this to avoid replaying an event that already ran. Firing an
+        event twice makes every handler for it run twice.
+
+    resonance.replay_for_buffer(buf)
+        Replay the read events a buffer has already missed.
+        buf: buffer number
+        Returns: table of the events that were replayed
+
+        Fires only the events that have not run for the buffer yet, so a
+        handler is never invoked twice for the same read. Events still
+        pending for the current read are left alone: Neovim fires them
+        naturally.
+
+        Useful in a config that replays missed events at startup: >lua
+            vim.schedule(function()
+              for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) ~= '' then
+                  require('resonance').replay_for_buffer(buf)
+                end
+              end
+            end)
+<
 6.2 Loader Module                                  *resonance-api-loader*
 
     local loader = require('resonance.loader')
@@ -289,6 +318,16 @@ actually has.
     loader.get_plugin_dir(name)
         Get filesystem path for installed plugin.
         Returns: string path or nil
+
+    loader.has_fired(event, buf)
+        Whether an event has already fired for a buffer.
+        See |resonance-api-main| for resonance.has_fired().
+        Returns: boolean
+
+    loader.replay_for_buffer(buf)
+        Replay the read events a buffer has already missed.
+        See |resonance-api-main| for resonance.replay_for_buffer().
+        Returns: table of the events that were replayed
 
     loader.run_build(name, dir, build_task, curr_hash)
         Execute build command for plugin.

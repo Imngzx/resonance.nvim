@@ -1,8 +1,8 @@
 # resonance.nvim — AI Agent Knowledge Base
 
-> **Purpose:** Enable future AI agents to work on this codebase without re-discovering patterns.
-> **Last Updated:** 2026-11-16
-> **Active plan:** `note/knowledge/plan-2026-11-17.md`
+> **Purpose**: Enable future AI agents to work on this codebase without re-discovering patterns.
+> **Last Updated**: 2026-11-17
+> **Active plan**: `note/knowledge/plan-2026-11-17.md` (implemented on branch `fix`)
 
 ---
 
@@ -10,7 +10,7 @@
 
 | File | Responsibility |
 |------|----------------|
-| `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `stats()`, `open_ui()`, `trigger_verylazy()` |
+| `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `stats()`, `open_ui()`, `trigger_verylazy()`, `has_fired()`, `replay_for_buffer()` |
 | `lua/resonance/loader/init.lua` | Core: DAG resolution, lazy triggers, event replay, build hooks (entry point) |
 | `lua/resonance/loader/spec.lua` | Plugin config parsing, name extraction, spec normalization |
 | `lua/resonance/loader/triggers.lua` | Event/cmd/keys/ft trigger registration |
@@ -220,11 +220,11 @@ nothing in compatibility.
 | No spec.lua parsing | `scanner.lua` | Misses lazy triggers defined in plugin's `plugin/spec.lua` |
 | `cmd`/`keys`/`ft` no replay | `loader/init.lua` | Only `event` triggers replay missed autocmds |
 | UI state not persisted | `state.lua` | `view_mode`, `expanded` reset on reopen |
-| **Triggers are ungrouped** | `loader/triggers.lua:29` | Makes the replay's `exclude[group_name]` lookup unable to address them. Planned fix: `plan-2026-11-17.md` item 1 |
-| **Fired-event state is private** | `loader/init.lua:65` | `fired_events` is module-local, so user configs re-fire events blindly. Planned fix: `plan-2026-11-17.md` item 2 |
-| **User config double-fires events** | `~/.config/nvim/lua/config/resonance.lua:133-144` | Manual replay re-fires `BufReadPre`/`BufReadPost`/`FileType`; treesitter attaches twice. Fixed via item 2's helper |
-| snacks `nested = true` | `folke/snacks.nvim` 2.31.0 `lua/snacks/init.lua:189` | Snacks-side, not resonance. **Reproduced**: a handler that reads a file with `nested = true` raises E218. No open upstream issue. `plan-2026-11-17.md` item 3 |
-| **Install failures are silent** | `loader/init.lua:336,344` | Bare `pcall` discards the `vim.pack.add` error; `:packadd` returns `ok=true` for a plugin that was never installed; the trigger is consumed, so there is no retry. Planned fix: `plan-2026-11-17.md` item 0 |
+| **Triggers are ungrouped** | `loader/triggers.lua:29` | **Fixed**: triggers now register in a per-plugin augroup (`Resonance_<plugin>`) |
+| **Fired-event state is private** | `loader/init.lua:65` | **Fixed**: `has_fired(event, buf)` and `replay_for_buffer(buf)` are public |
+| **User config double-fires events** | `~/.config/nvim/lua/config/resonance.lua` | **Fixed**: the config now calls `resonance.replay_for_buffer(buf)` |
+| snacks `nested = true` | `folke/snacks.nvim` 2.31.0 `lua/snacks/init.lua:189` | Snacks-side, not resonance. **Reproduced**: a handler that reads a file with `nested = true` raises E218. No open upstream issue |
+| **Install failures are silent** | `loader/init.lua:336,344` | **Fixed**: the `vim.pack.add` result is captured and reported; the install is verified before `packadd` |
 
 ---
 

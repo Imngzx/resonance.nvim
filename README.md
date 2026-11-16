@@ -13,7 +13,11 @@
 - **Advanced Lazy Loading:** Load plugins on `Event`, `Cmd`, `Keys`, or `FileType`.
 - **Automatic Build Hooks:** Intercepts `PackChanged` events to automatically run `make`, `cargo`, or custom Lua functions when a plugin is installed or updated.
 - **Native Update Discovery:** Checks pending updates with `vim.pack.get()` and displays the commits from the installed revision to the resolved target revision.
-- **Fast:** Built entirely on Neovim's native `vim.pack` and modern `vim.system` APIs.
+- **Reported Failures:** A failed install is reported with the plugin name and the underlying error, instead of leaving a plugin that silently never loads.
+- **Fast:** Built entirely on Neovim's native `vim.pack`, `vim.async`, and modern `vim.system` APIs.
+
+> [!IMPORTANT]
+> Requires **Neovim 0.13+**. The plugin uses `vim.async` and `vim.pack`, both of which are 0.13-era APIs.
 
 > [!TIP]
 > Please enable UI2 for better experience.
@@ -311,6 +315,29 @@ starter.setup({
 -- enable this for a "very" honest startuptime :)
 _G.start_time = vim.uv.hrtime()
 ```
+
+## 🔁 Replaying Missed Events
+
+A lazy plugin that triggers on `BufReadPost` never sees the events for a
+file that was already open when Neovim started. A config can replay them at
+startup:
+
+```lua
+vim.schedule(function()
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) ~= '' then
+      require('resonance').replay_for_buffer(buf)
+    end
+  end
+end)
+```
+
+`replay_for_buffer()` fires only the events that have **not** run for the
+buffer yet. Firing them unconditionally makes every handler run twice, and
+a duplicated `FileType` can reach `E218`.
+
+For finer control, `require('resonance').has_fired(event, buf)` tells you
+whether an event has already run for a buffer.
 
 ## ⌨️ UI Keymaps
 

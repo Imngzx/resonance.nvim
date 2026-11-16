@@ -7,6 +7,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'lazy load: event trigger fires and loads plugin',
     fn = function()
+      test.stub_pack()
       local load_order = {}
       _G.resonance.load({
         src = 'https://github.com/test/event-plugin',
@@ -123,6 +124,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'replay: re-fires an event that already happened',
     fn = function()
+      test.stub_pack()
       -- BufRead and BufReadPost are aliases in Neovim, so a handler registered
       -- for either runs for both. A plugin loaded on BufNewFile has that
       -- event already behind it, so the chain must replay it exactly once.
@@ -154,6 +156,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'lazy load: VeryLazy trigger fires and loads plugin',
     fn = function()
+      test.stub_pack()
       local load_order = {}
       _G.resonance.load({
         src = 'https://github.com/test/verylazy-plugin',
@@ -172,6 +175,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'lazy load: keymap trigger fires and loads plugin',
     fn = function()
+      test.stub_pack()
       local load_order = {}
       _G.resonance.load({
         src = 'https://github.com/test/keymap-plugin',
@@ -206,6 +210,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'lazy load: cmd trigger fires and loads plugin',
     fn = function()
+      test.stub_pack()
       local load_order = {}
       _G.resonance.load({
         src = 'https://github.com/test/cmd-plugin',
@@ -225,6 +230,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'lazy load: ft trigger fires and loads plugin',
     fn = function()
+      test.stub_pack()
       local load_order = {}
       _G.resonance.load({
         src = 'https://github.com/test/ft-plugin',
@@ -243,6 +249,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'lazy load: plugin loads only once regardless of multiple triggers',
     fn = function()
+      test.stub_pack()
       local load_order = {}
       _G.resonance.load({
         src = 'https://github.com/test/multi-trigger',
@@ -264,6 +271,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'dependency: loads dependencies before plugin',
     fn = function()
+      test.stub_pack()
       local load_order = {}
       _G.resonance.load({src = 'https://github.com/test/dep-b', setup = function() table.insert(load_order, 'dep-b') end})
       _G.resonance.load({src = 'https://github.com/test/dep-c', setup = function() table.insert(load_order, 'dep-c') end})
@@ -286,6 +294,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'dependency: transitive dependencies work',
     fn = function()
+      test.stub_pack()
       local load_order = {}
       _G.resonance.load({src = 'https://github.com/test/bottom-plugin', setup = function() table.insert(load_order, 'bottom') end})
       _G.resonance.load({
@@ -407,6 +416,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'dependency: diamond graph is not a false cycle',
     fn = function()
+      test.stub_pack()
       local load_order = {}
       local notices = {}
       local utils = require('resonance.utils')
@@ -498,6 +508,7 @@ test.run_suite('resonance.loader.deep', {
   {
     name = 'grouped plugins: setup and loaded state apply to every member',
     fn = function()
+      test.stub_pack()
       local setup_a, setup_b = 0, 0
       _G.resonance.load({
         {src = 'https://github.com/test/group-a', event = { 'User', pattern = 'GroupedPluginTest' }, setup = function() setup_a = setup_a + 1 end},

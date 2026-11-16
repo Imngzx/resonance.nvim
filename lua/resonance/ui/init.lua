@@ -16,6 +16,7 @@ local vim_defer_fn = vim.defer_fn
 local vim_o = vim.o
 local vbo = vim.bo
 local vwo = vim.wo
+local async = vim.async
 
 local nvim_win_is_valid = api.nvim_win_is_valid
 local nvim_set_current_win = api.nvim_set_current_win
@@ -176,33 +177,56 @@ function M.open(ui_config)
     chunk()
 
     -- Second pass: fetch branches/tags asynchronously (info=true is slow ~300ms)
-    vim_defer_fn(function()
+    --
+    -- This runs as a cancellable task so that closing the UI stops it. The
+    -- task writes into st.state, which the UI owns; a deferred callback has
+    -- no way to know the UI is gone.
+    local details_task = async.run('resonance_ui_details', function()
+      -- Yield once so the UI is interactive before the slow call.
+      async.sleep(50)
       local pack2 = utils.get_pack()
-      if pack2 then
-        local ok, packs = pcall(pack2.get, nil, { offline = true, info = true })
-        if ok and type(packs) == 'table' then
-          for p = 1, #packs do
-            local pk = packs[p]
-            local name = pk.spec.name
-            if pk.branches then
-              st.state.pack_details[name] = st.state.pack_details[name] or {}
-              st.state.pack_details[name].branches = pk.branches
-            end
-            if pk.tags then
-              st.state.pack_details[name] = st.state.pack_details[name] or {}
-              st.state.pack_details[name].tags = pk.tags
-            end
-          end
-          render_mod.schedule_render()
+      if not pack2 then return end
+      local ok, packs = pcall(pack2.get, nil, { offline = true, info = true })
+      if not ok or type(packs) ~= 'table' then return end
+      -- The UI may have been closed while the fetch was running.
+      if not st.state.buf then return end
+      for p = 1, #packs do
+        local pk = packs[p]
+        local name = pk.spec.name
+        if pk.branches then
+          st.state.pack_details[name] = st.state.pack_details[name] or {}
+          st.state.pack_details[name].branches = pk.branches
+        end
+        if pk.tags then
+          st.state.pack_details[name] = st.state.pack_details[name] or {}
+          st.state.pack_details[name].tags = pk.tags
         end
       end
-    end, 50)
+      render_mod.schedule_render()
+    end)
+    details_task:on_complete(function(err)
+      if not err then return end
+      -- A cancelled task reports the cancellation; that is expected.
+      if st.state.buf then
+        utils.notify('Failed to load plugin details: ' .. tostring(err), vim_log_levels.ERROR)
+      end
+    end)
+    st.state.details_task = details_task
   end
   load_commits_async()
 
   render_mod.render()
 
+  -- Cancel the deferred details task when the UI closes. The task writes
+  -- into st.state, so it must not outlive the window.
+  local function cancel_details_task()
+    local task = st.state.details_task
+    st.state.details_task = nil
+    if task then pcall(task.close, task) end
+  end
+
   local function on_close()
+    cancel_details_task()
     if st.state.win and nvim_win_is_valid(st.state.win) then
       pcall(nvim_win_close, st.state.win, true)
     end
@@ -227,6 +251,7 @@ function M.open(ui_config)
     })
     st.state.win = win.win
     bind_keys(function()
+      cancel_details_task()
       win:close(); st.state.win, st.state.buf = nil, nil
     end)
   elseif ok_nui then
@@ -242,6 +267,7 @@ function M.open(ui_config)
     popup:mount()
     st.state.win = popup.winid
     bind_keys(function()
+      cancel_details_task()
       popup:unmount(); st.state.win, st.state.buf = nil, nil
     end)
   else

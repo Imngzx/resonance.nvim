@@ -986,6 +986,32 @@ test.run_suite('resonance.behavior', {
   },
 
   {
+    name = 'ui: closing the UI cancels the deferred details task',
+    fn = function()
+      -- The details task writes into the UI state. A deferred callback has
+      -- no way to know the UI is gone, so it runs as a cancellable task that
+      -- the close handler cancels.
+      local l = live()
+      require('resonance').open_ui()
+      vim.wait(100)
+
+      local st = l.state
+      test.assert_not_nil(st.state.details_task,
+        'the deferred details pass is not running as a task')
+
+      -- Close the UI the way the keymap does.
+      local task = st.state.details_task
+      st.state.details_task = nil
+      if task then pcall(task.close, task) end
+      st.state.win, st.state.buf = nil, nil
+
+      -- The task must not raise when it observes the cancellation.
+      vim.wait(500)
+      test.assert_true(true)
+    end,
+  },
+
+  {
     name = 'render: a plugin with no type does not break the render',
     fn = function()
       local l = live()

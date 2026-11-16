@@ -79,9 +79,11 @@ end
 ---@field dag_data table    -- { nodes: table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, edges: table<string, string[]> }
 ---@field replay_info table<string, {event:string, chain:string[], replayed:boolean}>
 ---@field icons ResonanceUIConfigIcons
+---@field details_task? vim.async.Task  -- cancellable task for the deferred details pass
 M.state = {
   buf = nil,
   win = nil,
+  details_task = nil,
   win_width = 80,
   info = nil,
   commits = {},
@@ -106,6 +108,7 @@ M.state = {
 function M._reset()
   M.state.buf = nil
   M.state.win = nil
+  M.state.details_task = nil
   M.state.win_width = 80
   M.state.info = nil
   for k in pairs(M.state.commits) do M.state.commits[k] = nil end

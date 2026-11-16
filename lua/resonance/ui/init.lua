@@ -23,6 +23,17 @@ local nvim_create_buf = api.nvim_create_buf
 local nvim_win_close = api.nvim_win_close
 local nvim_open_win = api.nvim_open_win
 
+-- Merge user-supplied icons over the defaults. Each key is independent so a
+-- user can override only the glyphs they care about.
+local function resolve_icons(icons)
+  local defaults = st.default_icons()
+  return {
+    loaded = icons and icons.loaded or defaults.loaded,
+    not_loaded = icons and icons.not_loaded or defaults.not_loaded,
+    disabled = icons and icons.disabled or defaults.disabled,
+  }
+end
+
 local function bind_keys(win_close_fn)
   local map = function(lhs, rhs, desc)
     vim_keymap_set('n', lhs, rhs, { buf = st.state.buf, nowait = true, silent = true, desc = desc })
@@ -119,6 +130,7 @@ function M.open(ui_config)
   st.state.win_width = math_floor(vim_o.columns * ui_config.width)
   st.state.updates, st.state.commits = {}, {}
   st.state.view_mode = 'list'
+  st.state.icons = resolve_icons(ui_config.icons)
   local function load_commits_async()
     -- First pass: fast load with info=false (commits, urls, rev) ~1ms
     local pack = utils.get_pack()

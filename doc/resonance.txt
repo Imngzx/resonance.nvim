@@ -14,6 +14,7 @@ CONTENTS                                                 *resonance-contents*
 5. User Interface                        |resonance-ui|
    5.1 Key Mappings                      |resonance-ui-keys|
    5.2 Plugin Details                    |resonance-ui-details|
+   5.3 Custom Icons                      |resonance-ui-icons|
 6. API Reference                         |resonance-api|
    6.1 Main Functions                    |resonance-api-main|
    6.2 Loader Module                     |resonance-api-loader|
@@ -233,6 +234,31 @@ Press <CR> on a plugin to expand details showing:
 - Source URL
 - Current commit hash
 - Load time (ms)
+
+5.3 Custom Icons                                  *resonance-ui-icons>
+
+The glyphs used for each plugin state can be changed via the `ui.icons`
+option. Each key is independent, so unspecified keys keep their defaults.
+
+    loaded (string)      Glyph for a loaded plugin        (default: '●')
+    not_loaded (string)  Glyph for an unloaded plugin      (default: '○')
+    disabled (string)    Glyph for a cond-disabled plugin  (default: Nerd Font)
+
+Example: >
+
+    resonance.setup({
+      ui = {
+        icons = {
+          loaded = '✓',
+          not_loaded = '✗',
+          disabled = '',
+        },
+      },
+    })
+
+Note: The default `disabled` glyph is a Nerd Font private-use codepoint
+(U+F057). If it renders as a blank box, set it to a codepoint your font
+actually has.
 
 ==============================================================================
 6. API Reference                                   *resonance-api>

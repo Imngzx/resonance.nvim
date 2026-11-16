@@ -81,6 +81,33 @@ resonance.load({
 resonance.trigger_verylazy()
 ```
 
+### 🎨 Customizing Icons
+
+The glyphs used for each plugin state can be changed via `ui.icons`. Each key is
+independent, so you can override only the ones you care about.
+
+| Key | State | Default |
+|---|---|---|
+| `loaded` | Plugin is loaded | `●` |
+| `not_loaded` | Plugin is installed but not loaded | `○` |
+| `disabled` | Plugin disabled by `cond` | *(Nerd Font glyph)* |
+
+```lua
+resonance.setup({
+  ui = {
+    icons = {
+      loaded = '✓',      -- or '[L]'
+      not_loaded = '✗',  -- or '[U]'
+      disabled = '',     -- empty string hides it entirely
+    },
+  },
+})
+```
+
+> [!TIP]
+> The default `disabled` glyph is a Nerd Font private-use codepoint (`U+F057`).
+> If it renders as a blank box, set it to a codepoint your font actually has.
+
 ## ⚡ Lazy Loading by Events
 
 Because `Resonance.nvim` uses Neovim's native C-API (`nvim_create_autocmd`) under the hood, it supports **all** native Neovim events out of the box.

@@ -160,8 +160,9 @@ local function build_dag_content()
     -- Plugin node
     local loaded = node and node.loaded or false
     local disabled = node and node.disabled or false
+    local icons = st.state.icons or st.DEFAULT_ICONS
     add('  ', 'Normal')
-    add(loaded and '● ' or '○ ', loaded and 'Statement' or 'Comment')
+    add((loaded and icons.loaded or icons.not_loaded) .. ' ', loaded and 'Statement' or 'Comment')
     add(name, disabled and 'Comment' or (loaded and 'Normal' or 'Comment'))
 
     local trigger = node and node.trigger or 'none'
@@ -209,6 +210,7 @@ end
 
 local function build_content()
   reset_render_state()
+  local icons = st.state.icons or st.DEFAULT_ICONS
 
   -- Static header (buttons + startuptime)
   nl()
@@ -288,9 +290,9 @@ local function build_content()
     mark_row(p_name, false)
 
     if is_disabled then
-      add('   ', 'DiagnosticError')
+      add('  ' .. icons.disabled .. ' ', 'DiagnosticError')
     else
-      add(is_loaded and '  ● ' or '  ○ ', is_loaded and 'Statement' or 'Comment')
+      add('  ' .. (is_loaded and icons.loaded or icons.not_loaded) .. ' ', is_loaded and 'Statement' or 'Comment')
     end
     add('󰏗 ', is_disabled and 'Comment' or (is_loaded and 'Function' or 'Comment'))
 
@@ -419,10 +421,10 @@ local function build_content()
 
   nl()
   add(string_format('  Up To Date (%d)', c_idx), 'Title')
-  add('    ● ', 'Statement')
+  add('    ' .. icons.loaded .. ' ', 'Statement')
   add(string_format('Loaded: %d', info.loaded), 'Comment')
   if d_idx > 0 then
-    add('     ', 'DiagnosticError')
+    add('    ' .. icons.disabled .. ' ', 'DiagnosticError')
     add(string_format('disabled: %d', d_idx), 'Comment')
   end
   nl()

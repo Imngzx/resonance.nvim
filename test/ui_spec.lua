@@ -434,6 +434,106 @@ test.run_suite('resonance.ui', {
       test.assert_not_contains(idle_line, '●')
     end,
   },
+
+  {
+    name = 'icons: default glyphs are exposed on state',
+    fn = function()
+      local l = live()
+      test.assert_eq(l.state.state.icons.loaded, '●')
+      test.assert_eq(l.state.state.icons.not_loaded, '○')
+      test.assert_eq(l.state.state.icons.disabled, '\u{F057}')
+    end,
+  },
+
+  {
+    name = 'icons: custom glyphs are used for every plugin state',
+    fn = function()
+      local l = live()
+      l.state.state.icons = { loaded = '[L]', not_loaded = '[U]', disabled = '[D]' }
+      l.state.state.dag_data = {
+        nodes = {
+          ['loaded-node'] = { name = 'loaded-node', deps = {}, trigger = 'event', loaded = true },
+          ['idle-node'] = { name = 'idle-node', deps = {}, trigger = 'cmd', loaded = false },
+        },
+        edges = {},
+      }
+      l.state.state.buf = vim.api.nvim_create_buf(false, true)
+      l.state.state.win = vim.api.nvim_get_current_win()
+      l.state.state.view_mode = 'dag'
+
+      require('resonance.ui.render').render()
+
+      local lines = vim.api.nvim_buf_get_lines(l.state.state.buf, 0, -1, false)
+      local loaded_line, idle_line
+      for i = 1, #lines do
+        if lines[i]:find('loaded%-node') then loaded_line = lines[i] end
+        if lines[i]:find('idle%-node') then idle_line = lines[i] end
+      end
+
+      test.assert_not_nil(loaded_line)
+      test.assert_not_nil(idle_line)
+      test.assert_contains(loaded_line, '[L]')
+      test.assert_contains(idle_line, '[U]')
+      test.assert_not_contains(idle_line, '[L]')
+      -- The default glyphs must be gone once overridden.
+      test.assert_not_contains(loaded_line, '●')
+    end,
+  },
+
+  {
+    name = 'icons: open applies configured icons to state',
+    fn = function()
+      local l = live()
+      local ui_mod = require('resonance.ui')
+      ui_mod.open({
+        border = 'rounded',
+        title = 'test',
+        width = 0.5,
+        height = 0.5,
+        backdrop = 0,
+        icons = { loaded = '<L>', not_loaded = '<U>', disabled = '<D>' },
+      })
+      vim.wait(200)
+
+      test.assert_eq(l.state.state.icons.loaded, '<L>')
+      test.assert_eq(l.state.state.icons.not_loaded, '<U>')
+      test.assert_eq(l.state.state.icons.disabled, '<D>')
+
+      -- Close the window so later tests start clean.
+      if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
+        vim.api.nvim_win_close(l.state.state.win, true)
+      end
+      l.state.state.win = nil
+      l.state.state.buf = nil
+    end,
+  },
+
+  {
+    name = 'icons: partial override keeps unspecified defaults',
+    fn = function()
+      local l = live()
+      local ui_mod = require('resonance.ui')
+      ui_mod.open({
+        border = 'rounded',
+        title = 'test',
+        width = 0.5,
+        height = 0.5,
+        backdrop = 0,
+        icons = { disabled = '<D>' },
+      })
+      vim.wait(200)
+
+      test.assert_eq(l.state.state.icons.loaded, '●')
+      test.assert_eq(l.state.state.icons.not_loaded, '○')
+      test.assert_eq(l.state.state.icons.disabled, '<D>')
+
+      if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
+        vim.api.nvim_win_close(l.state.state.win, true)
+      end
+      l.state.state.win = nil
+      l.state.state.buf = nil
+    end,
+  },
 })
 
 test.print_summary()

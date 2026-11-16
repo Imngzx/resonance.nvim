@@ -21,6 +21,7 @@ local loader_mod = nil
 ---@field width? number
 ---@field height? number
 ---@field backdrop? number
+---@field icons? ResonanceUIConfigIcons Glyphs for loaded / not loaded / disabled plugins
 
 ---@class ResonanceConfig
 ---@field ui? ResonanceUIConfig

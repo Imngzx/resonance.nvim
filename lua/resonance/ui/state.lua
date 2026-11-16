@@ -20,6 +20,29 @@ local nvim_win_get_cursor = api.nvim_win_get_cursor
 
 M.ns = nvim_create_namespace('resonance_ui')
 
+---Default glyphs for plugin state. Overridable via `setup({ ui = { icons = { ... } } })`.
+---@class ResonanceUIConfigIcons
+---@field loaded string Glyph for a loaded plugin
+---@field not_loaded string Glyph for a plugin that is not loaded
+---@field disabled string Glyph for a plugin disabled by `cond`
+
+---@type ResonanceUIConfigIcons
+M.DEFAULT_ICONS = {
+  loaded = '●',
+  not_loaded = '○',
+  disabled = '\u{F057}',
+}
+
+---Copy of the defaults, so callers cannot mutate the shared table.
+---@return ResonanceUIConfigIcons
+function M.default_icons()
+  return {
+    loaded = M.DEFAULT_ICONS.loaded,
+    not_loaded = M.DEFAULT_ICONS.not_loaded,
+    disabled = M.DEFAULT_ICONS.disabled,
+  }
+end
+
 ---@class ResonancePluginSOA
 ---@field name string[]
 ---@field type string[]
@@ -55,6 +78,7 @@ M.ns = nvim_create_namespace('resonance_ui')
 ---@field view_mode string  -- 'list' | 'dag'
 ---@field dag_data table    -- { nodes: table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, edges: table<string, string[]> }
 ---@field replay_info table<string, {event:string, chain:string[], replayed:boolean}>
+---@field icons ResonanceUIConfigIcons
 M.state = {
   buf = nil,
   win = nil,
@@ -75,6 +99,7 @@ M.state = {
   restore_cursor_name = nil,
   view_mode = 'list',
   dag_data = { nodes = {}, edges = {} },
+  icons = M.default_icons(),
 }
 
 -- Reset all UI state (for testing)
@@ -99,6 +124,7 @@ function M._reset()
   M.state.view_mode = 'list'
   M.state.dag_data = { nodes = {}, edges = {} }
   M.state.replay_info = {}
+  M.state.icons = M.default_icons()
 end
 
 function M.init_hls()

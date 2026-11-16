@@ -90,7 +90,7 @@ independent, so you can override only the ones you care about.
 |---|---|---|
 | `loaded` | Plugin is loaded | `●` |
 | `not_loaded` | Plugin is installed but not loaded | `○` |
-| `disabled` | Plugin disabled by `cond` | *(Nerd Font glyph)* |
+| `disabled` | Plugin disabled by `cond` | ** |
 
 ```lua
 resonance.setup({
@@ -98,7 +98,7 @@ resonance.setup({
     icons = {
       loaded = '✓',      -- or '[L]'
       not_loaded = '✗',  -- or '[U]'
-      disabled = '',     -- empty string hides it entirely
+      disabled = '',     -- empty string hides it entirely
     },
   },
 })

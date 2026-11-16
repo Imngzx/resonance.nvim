@@ -124,6 +124,7 @@ M.state = {
 ```
 
 **Key functions:**
+
 - `M.refresh_dag_data()` — pulls from `loader.get_dag_data()` + `get_replay_info()`
 - `M.plugin_at_cursor()` — returns plugin name under cursor (walks up for detail lines)
 
@@ -183,7 +184,7 @@ nvim --headless -c "lua local t=vim.uv.hrtime(); require('resonance').setup(); r
 
 ### Commit Convention
 
-```
+```text
 feat(ui): add DAG visualization
 fix(ui): reset view_mode on reopen
 perf(render): reuse module-level state arrays
@@ -268,26 +269,34 @@ All lua_ls diagnostics: **clean** (`.luarc.json` with LuaJIT + Neovim globals)
 ## 9. Recent Fixes (2026-10-19 to 2026-10-22)
 
 ### Fix: `pack_add_safe` passes options correctly
+
 **Commit:** a73de6d
 **File:** `lua/resonance/loader/init.lua`
+
 - Changed `pack_add_safe(vararg)` to `pack_add_safe(...)` to forward all arguments
 - Fixes `confirm=false, load=false` being dropped, which broke lazy-loading
 
 ### Fix: Circular dependency detection now works
+
 **Commit:** aeafd81
 **File:** `lua/resonance/loader/init.lua`
+
 - Marks `visiting_path` before processing dependencies
 - Recursive A→B→A now correctly detected and reported with full path
 
 ### Fix: Dependency resolution works with custom plugin names
+
 **Commit:** ceb610a
 **File:** `lua/resonance/loader/init.lua`
+
 - Added `M.spec_urls` mapping (URL → spec name)
 - Dependencies specified by URL now resolve to custom-named specs correctly
 
 ### Fix: Replay ungrouped autocmds in event replay
+
 **Commit:** ab2e48d
 **File:** `lua/resonance/loader/init.lua`
+
 - When `exclude` table non-empty, ungrouped autocmds (`group == nil`) now use empty string `''` as key
 - Previously they were skipped entirely
 - **SUPERSEDED (2026-11-16):** this fix caused the E218 recursion. Firing the
@@ -300,41 +309,55 @@ All lua_ls diagnostics: **clean** (`.luarc.json` with LuaJIT + Neovim globals)
   See `note/knowledge/plan-2026-11-17.md` item 1.
 
 ### Fix: Read full .git files instead of 64KB limit
+
 **Commit:** b40a149
 **File:** `lua/resonance/ui/state.lua`
+
 - Uses `uv_fs_fstat` to get file size, then reads entire content
 - Fixes hash/URL truncation for repos with large `.git/config` or `packed-refs`
 
 ### Fix: Restore autocmd group names in replay info
+
 **Commit:** 6f5b0d3
 **File:** `lua/resonance/loader/dag.lua`
+
 - `get_replay_info()` now shows autocmd group names (filetypedetect, nvim.autoread, etc.)
 - Uses `plugin_triggers` parameter instead of re-parsing trigger from spec
 - Skips User events (no standard autocmd chain)
 
 ### Fix: UI restored important elements
+
 **Commit:** d54acf9
 **File:** `lua/resonance/utils.lua`
+
 - Restored key rendering elements accidentally removed
 
 ### Fix: Code deduplication
+
 **Commit:** a7d89d3
 **Files:** `lua/resonance/loader/dag.lua`, `lua/resonance/loader/spec.lua`, `lua/resonance/utils.lua`
+
 - Removed duplicate logic across modules
 
 ### Fix: Sorting logic deduplication
+
 **Commit:** 2956e47
 **Files:** `lua/resonance/scanner.lua`, `lua/resonance/utils.lua`
+
 - Unified sorting implementation
 
 ### Fix: load_now closure memory leak
+
 **Commit:** af09a7e
 **Files:** `lua/resonance/loader/dag.lua`, `lua/resonance/loader/init.lua`
+
 - Fixed closure references causing memory leak
 
 ### Fix: Sorting numeric loops optimization
+
 **Commit:** d1f5db7
 **File:** `lua/resonance/utils.lua`
+
 - `apply_sort`: replaced `ipairs` with numeric `for i = 1, #fields` loops
 
 ---

@@ -3,6 +3,7 @@ local utils = require('resonance.utils')
 
 local api = vim.api
 local create_autocmd = api.nvim_create_autocmd
+local create_augroup = api.nvim_create_augroup
 local create_user_command = api.nvim_create_user_command
 local del_user_command = api.nvim_del_user_command
 local nvim_cmd = api.nvim_cmd
@@ -15,18 +16,35 @@ local parse_cmd = api.nvim_parse_cmd
 local type = type
 local pcall = pcall
 local tostring = tostring
+local gsub = string.gsub
 
 local vim_log_levels = vim.log.levels
+
+-- Every trigger is registered in its own augroup. The replay selects
+-- autocmds group by group, so an ungrouped trigger cannot be excluded from
+-- a replay and cannot be replayed individually. Grouping makes the
+-- exclusion set meaningful and keeps the triggers addressable.
+--
+-- The group name is derived from the plugin name so it stays stable across
+-- registrations and unique per plugin.
+local function trigger_group(name)
+  local safe = gsub(tostring(name or 'plugin'), '[^%w_.-]', '_')
+  return create_augroup('Resonance_' .. safe, { clear = false })
+end
+
+M.trigger_group = trigger_group
 
 -- Register event trigger autocmds
 ---@param config table
 ---@param load_now function
-function M.register_event(config, load_now)
+---@param group integer|nil augroup for the trigger autocmds
+function M.register_event(config, load_now, group)
   if not config.event then return end
 
   local ev = type(config.event) == 'string' and { config.event } or config.event
   local event_name = ev[1]
   local opts = { once = true, callback = load_now }
+  if group then opts.group = group end
 
   if event_name == 'User' then
     opts.pattern = ev[2] or ev.pattern
@@ -123,21 +141,25 @@ end
 -- Register filetype trigger autocmds
 ---@param config table
 ---@param load_now function
-function M.register_ft(config, load_now)
+---@param group integer|nil augroup for the trigger autocmds
+function M.register_ft(config, load_now, group)
   if not config.ft then return end
 
   local fts = type(config.ft) == 'string' and { config.ft } or config.ft
-  create_autocmd('FileType', { pattern = fts, once = true, callback = load_now })
+  local opts = { pattern = fts, once = true, callback = load_now }
+  if group then opts.group = group end
+  create_autocmd('FileType', opts)
 end
 
 -- Register all triggers
 ---@param config table
 ---@param load_now function
-function M.register_all(config, load_now)
-  M.register_event(config, load_now)
+---@param group integer|nil augroup for the trigger autocmds
+function M.register_all(config, load_now, group)
+  M.register_event(config, load_now, group)
   M.register_cmd(config, load_now)
   M.register_keys(config, load_now)
-  M.register_ft(config, load_now)
+  M.register_ft(config, load_now, group)
 end
 
 return M

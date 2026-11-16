@@ -516,7 +516,19 @@ function M.load(config)
     force_load_fns[parsed_names[i]] = load_now
   end
 
-  triggers.register_all(config, load_now)
+  -- Register the triggers in a group named after the plugin, so the replay
+  -- can address them individually and exclude the ones that already ran.
+  local group_name = parsed_names[1]
+  if not group_name then
+    local first = config.plugin
+    if type(first) == 'string' then
+      group_name = utils.extract_name(first)
+    elseif type(first) == 'table' then
+      local src = first.src or first[1] or first.url
+      group_name = first.name or (src and utils.extract_name(src))
+    end
+  end
+  triggers.register_all(config, load_now, triggers.trigger_group(group_name))
 end
 
 ---@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, table<string, string[]>

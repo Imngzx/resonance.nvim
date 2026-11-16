@@ -222,7 +222,7 @@ nothing in compatibility.
 | **Triggers are ungrouped** | `loader/triggers.lua:29` | Makes the replay's `exclude[group_name]` lookup unable to address them. Planned fix: `plan-2026-11-17.md` item 1 |
 | **Fired-event state is private** | `loader/init.lua:65` | `fired_events` is module-local, so user configs re-fire events blindly. Planned fix: `plan-2026-11-17.md` item 2 |
 | **User config double-fires events** | `~/.config/nvim/lua/config/resonance.lua:133-144` | Manual replay re-fires `BufReadPre`/`BufReadPost`/`FileType`; treesitter attaches twice. Fixed via item 2's helper |
-| snacks `nested = true` | `folke/snacks.nvim` 2.31.0 `lua/snacks/init.lua:189` | Snacks-side, not resonance. No open upstream issue. Investigation: `plan-2026-11-17.md` item 3 |
+| snacks `nested = true` | `folke/snacks.nvim` 2.31.0 `lua/snacks/init.lua:189` | Snacks-side, not resonance. **Reproduced**: a handler that reads a file with `nested = true` raises E218. No open upstream issue. `plan-2026-11-17.md` item 3 |
 | **Install failures are silent** | `loader/init.lua:336,344` | Bare `pcall` discards the `vim.pack.add` error; `:packadd` returns `ok=true` for a plugin that was never installed; the trigger is consumed, so there is no retry. Planned fix: `plan-2026-11-17.md` item 0 |
 
 ---

@@ -646,6 +646,76 @@ test.run_suite('resonance.behavior', {
   },
 
   {
+    name = 'replay: an ungrouped successor trigger is not fired by the replay',
+    fn = function()
+      -- Resonance registers its event triggers without a group. Replaying the
+      -- chain by firing the whole event would re-run those ungrouped
+      -- triggers, and with two plugins on the same event each load would
+      -- trigger the other's replay, recursing until Neovim raises E218.
+      local l = live()
+      local post_fires = 0
+      api.nvim_create_autocmd('BufReadPost', {
+        callback = function() post_fires = post_fires + 1 end,
+      })
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-ungrouped-a',
+        event = 'BufReadPre',
+        setup = function() end,
+      })
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-ungrouped-b',
+        event = 'BufReadPre',
+        setup = function() end,
+      })
+
+      local buf = api.nvim_create_buf(false, true)
+      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      vim.wait(300)
+
+      -- The replay must not fire the ungrouped trigger at all.
+      test.assert_eq(post_fires, 0)
+    end,
+  },
+
+  {
+    name = 'replay: an ungrouped trigger that re-fires the event does not recurse',
+    fn = function()
+      -- The shape that produced E218: an ungrouped handler that fires the
+      -- event again, reached through the replay.
+      local l = live()
+      local fires = 0
+      api.nvim_create_autocmd('BufReadPost', {
+        callback = function()
+          fires = fires + 1
+          if fires < 20 then
+            pcall(api.nvim_exec_autocmds, 'BufReadPost', { modeline = false })
+          end
+        end,
+      })
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-recursion-a',
+        event = 'BufReadPre',
+        setup = function() end,
+      })
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-recursion-b',
+        event = 'BufReadPre',
+        setup = function() end,
+      })
+
+      local buf = api.nvim_create_buf(false, true)
+      local ok, err = pcall(api.nvim_exec_autocmds, 'BufReadPre', { buffer = buf, modeline = false })
+      vim.wait(300)
+
+      test.assert_true(ok, 'the trigger recursed: ' .. tostring(err))
+      -- The replay must not have reached the ungrouped handler.
+      test.assert_eq(fires, 0)
+    end,
+  },
+
+  {
     name = 'render: a plugin with no type does not break the render',
     fn = function()
       local l = live()

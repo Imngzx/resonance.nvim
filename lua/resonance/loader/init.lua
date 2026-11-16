@@ -49,6 +49,25 @@ local specs = {}
 -- URL -> spec name mapping
 local spec_urls = {}
 
+-- Guards against recursive event replay. Replaying an event re-fires the
+-- autocmds for it, which can re-enter load_now and start another replay.
+-- Per-plugin `replay_done` is not enough: two plugins on the same event
+-- replay each other indefinitely.
+local replay_depth = 0
+local MAX_REPLAY_DEPTH = 2
+
+-- Events that have already fired at least once. The replay only re-fires
+-- events from this set: anything else is either still pending (and will fire
+-- naturally) or unrelated.
+local fired_events = {}
+
+-- BufRead and BufReadPost are aliases in Neovim: an autocmd registered for
+-- one fires for the other, and get_autocmds matches them together. The
+-- tracker only registers BufReadPost, so map BufRead onto it.
+local function event_fired_key(event)
+  if event == 'BufRead' then return 'BufReadPost' end
+  return event
+end
 
 local _plugin_dir_cache = nil
 
@@ -102,6 +121,30 @@ local function get_plugin_dir(name)
   return cache and cache[name] or nil
 end
 
+-- Record which events have fired. The replay uses this to avoid re-firing
+-- events that Neovim has not emitted yet: when a plugin loads on BufReadPre,
+-- BufRead and BufReadPost are still to come for the same read.
+--
+-- Note: nvim_create_autocmd('BufRead') registers a BufReadPost autocmd (the
+-- two are aliases), so BufRead is tracked via BufReadPost.
+local TRACKED_EVENTS = { 'BufReadPre', 'BufReadPost', 'BufNewFile' }
+local tracker_group = nil
+local function setup_event_tracker()
+  if tracker_group then return end
+  tracker_group = api.nvim_create_augroup('ResonanceEventTracker', { clear = true })
+  for i = 1, #TRACKED_EVENTS do
+    local name = TRACKED_EVENTS[i]
+    api.nvim_create_autocmd(name, {
+      group = tracker_group,
+      callback = function()
+        fired_events[name] = true
+      end,
+    })
+  end
+end
+
+setup_event_tracker()
+
 -- Public API: get_plugin_dir for build module
 M.get_plugin_dir = get_plugin_dir
 
@@ -126,6 +169,8 @@ function M._reset()
   for k in pairs(M.specs) do M.specs[k] = nil end
   for k in pairs(M.plugin_triggers) do M.plugin_triggers[k] = nil end
   for k in pairs(M.spec_urls) do M.spec_urls[k] = nil end
+  for k in pairs(fired_events) do fired_events[k] = nil end
+  replay_depth = 0
   _plugin_dir_cache = nil
 end
 
@@ -328,32 +373,56 @@ function M.load(config)
     if ev and type(ev) == 'table' and ev.event and not state.replay_done then
       state.replay_done = true
       config._replay_done = true
+      -- A replay re-fires autocmds, which can re-enter load_now. Bound the
+      -- nesting so a plugin whose handler triggers the same event cannot
+      -- recurse until Neovim aborts with E218.
+      if replay_depth >= MAX_REPLAY_DEPTH then return end
+
+      -- Only replay events that have already fired. When a plugin loads from
+      -- BufReadPre, Neovim still has BufRead and BufReadPost to fire for this
+      -- same read; replaying them here would run them twice, and a handler
+      -- that opens a file (snacks picker, for one) would recurse until
+      -- Neovim aborts with E218.
+      local fired = fired_events
+      local origin_event = event_fired_key(ev.event)
+      if not fired[origin_event] then
+        -- The trigger is the first event of its group, so nothing has fired
+        -- yet and there is nothing to replay.
+        return
+      end
+
       local chain = ev.event ~= 'User' and dag._get_event_chain_internal(ev.event, ev.buf, ev.data) or
         {}
-      for c = 1, #chain do
-        local c_opts = chain[c]
-        if next(c_opts.exclude) == nil then
-          exec_autocmds(c_opts.event, { buf = c_opts.buf, modeline = false, data = c_opts.data })
-        else
-          local done = {}
-          local autocmds = get_autocmds({ event = c_opts.event })
-          for a = 1, #autocmds do
-            local autocmd = autocmds[a]
-            local id = autocmd.event .. ':' .. tostring(autocmd.group or '')
-            -- Replay ungrouped autocmds (no group) and grouped ones not in exclude
-            if not autocmd.group then
-              if not c_opts.exclude[''] then
-                exec_autocmds(c_opts.event,
-                  { buf = c_opts.buf, modeline = false, data = c_opts.data })
+      replay_depth = replay_depth + 1
+      local replay_ok, replay_err = pcall(function()
+        for c = 1, #chain do
+          local c_opts = chain[c]
+          -- Skip the origin event: it is the one currently being handled.
+          -- Skip events Neovim has not fired yet: they will fire naturally.
+          if event_fired_key(c_opts.event) ~= origin_event and fired[event_fired_key(c_opts.event)] then
+            local autocmds = get_autocmds({ event = c_opts.event })
+            local done = {}
+            for a = 1, #autocmds do
+              local autocmd = autocmds[a]
+              -- get_autocmds matches BufRead and BufReadPost together, so
+              -- filter to the event actually being replayed.
+              if autocmd.event == c_opts.event then
+                local group_name = autocmd.group_name
+                -- Ungrouped autocmds cannot be selected individually, and
+                -- firing the whole event would re-run the autocmd we are
+                -- executing. Only grouped autocmds can be replayed safely.
+                if group_name and not c_opts.exclude[group_name] and not done[group_name] then
+                  done[group_name] = true
+                  exec_autocmds(c_opts.event,
+                    { buf = c_opts.buf, group = group_name, modeline = false, data = c_opts.data })
+                end
               end
-            elseif not done[id] and not c_opts.exclude[autocmd.group_name] then
-              done[id] = true
-              exec_autocmds(c_opts.event,
-                { buf = c_opts.buf, group = autocmd.group_name, modeline = false, data = c_opts.data })
             end
           end
         end
-      end
+      end)
+      replay_depth = replay_depth - 1
+      if not replay_ok then error(replay_err) end
     end
   end
 

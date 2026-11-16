@@ -24,6 +24,98 @@ test.run_suite('resonance.loader.deep', {
   },
 
   {
+    name = 'replay: does not re-fire the event that triggered the load',
+    fn = function()
+      -- A buffer-scoped autocmd, like the ones that make the event chain
+      -- non-empty. Replaying this event would re-run the very autocmd the
+      -- loader is running inside, recursing until Neovim raises E218.
+      local buf = vim.api.nvim_create_buf(false, true)
+      local group = vim.api.nvim_create_augroup('ResonanceReplayTest', { clear = true })
+      local fired = 0
+      vim.api.nvim_create_autocmd('BufReadPre', {
+        group = group,
+        buffer = buf,
+        callback = function() fired = fired + 1 end,
+      })
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-origin',
+        event = 'BufReadPre',
+        setup = function() end,
+      })
+
+      vim.api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      vim.wait(100)
+
+      -- The origin event must fire exactly once: the original, no replay.
+      test.assert_eq(fired, 1)
+    end,
+  },
+
+  {
+    name = 'replay: does not fire events that have not happened yet',
+    fn = function()
+      -- BufRead and BufReadPost are still to come for the current read.
+      -- Firing them from the replay would run them twice, and a handler that
+      -- opens a file would recurse until Neovim raises E218.
+      local group = vim.api.nvim_create_augroup('ResonanceReplayPending', { clear = true })
+      local read_count, post_count = 0, 0
+      vim.api.nvim_create_autocmd('BufRead', {
+        group = group,
+        callback = function() read_count = read_count + 1 end,
+      })
+      vim.api.nvim_create_autocmd('BufReadPost', {
+        group = group,
+        callback = function() post_count = post_count + 1 end,
+      })
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-pending',
+        event = 'BufReadPre',
+        setup = function() end,
+      })
+
+      vim.api.nvim_exec_autocmds('BufReadPre', { modeline = false })
+      vim.wait(100)
+
+      -- Neither successor event may be replayed.
+      test.assert_eq(read_count, 0)
+      test.assert_eq(post_count, 0)
+    end,
+  },
+
+  {
+    name = 'replay: re-fires an event that already happened',
+    fn = function()
+      -- BufRead and BufReadPost are aliases in Neovim, so a handler registered
+      -- for either runs for both. A plugin loaded on BufNewFile has that
+      -- event already behind it, so the chain must replay it exactly once.
+      local group = vim.api.nvim_create_augroup('ResonanceReplayFired', { clear = true })
+      local read_count = 0
+      vim.api.nvim_create_autocmd('BufRead', {
+        group = group,
+        callback = function() read_count = read_count + 1 end,
+      })
+
+      -- Mark the read event as already fired.
+      vim.api.nvim_exec_autocmds('BufRead', { modeline = false })
+      test.assert_eq(read_count, 1)
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-fired',
+        event = 'BufNewFile',
+        setup = function() end,
+      })
+
+      vim.api.nvim_exec_autocmds('BufNewFile', { modeline = false })
+      vim.wait(100)
+
+      -- Fired twice: once originally, once replayed.
+      test.assert_eq(read_count, 2)
+    end,
+  },
+
+  {
     name = 'lazy load: VeryLazy trigger fires and loads plugin',
     fn = function()
       local load_order = {}

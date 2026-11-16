@@ -103,7 +103,7 @@ test.run_suite('resonance.loader.init', {
   },
 
   {
-    name = '_get_event_chain_internal: BufReadPre chain advances through BufRead',
+    name = '_get_event_chain_internal: BufReadPre chain advances through BufReadPost',
     fn = function()
       -- Register global autocmds on the BufReadPre -> BufRead -> BufReadPost path.
       local group = vim.api.nvim_create_augroup('ResonanceChainTest', { clear = true })
@@ -121,11 +121,13 @@ test.run_suite('resonance.loader.init', {
         events[#events + 1] = chain[i].event
       end
 
-      -- The chain must walk the whole documented path, not stop at the first.
+      -- BufRead and BufReadPost are aliases in Neovim: one autocmd registered
+      -- for either fires for both, and get_autocmds matches them together.
+      -- The chain therefore canonicalises to BufReadPost and must not list the
+      -- alias twice, which would replay the same handlers twice.
       test.assert_eq(events[1], 'BufReadPre')
-      test.assert_eq(events[2], 'BufRead')
-      test.assert_eq(events[3], 'BufReadPost')
-      test.assert_eq(#events, 3)
+      test.assert_eq(events[2], 'BufReadPost')
+      test.assert_eq(#events, 2)
     end,
   },
 

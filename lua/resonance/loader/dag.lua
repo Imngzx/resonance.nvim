@@ -7,33 +7,57 @@ local get_autocmds = api.nvim_get_autocmds
 local type = type
 local pairs = pairs
 
+-- BufRead and BufReadPost are aliases in Neovim: an autocmd registered for
+-- one fires for the other, and get_autocmds matches them together. Canonicalise
+-- to BufReadPost, which is the name Neovim reports, so a chain entry always
+-- reflects the autocmds that actually run for it.
+local function canonical_event(event)
+  if event == 'BufRead' then return 'BufReadPost' end
+  return event
+end
+
+local function autocmds_for(event)
+  local all = get_autocmds({ event = event })
+  local exact = {}
+  local want = canonical_event(event)
+  for i = 1, #all do
+    if canonical_event(all[i].event) == want then exact[#exact + 1] = all[i] end
+  end
+  return exact
+end
+
 local function get_event_chain(event, buf, data)
   local chain = {}
-  local current = event
+  local current = canonical_event(event)
   local visited = {}
+
+  -- Groups that already ran for the originating event. They have seen the
+  -- event, so replaying them would duplicate their work.
+  local origin_exclude = {}
+  local origin_autocmds = autocmds_for(current)
+  for a = 1, #origin_autocmds do
+    local group_name = origin_autocmds[a].group_name
+    if group_name then origin_exclude[group_name] = true end
+  end
 
   while current and not visited[current] do
     visited[current] = true
     -- Query without a buffer filter: global autocmds are excluded by the
     -- `buf` option, and most plugin triggers are global.
-    local autocmds = get_autocmds({ event = current })
+    local autocmds = autocmds_for(current)
     if #autocmds > 0 then
-      local exclude = {}
-      for a = 1, #autocmds do
-        local autocmd = autocmds[a]
-        if autocmd.group then
-          exclude[autocmd.group_name] = true
-        end
-      end
-      chain[#chain + 1] = { event = current, buf = buf, exclude = exclude, data = data }
+      chain[#chain + 1] = {
+        event = current,
+        buf = buf,
+        exclude = current == event and origin_exclude or {},
+        data = data,
+      }
     end
 
     if current == 'BufReadPre' then
-      current = 'BufRead'
-    elseif current == 'BufRead' then
       current = 'BufReadPost'
     elseif current == 'BufNewFile' then
-      current = 'BufRead'
+      current = 'BufReadPost'
     else
       break
     end
@@ -158,7 +182,7 @@ function M.get_replay_info(specs, plugin_triggers)
         if ev and ev[1] then
           local event_name = ev[1]
           if event_name ~= 'User' then
-            local autocmds = get_autocmds({ event = event_name })
+            local autocmds = autocmds_for(event_name)
             for a = 1, #autocmds do
               local autocmd = autocmds[a]
               if autocmd.group then

@@ -174,7 +174,7 @@ end
 --
 -- Note: nvim_create_autocmd('BufRead') registers a BufReadPost autocmd (the
 -- two are aliases), so BufRead is tracked via BufReadPost.
-local TRACKED_EVENTS = { 'BufReadPre', 'BufReadPost', 'BufNewFile' }
+local TRACKED_EVENTS = { 'BufReadPre', 'BufReadPost', 'BufNewFile', 'BufEnter', 'FileType' }
 local tracker_group = nil
 local function setup_event_tracker()
   if tracker_group then return end
@@ -191,6 +191,67 @@ local function setup_event_tracker()
 end
 
 setup_event_tracker()
+
+-- Whether an event has already fired for a buffer.
+--
+-- A user config that replays missed events can use this to skip the events
+-- that already ran, instead of firing them a second time.
+---@param event string
+---@param buf integer
+---@return boolean
+function M.has_fired(event, buf)
+  if not event or not buf then return false end
+  return has_fired(event, buf)
+end
+
+-- Replay the read events a buffer has already missed.
+--
+-- Fires only the events that have already run for the buffer, so a handler
+-- is not invoked twice for the same read. Events that are still pending for
+-- the current read are left alone: Neovim fires them naturally.
+---@param buf integer
+---@return string[] fired the events that were replayed
+function M.replay_for_buffer(buf)
+  local fired = {}
+  if not buf then return fired end
+  local api_exec = exec_autocmds
+
+  -- A buffer with a name that exists on disk was read; one without was
+  -- created new.
+  local name = api.nvim_buf_get_name(buf)
+  local is_file = false
+  if name ~= '' then
+    local stat = uv.fs_stat(name)
+    is_file = stat ~= nil and stat.type == 'file'
+  end
+
+  if is_file then
+    if not has_fired('BufReadPre', buf) then
+      api_exec('BufReadPre', { buf = buf, modeline = false })
+      fired[#fired + 1] = 'BufReadPre'
+    end
+    if not has_fired('BufReadPost', buf) then
+      api_exec('BufReadPost', { buf = buf, modeline = false })
+      fired[#fired + 1] = 'BufReadPost'
+    end
+  else
+    if not has_fired('BufNewFile', buf) then
+      api_exec('BufNewFile', { buf = buf, modeline = false })
+      fired[#fired + 1] = 'BufNewFile'
+    end
+    if not has_fired('BufEnter', buf) then
+      api_exec('BufEnter', { buf = buf, modeline = false })
+      fired[#fired + 1] = 'BufEnter'
+    end
+  end
+
+  if not has_fired('FileType', buf) then
+    api_exec('FileType', { buf = buf, modeline = false })
+    fired[#fired + 1] = 'FileType'
+  end
+
+  return fired
+end
 
 -- Public API: get_plugin_dir for build module
 M.get_plugin_dir = get_plugin_dir

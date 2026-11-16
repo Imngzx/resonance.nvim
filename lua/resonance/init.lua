@@ -83,6 +83,34 @@ function M.load(spec)
   loader_mod.load(spec)
 end
 
+--- Whether an event has already fired for a buffer.
+---
+--- Use this to avoid replaying an event that already ran: firing it twice
+--- makes every handler run twice.
+---@param event string
+---@param buf integer
+---@return boolean
+function M.has_fired(event, buf)
+  if not loader_mod then
+    loader_mod = require('resonance.loader')
+  end
+  return loader_mod.has_fired(event, buf)
+end
+
+--- Replay the read events a buffer has already missed.
+---
+--- Fires only the events that have not run for the buffer yet, so a handler
+--- is not invoked twice for the same read. Events still pending for the
+--- current read are left alone: Neovim fires them naturally.
+---@param buf integer
+---@return string[] fired the events that were replayed
+function M.replay_for_buffer(buf)
+  if not loader_mod then
+    loader_mod = require('resonance.loader')
+  end
+  return loader_mod.replay_for_buffer(buf)
+end
+
 ---@return table
 function M.stats()
   if not M._cached_stats then

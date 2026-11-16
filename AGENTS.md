@@ -223,7 +223,7 @@ vim-startuptime -count 10 -warmup 3 -- -u NONE -c "luafile ~/.local/share/nvim/s
 ### Step 4: Verify
 
 ```bash
-# Run test suite (77 tests)
+# Run test suite (184 tests)
 ./test/run_all.sh
 
 # Or directly
@@ -615,7 +615,7 @@ nvim --headless -c "luafile lua/resonance/init.lua" \
 
 ### Testing Patterns
 
-#### Test Suite (93 tests)
+#### Test Suite (184 tests)
 
 ```bash
 # Run all tests
@@ -625,15 +625,47 @@ nvim --headless -c "luafile lua/resonance/init.lua" \
 nvim --headless -c "luafile test/run_all.lua" -c "qall"
 ```
 
+The suite runs against the **installed** copy
+(`~/.local/share/nvim/site/pack/core/opt/resonance.nvim`), not the repo, and
+fails loudly when the two are out of sync. Sync before running:
+
+```bash
+cp lua/resonance/*.lua ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/
+cp lua/resonance/loader/*.lua ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/loader/
+cp lua/resonance/ui/*.lua ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/lua/resonance/ui/
+cp test/*.lua ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/test/
+```
+
 Test files:
-- `test/spec_spec.lua` — 20 tests (parse_config, extract_names, lazy, cond, keys)
-- `test/triggers_spec.lua` — 10 tests (register_event, cmd, keys, ft, all)
-- `test/build_spec.lua` — 5 tests (mark_build_success, check_and_build, run_build)
-- `test/scanner_spec.lua` — 7 tests (get_info, get_detailed_info, structure)
-- `test/loader_spec.lua` — 8 tests (get_plugin_dir, get_dag_data, get_replay_info)
-- `test/integration_spec.lua` — 16 tests (setup, load, all config fields)
-- `test/ui_spec.lua` — 12 tests (state, actions, render, ui module exports)
-- `test/integration_deep_spec.lua` — 15 tests (lazy load triggers, dependency order, cond, eager load, version pinning, fallback mode)
+- `test/spec_spec.lua` — config parsing (parse_config, extract_names, lazy, cond, keys)
+- `test/triggers_spec.lua` — trigger registration (register_event, cmd, keys, ft, all)
+- `test/build_spec.lua` — build system (mark_build_success, check_and_build, run_build)
+- `test/scanner_spec.lua` — scanner (get_info, get_detailed_info, structure)
+- `test/loader_spec.lua` — loader (get_plugin_dir, get_dag_data, get_replay_info, event chain)
+- `test/integration_spec.lua` — setup, load, all config fields
+- `test/ui_spec.lua` — UI state, actions, render
+- `test/integration_deep_spec.lua` — lazy load triggers, dependency order, cond, eager load, version pinning, fallback mode, replay rules
+- `test/behavior_spec.lua` — observable outcomes: chain shape, replay firing rules, trigger registration, UI action results, cursor tracking
+- `test/pack_integration_spec.lua` — real `vim.pack` install, lock file, delete, scanner discovery
+
+#### Writing behavioral tests
+
+Assert observable outcomes, not that functions exist. A test that passes
+against broken code is worse than no test.
+
+`test/pack_integration_spec.lua` needs care: `vim.pack` derives its install
+directory from `stdpath('data')`, so it **must** run in a child Neovim with
+`XDG_DATA_HOME` pointed at a temp dir. Running `vim.pack.add` in-process
+installs into the user's real plugin directory.
+
+Verify a new test actually catches the bug it describes by reverting the fix
+and confirming the test fails:
+
+```bash
+# Mutate the installed copy, run with the stale-tree escape hatch, restore.
+RESONANCE_TEST_ALLOW_STALE=1 nvim --headless \
+  -c "luafile test/runner.lua" -c "luafile test/behavior_spec.lua" -c "qall"
+```
 
 #### Headless UI test (with frame capture)
 

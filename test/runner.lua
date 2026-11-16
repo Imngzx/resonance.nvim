@@ -119,6 +119,90 @@ local function assert_trees_in_sync()
   end
 end
 
+-- Stub vim.pack so a test can exercise the load path without installing
+-- anything. `add` records the specs it was asked to install and reports the
+-- plugin as present, so the loader proceeds to packadd and setup.
+--
+-- Without this, a test that loads a plugin with a fake URL would hit the
+-- real vim.pack, fail to install, and the load would abort.
+--
+-- Only `add` is replaced. `get` delegates to the real vim.pack so the
+-- scanner and the fallback tests keep seeing the real plugin set.
+--
+-- @param opts table|nil { installed = table<string,boolean>, add_error = string }
+-- @return table stub, function restore
+local function stub_pack(opts)
+  opts = opts or {}
+  local installed = opts.installed or {}
+  local calls = {}
+  local utils = require('resonance.utils')
+  local real = utils.get_pack()
+  -- The loader verifies an install by stat'ing the plugin directory, so the
+  -- stub has to produce a directory that really exists.
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root, 'p')
+  local paths = {}
+  local function path_for(name)
+    if not paths[name] then
+      local dir = root .. '/' .. name
+      vim.fn.mkdir(dir, 'p')
+      paths[name] = dir
+    end
+    return paths[name]
+  end
+  -- The loader looks a plugin up by its extracted name, while `pack.add`
+  -- receives the raw spec. Derive the same name the loader would.
+  local function spec_name(spec)
+    if type(spec) == 'string' then return spec end
+    if type(spec) ~= 'table' then return nil end
+    if spec.name then return spec.name end
+    local src = spec.src or spec[1] or spec.url
+    if type(src) ~= 'string' then return nil end
+    return src:match('([^/]+)$')
+  end
+  local stub = {
+    calls = calls,
+    add = function(specs)
+      calls[#calls + 1] = specs
+      if opts.add_error then error(opts.add_error) end
+      for _, spec in ipairs(specs) do
+        local name = spec_name(spec)
+        if name then
+          installed[name] = true
+          path_for(name)
+        end
+      end
+    end,
+  }
+  if real then
+    for key, value in pairs(real) do
+      if stub[key] == nil then stub[key] = value end
+    end
+    -- `get` must report the stubbed plugins as installed.
+    -- `names` is a flat list of plugin names, or nil for every plugin.
+    local real_get = real.get
+    stub.get = function(names, opts2)
+      if not names then return real_get(names, opts2) end
+      local out = {}
+      for _, name in ipairs(names) do
+        if installed[name] then
+          out[#out + 1] = {
+            spec = { name = name },
+            path = path_for(name),
+          }
+        end
+      end
+      return out
+    end
+  end
+  local orig = utils.get_pack
+  utils.get_pack = function() return stub end
+  return stub, function()
+    utils.get_pack = orig
+    vim.fn.delete(root, 'rf')
+  end
+end
+
 local function reset_state()
   if _G.loader and _G.loader._reset then _G.loader._reset() end
   if _G.resonance and _G.resonance._reset then _G.resonance._reset() end
@@ -199,6 +283,7 @@ _G.test = {
   print_summary = print_summary,
   exit_with_status = exit_with_status,
   assert_trees_in_sync = assert_trees_in_sync,
+  stub_pack = stub_pack,
 }
 
 assert_trees_in_sync()

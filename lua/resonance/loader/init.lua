@@ -7,9 +7,18 @@ local dag = require('resonance.loader.dag')
 
 local api = vim.api
 local uv = vim.uv
-local function pack_add_safe(...)
+
+-- Install specs with vim.pack. `pack.add` raises when an install fails, so
+-- the error is captured and returned instead of propagating. When vim.pack is
+-- unavailable there is nothing to install and the call succeeds.
+---@param specs table[]
+---@return boolean ok, string|nil err
+local function pack_install(specs)
   local pack = utils.get_pack()
-  if pack and pack.add then return pack.add(...) end
+  if not (pack and pack.add) then return true end
+  local ok, err = pcall(pack.add, specs, { confirm = false, load = false })
+  if not ok then return false, tostring(err) end
+  return true
 end
 
 local nvim_cmd = api.nvim_cmd
@@ -137,6 +146,25 @@ local function get_plugin_dir(name)
     cache = _plugin_dir_cache
   end
   return cache and cache[name] or nil
+end
+
+-- A plugin counts as installed only when its directory exists on disk.
+-- `:packadd` reports success for a plugin that was never installed, so it
+-- cannot be used to detect a failed install.
+---@param name string
+---@return boolean
+local function is_installed(name)
+  local pack = utils.get_pack()
+  if pack and pack.get then
+    local ok, packs = pcall(pack.get, { name }, { info = false, offline = true })
+    if ok and type(packs) == 'table' and packs[1] and packs[1].path then
+      return uv.fs_stat(packs[1].path) ~= nil
+    end
+    return false
+  end
+  -- No vim.pack: fall back to the filesystem scan.
+  local dir = get_plugin_dir(name)
+  return dir ~= nil and uv.fs_stat(dir) ~= nil
 end
 
 -- Record which events have fired, per buffer. The replay uses this to avoid
@@ -318,6 +346,21 @@ function M.load(config)
     if all_loaded then return end
     state.loaded = true
 
+    -- Abort the load when an install fails. The plugin is left unloaded so a
+    -- later attempt can try again, and the error is reported: a silent
+    -- failure leaves a plugin that never loads and never loads again.
+    local function fail_install(message)
+      state.loaded = false
+      if current_name then
+        visiting_path[current_name] = nil
+        if path_order[#path_order] == current_name then
+          path_order[#path_order] = nil
+        end
+      end
+      utils.notify(message, vim_log_levels.ERROR)
+      return
+    end
+
     if current_name then
       visiting_path[current_name] = true
       path_order[#path_order + 1] = current_name
@@ -333,7 +376,14 @@ function M.load(config)
         local fn = force_load_fns[spec_name]
         if fn then fn(nil, visiting_path) end
       else
-        pcall(pack_add_safe, { dep.raw }, { confirm = false, load = false })
+        local dep_ok, dep_err = pack_install({ dep.raw })
+        if not dep_ok then
+          return fail_install('Dependency install failed for ' .. dep.name .. ': ' .. dep_err)
+        end
+        if not is_installed(dep.name) then
+          return fail_install('Dependency install failed for ' .. dep.name ..
+            ': plugin directory not found')
+        end
         pcall(nvim_cmd, { cmd = 'packadd', args = { dep.name } })
       end
     end
@@ -341,7 +391,20 @@ function M.load(config)
     local start_ms = hrtime()
 
     if #pack_plugins > 0 then
-      pcall(pack_add_safe, pack_plugins, { confirm = false, load = false })
+      local ok, err = pack_install(pack_plugins)
+      if not ok then
+        return fail_install('Install failed for ' .. table_concat(parsed_names, ', ') ..
+          ': ' .. err)
+      end
+    end
+
+    -- `:packadd` reports success for a plugin that was never installed, so
+    -- verify the install landed before loading it.
+    for i = 1, #parsed_names do
+      if not is_installed(parsed_names[i]) then
+        return fail_install('Install failed for ' .. parsed_names[i] ..
+          ': plugin directory not found')
+      end
     end
 
     for i = 1, #parsed_names do

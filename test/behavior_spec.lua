@@ -716,6 +716,102 @@ test.run_suite('resonance.behavior', {
   },
 
   {
+    name = 'install: a failed install is reported to the user',
+    fn = function()
+      -- vim.pack.add raises on failure. The loader must surface that error
+      -- instead of swallowing it: a silent failure leaves a plugin that never
+      -- loads and never loads again.
+      local l = live()
+      test.stub_pack({ add_error = 'network down' })
+
+      local ran = false
+      _G.resonance.load({
+        src = 'https://github.com/test/install-fails',
+        event = 'BufReadPre',
+        setup = function() ran = true end,
+      })
+
+      local buf = api.nvim_create_buf(false, true)
+      local notices = capture_and_wait(function()
+        api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      end, 1000)
+
+      test.assert_true(noticed(notices, 'install-fails'),
+        'the failing plugin was not named in the error')
+      test.assert_true(noticed(notices, 'network down'),
+        'the underlying error was not reported')
+      test.assert_false(ran, 'setup ran even though the install failed')
+    end,
+  },
+
+  {
+    name = 'install: a failed install does not mark the plugin loaded',
+    fn = function()
+      local l = live()
+      test.stub_pack({ add_error = 'network down' })
+
+      _G.resonance.load({
+        src = 'https://github.com/test/install-not-loaded',
+        event = 'BufReadPre',
+        setup = function() end,
+      })
+
+      local buf = api.nvim_create_buf(false, true)
+      capture_and_wait(function()
+        api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      end, 1000)
+
+      local state = l.loader._internal.plugin_state['install-not-loaded']
+      test.assert_false(state and state.loaded,
+        'a plugin whose install failed was marked loaded')
+      test.assert_false(state and state.replay_done,
+        'a plugin whose install failed was marked replay_done')
+    end,
+  },
+
+  {
+    name = 'install: an install that produces no directory is reported',
+    fn = function()
+      -- `:packadd` reports success for a plugin that was never installed, so
+      -- the loader has to verify the directory itself.
+      local l = live()
+      local stub = test.stub_pack()
+
+      -- The stub reports the plugin as installed but never creates the
+      -- directory, which is what a failed install looks like.
+      stub.add = function(specs)
+        stub.calls[#stub.calls + 1] = specs
+      end
+      stub.get = function(names, opts2)
+        local out = {}
+        for _, name in ipairs(names or {}) do
+          out[#out + 1] = {
+            spec = { name = name },
+            path = '/nonexistent/resonance-test/' .. name,
+          }
+        end
+        return out
+      end
+
+      local ran = false
+      _G.resonance.load({
+        src = 'https://github.com/test/install-missing-dir',
+        event = 'BufReadPre',
+        setup = function() ran = true end,
+      })
+
+      local buf = api.nvim_create_buf(false, true)
+      local notices = capture_and_wait(function()
+        api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      end, 1000)
+
+      test.assert_true(noticed(notices, 'install-missing-dir'),
+        'the plugin with no directory was not reported')
+      test.assert_false(ran, 'setup ran even though nothing was installed')
+    end,
+  },
+
+  {
     name = 'render: a plugin with no type does not break the render',
     fn = function()
       local l = live()

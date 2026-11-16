@@ -302,8 +302,12 @@ local function build_content()
 
     add(_spaces_cache[math_max(0, max_name_len - #p_name + 2)])
     local type_label = TYPE_LABELS[p_type]
-    add(type_label and type_label or string_format('[%s]', p_type), 'Comment')
-    add(_spaces_cache[math_max(0, 7 - #(type_label or p_type))])
+    -- The scanner's type array can be shorter than its name array, so p_type
+    -- may be nil. Falling back keeps one malformed entry from taking down
+    -- the whole render.
+    local type_text = type_label or (p_type and string_format('[%s]', p_type) or '[?]')
+    add(type_text, 'Comment')
+    add(_spaces_cache[math_max(0, 7 - #type_text)])
 
     local ms = info and info.load_times and info.load_times[p_name]
     if ms then
@@ -441,6 +445,12 @@ function M.render()
     st.state.win_width = nvim_win_get_width(st.state.win)
   end
 
+  -- Remember which plugin the cursor is on. Rebuilding can re-sort the list
+  -- (pending updates move to the top) or shift rows, so the cursor would
+  -- otherwise end up on a different plugin and the next action would hit
+  -- the wrong one.
+  local cursor_name = st.plugin_at_cursor()
+
   local l, h = build_content()
   local buf = st.state.buf
   if not buf then return end
@@ -458,15 +468,18 @@ function M.render()
       { end_col = h[i + 2], hl_group = h[i + 3], priority = 100 })
   end
 
-  if st.state.restore_cursor_name and st.state.win and nvim_win_is_valid(st.state.win) then
-    local target_line = st.state.name_to_line[st.state.restore_cursor_name]
+  -- Put the cursor back on the plugin it was on. An explicit request wins,
+  -- so a caller that wants a specific plugin can still steer the cursor.
+  local restore_name = st.state.restore_cursor_name or cursor_name
+  if restore_name and st.state.win and nvim_win_is_valid(st.state.win) then
+    local target_line = st.state.name_to_line[restore_name]
     if target_line then
       local line_count = nvim_buf_line_count(buf)
       target_line = math_max(1, math_min(target_line, line_count))
       pcall(nvim_win_set_cursor, st.state.win, { target_line, 0 })
     end
-    st.state.restore_cursor_name = nil
   end
+  st.state.restore_cursor_name = nil
 end
 
 function M.schedule_render()

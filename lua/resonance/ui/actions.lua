@@ -111,6 +111,8 @@ function M.check_updates_network()
             if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
               pending_logs = pending_logs + 1
               local p_name = pk.spec.name
+              -- The spinner shows how many updates are waiting.
+              st.state.pending_count = st.state.pending_count + 1
 
               -- Local git log is fast enough for standard callbacks
               system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },

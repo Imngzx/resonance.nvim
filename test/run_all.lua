@@ -11,6 +11,8 @@ dofile('test/loader_spec.lua')
 dofile('test/integration_spec.lua')
 dofile('test/ui_spec.lua')
 dofile('test/integration_deep_spec.lua')
+dofile('test/behavior_spec.lua')
+dofile('test/pack_integration_spec.lua')
 
 test.print_summary()
 test.exit_with_status()

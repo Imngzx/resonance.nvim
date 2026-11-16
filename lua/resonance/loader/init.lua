@@ -56,9 +56,12 @@ local spec_urls = {}
 local replay_depth = 0
 local MAX_REPLAY_DEPTH = 2
 
--- Events that have already fired at least once. The replay only re-fires
--- events from this set: anything else is either still pending (and will fire
--- naturally) or unrelated.
+-- Events that have already fired, per buffer. The replay must not re-fire an
+-- event that has already run for the buffer being loaded: a handler that
+-- opens a file would recurse until Neovim aborts with E218.
+--
+-- Keyed by buffer so that a mark from an earlier read does not suppress the
+-- events still pending for the current one.
 local fired_events = {}
 
 -- BufRead and BufReadPost are aliases in Neovim: an autocmd registered for
@@ -67,6 +70,21 @@ local fired_events = {}
 local function event_fired_key(event)
   if event == 'BufRead' then return 'BufReadPost' end
   return event
+end
+
+local function has_fired(event, buf)
+  local per_buf = fired_events[buf]
+  if not per_buf then return false end
+  return per_buf[event_fired_key(event)] == true
+end
+
+local function mark_fired(event, buf)
+  local per_buf = fired_events[buf]
+  if not per_buf then
+    per_buf = {}
+    fired_events[buf] = per_buf
+  end
+  per_buf[event_fired_key(event)] = true
 end
 
 local _plugin_dir_cache = nil
@@ -121,9 +139,10 @@ local function get_plugin_dir(name)
   return cache and cache[name] or nil
 end
 
--- Record which events have fired. The replay uses this to avoid re-firing
--- events that Neovim has not emitted yet: when a plugin loads on BufReadPre,
--- BufRead and BufReadPost are still to come for the same read.
+-- Record which events have fired, per buffer. The replay uses this to avoid
+-- re-firing an event that already ran for the buffer being loaded: when a
+-- plugin loads on BufReadPre, BufRead and BufReadPost are still to come for
+-- the same read and will fire naturally.
 --
 -- Note: nvim_create_autocmd('BufRead') registers a BufReadPost autocmd (the
 -- two are aliases), so BufRead is tracked via BufReadPost.
@@ -136,8 +155,8 @@ local function setup_event_tracker()
     local name = TRACKED_EVENTS[i]
     api.nvim_create_autocmd(name, {
       group = tracker_group,
-      callback = function()
-        fired_events[name] = true
+      callback = function(args)
+        mark_fired(name, args.buf)
       end,
     })
   end
@@ -378,14 +397,16 @@ function M.load(config)
       -- recurse until Neovim aborts with E218.
       if replay_depth >= MAX_REPLAY_DEPTH then return end
 
-      -- Only replay events that have already fired. When a plugin loads from
-      -- BufReadPre, Neovim still has BufRead and BufReadPost to fire for this
-      -- same read; replaying them here would run them twice, and a handler
-      -- that opens a file (snacks picker, for one) would recurse until
-      -- Neovim aborts with E218.
-      local fired = fired_events
+      -- Only replay events that have already fired for this buffer. When a
+      -- plugin loads from BufReadPre, Neovim still has BufRead and BufReadPost
+      -- to fire for this same read; replaying them here would run them twice,
+      -- and a handler that opens a file (snacks picker, for one) would recurse
+      -- until Neovim aborts with E218.
+      --
+      -- The check is per buffer: a mark left by an earlier read must not
+      -- suppress the events still pending for the current one.
       local origin_event = event_fired_key(ev.event)
-      if not fired[origin_event] then
+      if not has_fired(ev.event, ev.buf) then
         -- The trigger is the first event of its group, so nothing has fired
         -- yet and there is nothing to replay.
         return
@@ -398,8 +419,9 @@ function M.load(config)
         for c = 1, #chain do
           local c_opts = chain[c]
           -- Skip the origin event: it is the one currently being handled.
-          -- Skip events Neovim has not fired yet: they will fire naturally.
-          if event_fired_key(c_opts.event) ~= origin_event and fired[event_fired_key(c_opts.event)] then
+          -- Skip events that have not fired for this buffer yet: they will
+          -- fire naturally.
+          if event_fired_key(c_opts.event) ~= origin_event and has_fired(c_opts.event, ev.buf) then
             local autocmds = get_autocmds({ event = c_opts.event })
             local done = {}
             for a = 1, #autocmds do

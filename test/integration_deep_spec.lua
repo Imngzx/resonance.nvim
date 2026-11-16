@@ -53,6 +53,42 @@ test.run_suite('resonance.loader.deep', {
   },
 
   {
+    name = 'replay: tracks fired events per buffer, not globally',
+    fn = function()
+      -- A read that happened for one buffer must not suppress the events
+      -- still pending for another buffer, and must not cause the first
+      -- buffer's handlers to run again.
+      local group = vim.api.nvim_create_augroup('ResonanceReplayPerBuf', { clear = true })
+      local counts = {}
+      vim.api.nvim_create_autocmd('BufReadPost', {
+        group = group,
+        callback = function(args) counts[args.buf] = (counts[args.buf] or 0) + 1 end,
+      })
+
+      -- Buffer A: its read already happened.
+      local buf_a = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_exec_autocmds('BufReadPost', { buffer = buf_a, modeline = false })
+      test.assert_eq(counts[buf_a], 1)
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-perbuf',
+        event = 'BufNewFile',
+        setup = function() end,
+      })
+
+      -- Buffer B: a brand new file, its read has not happened yet.
+      local buf_b = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_exec_autocmds('BufNewFile', { buffer = buf_b, modeline = false })
+      vim.wait(100)
+
+      -- Buffer A must not be replayed, and buffer B must not be replayed
+      -- early: its read event is still pending and will fire naturally.
+      test.assert_eq(counts[buf_a], 1)
+      test.assert_eq(counts[buf_b] or 0, 0)
+    end,
+  },
+
+  {
     name = 'replay: does not fire events that have not happened yet',
     fn = function()
       -- BufRead and BufReadPost are still to come for the current read.

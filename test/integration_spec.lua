@@ -300,7 +300,7 @@ test.run_suite('resonance.integration', {
       local lines = vim.api.nvim_buf_get_lines(st.state.buf, 0, -1, false)
       local found = false
       for _, l in ipairs(lines) do
-        if l:find('ui-icon', 1, true) and l:find('', 1, true) then
+        if l:find('ui-icon', 1, true) and l:find('\u{F057}', 1, true) then
           found = true
           break
         end

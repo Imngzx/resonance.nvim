@@ -48,23 +48,34 @@ M.trigger_group = trigger_group
 function M.register_event(config, load_now, group)
   if not config.event then return end
 
-  local ev = type(config.event) == 'string' and { config.event } or config.event
-  local event_name = ev[1]
-  local opts = { once = true, callback = load_now }
-  if group then opts.group = group end
+  local events = utils.normalize_events(config.event)
+  if #events == 0 then return end
 
-  if event_name == 'User' then
-    opts.pattern = ev[2] or ev.pattern
-    create_autocmd('User', opts)
-  else
-    if ev.pattern then opts.pattern = ev.pattern end
-    local events = {}
-    for i = 1, #ev do
-      if type(ev[i]) == 'string' then
-        events[#events + 1] = ev[i]
+  -- A User event carries its own pattern, so it needs its own autocmd. The
+  -- native event names in the list share one autocmd.
+  local native = utils.native_event_names(events)
+  if #native > 0 then
+    local opts = { once = true, callback = load_now }
+    if group then opts.group = group end
+    local pattern
+    for i = 1, #events do
+      if not events[i].user and events[i].pattern then
+        pattern = events[i].pattern
+        break
       end
     end
-    create_autocmd(events, opts)
+    if pattern then opts.pattern = pattern end
+    create_autocmd(native, opts)
+  end
+
+  for i = 1, #events do
+    local e = events[i]
+    if e.user then
+      local opts = { once = true, callback = load_now }
+      if group then opts.group = group end
+      if e.pattern then opts.pattern = e.pattern end
+      create_autocmd('User', opts)
+    end
   end
 end
 

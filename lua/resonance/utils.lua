@@ -74,19 +74,138 @@ function M.normalize_pack_spec(plugin)
   }
 end
 
+---@class ResonanceEventSpec
+---@field event string The event name.
+---@field pattern? string The pattern, for a User event.
+---@field user boolean True when the event is a User event with a pattern.
+
+--- Normalize an event spec into a flat list of event descriptors.
+---
+--- The accepted shapes are:
+---   'BufReadPost'                          -- one native event
+---   { 'BufReadPost', 'BufNewFile' }        -- several native events
+---   { 'User', pattern = 'VeryLazy' }       -- one User event
+---
+--- A User event carries its own pattern, so it cannot be represented as a
+--- bare string in a list of event names. Keeping the pattern in a separate
+--- field is what stops a User entry from being read as the pattern of the
+--- event before it -- and it is why the User entries are appended to the
+--- list separately instead of being mixed into it.
+---
+--- The result is always a list of descriptors: {event=..., pattern=...}.
+---
+--- The function is idempotent: a list that is already in the descriptor form
+--- is returned unchanged. The spec is normalized once, in parse_config, and
+--- the result is stored in config.event -- so every later reader sees the
+--- normalized form and has to accept it.
+---@param event string|table|nil
+---@return ResonanceEventSpec[]
+function M.normalize_events(event)
+  local out = {}
+  if event == nil then return out end
+
+  if type(event) == 'string' then
+    return { { event = event } }
+  end
+
+  if type(event) ~= 'table' then return out end
+
+  -- Already normalized: a list of descriptors. Every entry is a table with
+  -- an `event` field. The check has to scan the whole list, because a
+  -- normalized list can mix native events and User events -- and the first
+  -- entry alone does not tell the two forms apart.
+  local all_descriptors = #event > 0
+  for i = 1, #event do
+    local e = event[i]
+    if type(e) ~= 'table' or type(e.event) ~= 'string' then
+      all_descriptors = false
+      break
+    end
+  end
+  if all_descriptors then
+    for i = 1, #event do
+      out[#out + 1] = event[i]
+    end
+    return out
+  end
+
+  -- A User event: { 'User', pattern = 'X' }. The pattern may also be given
+  -- positionally as ev[2], which is what the native autocmd API accepts.
+  if event[1] == 'User' then
+    local pattern = event.pattern or event[2]
+    if type(pattern) == 'string' then
+      return { { event = 'User', pattern = pattern, user = true } }
+    end
+    -- A User event without a pattern matches every User event.
+    return { { event = 'User', user = true } }
+  end
+
+  for i = 1, #event do
+    local name = event[i]
+    if type(name) == 'string' then
+      out[#out + 1] = { event = name }
+    elseif type(name) == 'table' and type(name.event) == 'string' then
+      -- A descriptor mixed into a raw list. Keep it as it is, so a list
+      -- that is partly normalized does not lose entries.
+      out[#out + 1] = name
+    end
+  end
+
+  -- A pattern on the list itself applies to the native events in it.
+  if type(event.pattern) == 'string' then
+    for i = 1, #out do
+      out[i].pattern = event.pattern
+    end
+  end
+
+  return out
+end
+
+--- The native event names in a normalized event list, without User entries.
+---@param events ResonanceEventSpec[]
+---@return string[]
+function M.native_event_names(events)
+  local out = {}
+  for i = 1, #events do
+    if not events[i].user then
+      out[#out + 1] = events[i].event
+    end
+  end
+  return out
+end
+
+--- The User event patterns in a normalized event list.
+---@param events ResonanceEventSpec[]
+---@return string[] patterns, 'nil' for a User event without one
+function M.user_event_patterns(events)
+  local out = {}
+  for i = 1, #events do
+    if events[i].user then
+      out[#out + 1] = events[i].pattern
+    end
+  end
+  return out
+end
+
 -- Parse trigger type from config (with display icons)
 ---@param config table
 ---@return string|nil
 function M.parse_trigger(config)
   if config.event then
-    if type(config.event) == 'table' then
-      local ev = config.event
-      if ev[1] == 'User' then
-        return '󱐋 User(' .. (ev.pattern or ev[2] or 'Unknown') .. ')'
+    local events = M.normalize_events(config.event)
+    if #events > 0 then
+      local parts = {}
+      for i = 1, #events do
+        local e = events[i]
+        if e.user then
+          parts[#parts + 1] = 'User(' .. (e.pattern or 'Unknown') .. ')'
+        else
+          parts[#parts + 1] = e.event
+        end
       end
-      return '󱐋 ' .. table_concat(ev, ', ')
+      return '󱐋 ' .. table_concat(parts, ', ')
     end
-    return '󱐋 ' .. config.event
+    return '󱐋 ' .. tostring(config.event)
   end
   if config.cmd then
     local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd

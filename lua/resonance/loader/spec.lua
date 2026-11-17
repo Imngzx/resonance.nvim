@@ -37,24 +37,22 @@ function M.parse_config(config)
       end
       config.event = 'VimEnter'
     elseif config.lazy == true then
-      -- Default lazy = VeryLazy (add as additional trigger, not replacement)
+      -- Default lazy = VeryLazy (add as additional trigger, not replacement).
+      --
+      -- The VeryLazy trigger is a User event with its own pattern, so it
+      -- cannot be appended to a list of native event names: a User entry
+      -- read as ev[2] would be taken as the pattern of the event before it.
+      -- The event list is normalized into descriptors first, and the User
+      -- entry is kept separate from the native names.
       local has_triggers = config.event or config.cmd or config.keys or config.ft
       if has_triggers then
-        -- Add VeryLazy to existing events
-        if config.event then
-          local event = config.event
-          if type(event) == 'table' and event[1] then
-            table.insert(event, { 'User', pattern = 'VeryLazy' })
-          else
-            config.event = { event, { 'User', pattern = 'VeryLazy' } }
-          end
-        else
-          -- No event, but has other triggers (cmd/keys/ft)
-          -- Add VeryLazy as fallback event
-          config.event = { 'User', pattern = 'VeryLazy' }
-        end
+        local events = utils.normalize_events(config.event)
+        -- VeryLazy is an additional trigger, not a replacement: the primary
+        -- event stays and the plugin can still load on it.
+        events[#events + 1] = { event = 'User', pattern = 'VeryLazy', user = true }
+        config.event = events
       else
-        config.event = { 'User', pattern = 'VeryLazy' }
+        config.event = { { event = 'User', pattern = 'VeryLazy', user = true } }
       end
     end
   end

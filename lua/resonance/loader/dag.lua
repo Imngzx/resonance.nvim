@@ -178,11 +178,13 @@ function M.get_replay_info(specs, plugin_triggers)
       local chain = {}
       -- Only process event triggers (󱐋 prefix), not cmd/keys/ft
       if trigger:match('^󱐋') then
-        local ev = type(spec.event) == 'string' and { spec.event } or spec.event
-        if ev and ev[1] then
-          local event_name = ev[1]
-          if event_name ~= 'User' then
-            local autocmds = autocmds_for(event_name)
+        local events = utils.normalize_events(spec.event)
+        for i = 1, #events do
+          local e = events[i]
+          -- A User event has no successor chain: it is fired by name, not
+          -- by an event that triggers it.
+          if not e.user then
+            local autocmds = autocmds_for(e.event)
             for a = 1, #autocmds do
               local autocmd = autocmds[a]
               if autocmd.group then

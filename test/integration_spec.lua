@@ -32,8 +32,12 @@ test.run_suite('resonance.integration', {
       _G.resonance.load({src = 'https://github.com/test/integration3', lazy = true})
       local spec = _G.loader.specs['integration3']
       test.assert_not_nil(spec)
+      -- The event list is normalized into descriptors, so the User pattern
+      -- lives in its own field rather than on the list.
       test.assert_eq(type(spec.event), 'table')
-      test.assert_eq(spec.event.pattern, 'VeryLazy')
+      test.assert_eq(#spec.event, 1)
+      test.assert_eq(spec.event[1].event, 'User')
+      test.assert_eq(spec.event[1].pattern, 'VeryLazy')
     end,
   },
 

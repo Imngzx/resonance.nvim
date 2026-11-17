@@ -68,9 +68,14 @@ test.run_suite('resonance.loader.spec', {
     fn = function()
       local config = {src = 'test/repo', lazy = true}
       local result = spec.parse_config(config)
+      -- The event list is normalized into descriptors: a User event keeps
+      -- its pattern in its own field, so it cannot be mistaken for the
+      -- pattern of the entry before it.
       test.assert_eq(type(result.event), 'table')
-      test.assert_eq(result.event[1], 'User')
-      test.assert_eq(result.event.pattern, 'VeryLazy')
+      test.assert_eq(#result.event, 1)
+      test.assert_eq(result.event[1].event, 'User')
+      test.assert_eq(result.event[1].pattern, 'VeryLazy')
+      test.assert_true(result.event[1].user)
     end,
   },
 
@@ -112,10 +117,15 @@ test.run_suite('resonance.loader.spec', {
       local config = {src = 'test/repo', lazy = true, event = 'LspAttach'}
       local result = spec.parse_config(config)
       test.assert_not_nil(result)
+      -- VeryLazy is an additional trigger, not a replacement: the primary
+      -- event stays, and the User entry is a separate descriptor.
       test.assert_eq(type(result.event), 'table')
-      test.assert_eq(result.event[1], 'LspAttach')
-      test.assert_eq(result.event[2][1], 'User')
+      test.assert_eq(#result.event, 2)
+      test.assert_eq(result.event[1].event, 'LspAttach')
+      test.assert_false(result.event[1].user)
+      test.assert_eq(result.event[2].event, 'User')
       test.assert_eq(result.event[2].pattern, 'VeryLazy')
+      test.assert_true(result.event[2].user)
     end,
   },
 
@@ -269,6 +279,75 @@ test.run_suite('resonance.loader.spec', {
       local result = spec.parse_config(config)
       test.assert_nil(result)
       test.assert_true(type(config.keys) == 'function')
+    end,
+  },
+
+  -- normalize_events tests
+  {
+    name = 'normalize_events: a string becomes one descriptor',
+    fn = function()
+      local events = utils.normalize_events('BufReadPost')
+      test.assert_eq(#events, 1)
+      test.assert_eq(events[1].event, 'BufReadPost')
+      test.assert_false(events[1].user)
+    end,
+  },
+
+  {
+    name = 'normalize_events: a list of strings becomes one descriptor each',
+    fn = function()
+      local events = utils.normalize_events({ 'BufReadPost', 'BufNewFile' })
+      test.assert_eq(#events, 2)
+      test.assert_eq(events[1].event, 'BufReadPost')
+      test.assert_eq(events[2].event, 'BufNewFile')
+    end,
+  },
+
+  {
+    name = 'normalize_events: a User event keeps its pattern in its own field',
+    fn = function()
+      local events = utils.normalize_events({ 'User', pattern = 'VeryLazy' })
+      test.assert_eq(#events, 1)
+      test.assert_eq(events[1].event, 'User')
+      test.assert_eq(events[1].pattern, 'VeryLazy')
+      test.assert_true(events[1].user)
+    end,
+  },
+
+  {
+    name = 'normalize_events: a User pattern may be positional',
+    fn = function()
+      local events = utils.normalize_events({ 'User', 'VeryLazy' })
+      test.assert_eq(#events, 1)
+      test.assert_eq(events[1].event, 'User')
+      test.assert_eq(events[1].pattern, 'VeryLazy')
+      test.assert_true(events[1].user)
+    end,
+  },
+
+  {
+    name = 'normalize_events: is idempotent',
+    fn = function()
+      local once = utils.normalize_events({ 'BufReadPost', { event = 'User', pattern = 'VeryLazy', user = true } })
+      local twice = utils.normalize_events(once)
+      test.assert_eq(#twice, #once)
+      test.assert_eq(twice[1].event, 'BufReadPost')
+      test.assert_eq(twice[2].event, 'User')
+      test.assert_eq(twice[2].pattern, 'VeryLazy')
+      test.assert_true(twice[2].user)
+    end,
+  },
+
+  {
+    name = 'normalize_events: native_event_names skips User entries',
+    fn = function()
+      local events = utils.normalize_events({
+        'BufReadPost',
+        { event = 'User', pattern = 'VeryLazy', user = true },
+      })
+      local names = utils.native_event_names(events)
+      test.assert_eq(#names, 1)
+      test.assert_eq(names[1], 'BufReadPost')
     end,
   },
 })

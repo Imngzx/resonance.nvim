@@ -25,6 +25,48 @@ test.run_suite('resonance.loader.init', {
   },
 
   {
+    name = 'get_plugin_dir: the cache is dropped when a plugin is installed',
+    fn = function()
+      -- The cache of plugin directories is built once and then reused. A
+      -- plugin installed during the session was not in it, so the lookup
+      -- returned nil for a plugin that was on disk -- and the build hook
+      -- for it was skipped.
+      local live_loader = require('resonance.loader')
+      live_loader._reset()
+
+      -- Warm the cache, so it holds no entry for the plugin yet.
+      test.assert_nil(live_loader.get_plugin_dir('cache-inval-plugin'),
+        'the plugin was already in the cache')
+
+      -- Now report the plugin as installed and fire PackChanged, which is
+      -- what vim.pack does after an install.
+      local orig_get = nil
+      local pack = rawget(vim, 'pack')
+      if type(pack) == 'table' and type(pack.get) == 'function' then
+        orig_get = pack.get
+        pack.get = function()
+          return {
+            { spec = { name = 'cache-inval-plugin' }, path = '/tmp/cache-inval-plugin' },
+          }
+        end
+      end
+
+      vim.api.nvim_exec_autocmds('PackChanged', {
+        modeline = false,
+        data = { kind = 'install', spec = { name = 'cache-inval-plugin' } },
+      })
+      vim.wait(100)
+
+      local dir = live_loader.get_plugin_dir('cache-inval-plugin')
+      if orig_get then pack.get = orig_get end
+      live_loader._reset()
+
+      test.assert_not_nil(dir, 'the cache was not dropped when the plugin was installed')
+      test.assert_eq(dir, '/tmp/cache-inval-plugin')
+    end,
+  },
+
+  {
     name = 'get_plugin_dir: fallback scan resolves real plugin dirs',
     fn = function()
       -- vim.pack is lazily rehydrated by the vim metatable, so nil it out via

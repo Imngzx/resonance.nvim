@@ -5,21 +5,51 @@ local build = require('resonance.loader.build')
 local uv = vim.uv
 local fs = vim.fs
 
+-- The build markers live in Resonance's state directory, keyed by plugin
+-- name.
+local marker_dir = vim.fn.stdpath('state') .. '/resonance/builds'
+local function marker_path(name)
+  return marker_dir .. '/' .. name
+end
+local function clear_marker(name)
+  uv.fs_unlink(marker_path(name))
+end
+
 test.run_suite('resonance.loader.build', {
 
   {
-    name = 'mark_build_success: writes hash file',
+    name = 'mark_build_success: writes the hash to the state directory',
     fn = function()
-      local dir = '/tmp/test_build_' .. os.time()
-      uv.fs_mkdir(dir, 493)
-      build.mark_build_success(dir, 'abc123')
-      local fd = uv.fs_open(dir .. '/.resonance_built', 'r', 438)
-      test.assert_not_nil(fd)
+      local name = 'marker-test-' .. os.time()
+      build.mark_build_success(name, 'abc123')
+      local fd = uv.fs_open(marker_path(name), 'r', 438)
+      test.assert_not_nil(fd, 'the marker was not written')
       local stat = uv.fs_fstat(fd)
       local content = uv.fs_read(fd, stat.size, 0)
       uv.fs_close(fd)
       test.assert_eq(content, 'abc123')
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
+    end,
+  },
+
+  {
+    name = 'mark_build_success: does not write into the plugin directory',
+    fn = function()
+      -- The marker used to be written into the plugin's own directory,
+      -- which dirtied its git working tree -- a file the plugin's own
+      -- tooling did not put there, showing up in git status.
+      local dir = '/tmp/test_build_pollute_' .. os.time()
+      uv.fs_mkdir(dir, 493)
+      local name = 'pollute-test-' .. os.time()
+
+      build.mark_build_success(name, 'abc123')
+
+      test.assert_nil(uv.fs_stat(dir .. '/.resonance_built'),
+        'the marker was written into the plugin directory')
+      test.assert_not_nil(uv.fs_stat(marker_path(name)),
+        'the marker was not written to the state directory')
+
+      clear_marker(name)
       uv.fs_rmdir(dir)
     end,
   },
@@ -29,12 +59,13 @@ test.run_suite('resonance.loader.build', {
     fn = function()
       local dir = '/tmp/test_build_' .. os.time()
       uv.fs_mkdir(dir, 493)
-      build.mark_build_success(dir, 'abc123')
+      local name = 'skip-test-' .. os.time()
+      build.mark_build_success(name, 'abc123')
       local built = false
       local function fake_build() built = true end
-      build.check_and_build('test', dir, fake_build)
+      build.check_and_build(name, dir, fake_build)
       test.assert_false(built)
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
       uv.fs_rmdir(dir)
     end,
   },
@@ -44,8 +75,9 @@ test.run_suite('resonance.loader.build', {
     fn = function()
       local dir = '/tmp/test_build_' .. os.time()
       uv.fs_mkdir(dir, 493)
+      local name = 'string-cmd-' .. os.time()
       uv.fs_write(uv.fs_open(dir .. '/test.txt', 'w', 438), 'hello')
-      build.run_build('test', dir, 'echo "built" > ' .. dir .. '/build.out', 'hash1')
+      build.run_build(name, dir, 'echo "built" > ' .. dir .. '/build.out', 'hash1')
       vim.wait(500)
       test.assert_true(uv.fs_stat(dir .. '/build.out') ~= nil)
       local fd = uv.fs_open(dir .. '/build.out', 'r', 438)
@@ -55,7 +87,7 @@ test.run_suite('resonance.loader.build', {
       test.assert_true(content:match('built'))
       uv.fs_unlink(dir .. '/build.out')
       uv.fs_unlink(dir .. '/test.txt')
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
       uv.fs_rmdir(dir)
     end,
   },
@@ -65,11 +97,12 @@ test.run_suite('resonance.loader.build', {
     fn = function()
       local dir = '/tmp/test_build_' .. os.time()
       uv.fs_mkdir(dir, 493)
+      local name = 'fn-hook-' .. os.time()
       local called = false
-      build.run_build('test', dir, function(d) called = true; test.assert_eq(d, dir) end, 'hash1')
+      build.run_build(name, dir, function(d) called = true; test.assert_eq(d, dir) end, 'hash1')
       vim.wait(500)
       test.assert_true(called)
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
       uv.fs_rmdir(dir)
     end,
   },
@@ -87,17 +120,18 @@ test.run_suite('resonance.loader.build', {
     fn = function()
       local dir = '/tmp/test_build_rebuild_' .. os.time()
       uv.fs_mkdir(dir, 493)
+      local name = 'rebuild-' .. os.time()
       -- Record a stale hash so the current revision differs from the marker.
-      build.mark_build_success(dir, 'stale-hash')
+      build.mark_build_success(name, 'stale-hash')
 
       local built = false
-      build.check_and_build('test', dir, function()
+      build.check_and_build(name, dir, function()
         built = true
       end)
       vim.wait(1500)
 
       test.assert_true(built)
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
       uv.fs_rmdir(dir)
     end,
   },
@@ -107,19 +141,20 @@ test.run_suite('resonance.loader.build', {
     fn = function()
       local dir = '/tmp/test_build_marker_' .. os.time()
       uv.fs_mkdir(dir, 493)
-      build.mark_build_success(dir, 'stale-hash')
+      local name = 'stale-' .. os.time()
+      build.mark_build_success(name, 'stale-hash')
 
-      build.check_and_build('test', dir, function() end)
+      build.check_and_build(name, dir, function() end)
       vim.wait(1500)
 
-      local fd = uv.fs_open(dir .. '/.resonance_built', 'r', 438)
+      local fd = uv.fs_open(marker_path(name), 'r', 438)
       test.assert_not_nil(fd)
       local stat = uv.fs_fstat(fd)
       local content = uv.fs_read(fd, stat.size, 0)
       uv.fs_close(fd)
       test.assert_not_eq(content, 'stale-hash')
 
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
       uv.fs_rmdir(dir)
     end,
   },
@@ -146,7 +181,7 @@ test.run_suite('resonance.loader.build', {
 
       test.assert_true(built)
       build.build_hooks['packchanged-test'] = nil
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker('packchanged-test')
       uv.fs_rmdir(dir)
     end,
   },
@@ -231,7 +266,8 @@ test.run_suite('resonance.loader.build', {
       vim.env.PATH = shim .. ':' .. orig_path
 
       local built = false
-      build.check_and_build('nocmd', dir, function() built = true end)
+      local name = 'nocmd-' .. os.time()
+      build.check_and_build(name, dir, function() built = true end)
       vim.wait(1500)
 
       vim.env.PATH = orig_path
@@ -247,7 +283,7 @@ test.run_suite('resonance.loader.build', {
       test.assert_eq(spawned, 0, 'the build check spawned a git subprocess')
       test.assert_true(built, 'the build did not run for a real git working tree')
 
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
       vim.fn.delete(dir, 'rf')
       vim.fn.delete(shim, 'rf')
     end,
@@ -268,18 +304,19 @@ test.run_suite('resonance.loader.build', {
 
       local built = 0
       local function build_fn() built = built + 1 end
+      local name = 'once-' .. os.time()
 
-      build.check_and_build('once', dir, build_fn)
+      build.check_and_build(name, dir, build_fn)
       vim.wait(1500)
       test.assert_eq(built, 1, 'the first check did not build')
 
       -- The marker now holds the current commit, so the second check must
       -- not build again.
-      build.check_and_build('once', dir, build_fn)
+      build.check_and_build(name, dir, build_fn)
       vim.wait(1500)
       test.assert_eq(built, 1, 'the second check rebuilt an unchanged commit')
 
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
       vim.fn.delete(dir, 'rf')
     end,
   },
@@ -295,9 +332,10 @@ test.run_suite('resonance.loader.build', {
 
       local marker = dir .. '/done.txt'
       local settled = false
+      local name = 'async-' .. os.time()
       local sys = vim.system({ 'sh', '-c', 'sleep 0.3; echo done > ' .. marker }, { text = true })
 
-      build.run_build('async', dir, function() return sys end, 'hash1',
+      build.run_build(name, dir, function() return sys end, 'hash1',
         function() settled = true end)
       vim.wait(1500)
 
@@ -305,7 +343,7 @@ test.run_suite('resonance.loader.build', {
       test.assert_true(uv.fs_stat(marker) ~= nil,
         'the build was marked successful before the async work finished')
 
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
       uv.fs_unlink(marker)
       uv.fs_rmdir(dir)
     end,
@@ -318,18 +356,19 @@ test.run_suite('resonance.loader.build', {
       uv.fs_mkdir(dir, 493)
 
       local result = nil
+      local name = 'asyncfail-' .. os.time()
       local sys = vim.system({ 'sh', '-c', 'exit 3' }, { text = true })
 
-      build.run_build('asyncfail', dir, function() return sys end, 'hash1',
+      build.run_build(name, dir, function() return sys end, 'hash1',
         function(ok, err) result = { ok = ok, err = err } end)
       vim.wait(1500)
 
       test.assert_not_nil(result, 'the completion callback never fired')
       test.assert_false(result.ok, 'a failed build was reported as successful')
-      test.assert_nil(uv.fs_stat(dir .. '/.resonance_built'),
+      test.assert_nil(uv.fs_stat(marker_path(name)),
         'a failed build was marked as built')
 
-      uv.fs_unlink(dir .. '/.resonance_built')
+      clear_marker(name)
       uv.fs_rmdir(dir)
     end,
   },

@@ -7,11 +7,14 @@ local fs_fstat = uv.fs_fstat
 local fs_read = uv.fs_read
 local fs_write = uv.fs_write
 local fs_close = uv.fs_close
+local fs_mkdir = uv.fs_mkdir
+local fs_stat = uv.fs_stat
 local async = vim.async
 local system = vim.system
 local schedule = vim.schedule
 local type = type
 local tostring = tostring
+local fn_stdpath = vim.fn.stdpath
 local _system_async = async.wrap(3, system)
 ---@param cmd string[]
 ---@param opts table
@@ -23,15 +26,56 @@ local build_semaphore = async.semaphore(2)
 
 M.build_hooks = {}
 
--- Mark build as successful by writing hash to file
----@param dir string
+-- The directory the build markers live in.
+--
+-- The marker used to be written into the plugin's own directory, which
+-- dirtied its git working tree -- a file the plugin's own tooling did not
+-- put there, showing up in `git status` and in every diff. The markers
+-- belong to Resonance, so they live in Resonance's state directory.
+local marker_dir = nil
+
+---@return string
+local function get_marker_dir()
+  if marker_dir then return marker_dir end
+  marker_dir = fn_stdpath('state') .. '/resonance/builds'
+  return marker_dir
+end
+
+--- The marker file for a plugin.
+---@param name string
+---@return string
+local function marker_path(name)
+  return get_marker_dir() .. '/' .. name
+end
+
+--- Mark build as successful by writing hash to file
+---@param name string Plugin name.
 ---@param hash string
-function M.mark_build_success(dir, hash)
-  local fd = fs_open(dir .. '/.resonance_built', 'w', 438)
+function M.mark_build_success(name, hash)
+  local dir = get_marker_dir()
+  if not fs_stat(dir) then
+    -- uv.fs_mkdir is not recursive, so the two levels are made in turn.
+    local parent = fn_stdpath('state') .. '/resonance'
+    if not fs_stat(parent) then fs_mkdir(parent, 493) end
+    if not fs_stat(dir) then fs_mkdir(dir, 493) end
+  end
+  local fd = fs_open(marker_path(name), 'w', 438)
   if fd then
     fs_write(fd, hash, 0)
     fs_close(fd)
   end
+end
+
+--- Read the hash a plugin was last built at.
+---@param name string Plugin name.
+---@return string
+local function read_marker(name)
+  local fd = fs_open(marker_path(name), 'r', 438)
+  if not fd then return '' end
+  local stat = fs_fstat(fd)
+  local content = stat and (fs_read(fd, stat.size, 0) or '') or ''
+  fs_close(fd)
+  return content
 end
 
 -- Run build command for a plugin
@@ -44,13 +88,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
   if not dir or dir == '' then return end
 
   -- Check if already built at this hash (early return)
-  local last_hash = ''
-  local fd = fs_open(dir .. '/.resonance_built', 'r', 438)
-  if fd then
-    local stat = fs_fstat(fd)
-    if stat then last_hash = fs_read(fd, stat.size, 0) or '' end
-    fs_close(fd)
-  end
+  local last_hash = read_marker(name)
 
   if last_hash == curr_hash then
     if on_done then on_done(true, nil) end
@@ -59,7 +97,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
 
   local function finish(ok, err)
     if ok then
-      M.mark_build_success(dir, curr_hash)
+      M.mark_build_success(name, curr_hash)
       schedule(function()
         utils.notify('Build succeeded for ' .. name, vim.log.levels.INFO)
       end)
@@ -121,13 +159,7 @@ end
 function M.check_and_build(name, dir, build_task)
   if not dir or dir == '' then return end
 
-  local last_hash = ''
-  local fd = fs_open(dir .. '/.resonance_built', 'r', 438)
-  if fd then
-    local stat = fs_fstat(fd)
-    if stat then last_hash = fs_read(fd, stat.size, 0) or '' end
-    fs_close(fd)
-  end
+  local last_hash = read_marker(name)
 
   -- The commit is read from the git files directly rather than by running
   -- `git rev-parse HEAD`. This check runs for every plugin with a build

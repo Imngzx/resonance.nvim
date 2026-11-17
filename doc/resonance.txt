@@ -203,7 +203,9 @@ runs `vim.system()` or returns a promise is waited for:
 Build runs automatically:
 - On install (via PackChanged event)
 - On update (when git hash changes)
-- Hash cached in `.resonance_built` to avoid rebuilds
+- Hash cached in the build marker to avoid rebuilds. The markers live in
+  `stdpath('state') .. '/resonance/builds/'`, not in the plugin's own
+  directory, so they never show up in its git working tree.
 
 The commit is read from the plugin's git files, so the check spawns no
 subprocesses.
@@ -349,18 +351,22 @@ actually has.
         See |resonance-api-main| for resonance.replay_for_buffer().
         Returns: table of the events that were replayed
 
-    loader.run_build(name, dir, build_task, curr_hash)
+    loader.run_build(name, dir, build_task, curr_hash, on_done)
         Execute build command for plugin.
         build_task: string command or function(dir)
         curr_hash: current git commit hash
+        on_done: optional callback, called with (ok, err) once the build
+            settles
         Returns: nothing (async)
 
     loader.check_and_build(name, dir, build_task)
         Check git hash and run build if changed.
         Returns: nothing (async)
 
-    loader.mark_build_success(dir, hash)
-        Write build hash to .resonance_built file.
+    loader.mark_build_success(name, hash)
+        Write build hash to the build marker for a plugin. The markers live
+        in stdpath('state') .. '/resonance/builds/', so they never appear
+        in a plugin's own git working tree.
 
     loader.setup_packchanged_autocmd(get_plugin_dir_fn)
         Register PackChanged autocmd for automatic builds.
@@ -466,7 +472,7 @@ Optimizations:
 - Two-pass UI loading (commits first, branches/tags deferred)
 - vim.pack.get() cache for plugin paths
 - Batched pack.add() calls
-- Hash-based build caching (.resonance_built)
+- Hash-based build caching (markers under stdpath('state'))
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

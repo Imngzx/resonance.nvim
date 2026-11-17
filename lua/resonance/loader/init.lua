@@ -8,6 +8,18 @@ local dag = require('resonance.loader.dag')
 local api = vim.api
 local uv = vim.uv
 
+-- The cached plugin directories. Built once and then reused.
+local _plugin_dir_cache = nil
+
+-- Drop the cached plugin directories.
+--
+-- The cache is built once and then reused, so a plugin installed or
+-- removed during the session was not in it: get_plugin_dir returned nil
+-- for a plugin that was on disk, and the build hook was skipped.
+local function invalidate_plugin_dir_cache()
+  _plugin_dir_cache = nil
+end
+
 -- Install specs with vim.pack. `pack.add` raises when an install fails, so
 -- the error is captured and returned instead of propagating. When vim.pack is
 -- unavailable there is nothing to install and the call succeeds.
@@ -17,6 +29,9 @@ local function pack_install(specs)
   local pack = utils.get_pack()
   if not (pack and pack.add) then return true end
   local ok, err = pcall(pack.add, specs, { confirm = false, load = false })
+  -- A fresh install is not in the cached plugin directories, so the cache
+  -- has to go before anything looks the plugin up.
+  invalidate_plugin_dir_cache()
   if not ok then return false, tostring(err) end
   return true
 end
@@ -143,8 +158,6 @@ local function mark_group_fired(group_name, buf)
   end
   per_buf[group_name] = true
 end
-
-local _plugin_dir_cache = nil
 
 local function populate_plugin_dir_cache()
   if _plugin_dir_cache then return end
@@ -356,6 +369,15 @@ M.check_and_build = build.check_and_build
 M.mark_build_success = build.mark_build_success
 M.setup_packchanged_autocmd = build.setup_packchanged_autocmd
 build.setup_packchanged_autocmd(get_plugin_dir)
+
+-- A plugin installed or removed during the session was not in the cached
+-- plugin directories, so the cache has to go when one is.
+api.nvim_create_autocmd('PackChanged', {
+  group = api.nvim_create_augroup('ResonancePluginDirCache', { clear = true }),
+  callback = function()
+    invalidate_plugin_dir_cache()
+  end,
+})
 
 M.plugin_triggers = plugin_triggers
 M.specs = specs

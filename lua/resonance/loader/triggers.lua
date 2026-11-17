@@ -95,8 +95,10 @@ end
 -- Register command trigger user commands
 ---@param config table
 ---@param load_now function
+---@param before_setup? function[] list the removal callback is added to, for
+---   stubs that must go before the plugin's setup runs
 ---@return function[] teardown callbacks that remove the registered commands
-function M.register_cmd(config, load_now)
+function M.register_cmd(config, load_now, before_setup)
   local teardown = {}
   if not config.cmd then return teardown end
 
@@ -133,8 +135,16 @@ function M.register_cmd(config, load_now)
         end
       end, cmd_opts)
 
-      teardown[#teardown + 1] = function()
+      -- The stub owns the command name, so it has to go before the
+      -- plugin's setup runs -- otherwise the plugin's own
+      -- nvim_create_user_command() for that name fails.
+      local remove = function()
         pcall(del_user_command, cmd)
+      end
+      if before_setup then
+        before_setup[#before_setup + 1] = remove
+      else
+        teardown[#teardown + 1] = remove
       end
     end
   end
@@ -175,10 +185,27 @@ function M.register_keys(config, load_now)
         restore_opts = vim.tbl_extend('force', {}, restore_opts, { buffer = target_buf })
       end
 
-      set_keymap(mode, lhs, function()
+      -- Put the real mapping back in place, and drop the loading stub.
+      --
+      -- The keymap is not a stub to discard once the plugin has loaded: it
+      -- is the binding the user asked for. Only the part of it that loaded
+      -- the plugin was temporary. So the stub is replaced by the real
+      -- mapping, whether the keymap itself fired or some other trigger
+      -- loaded the plugin first.
+      local function restore_keymap()
         local del_opts = is_buffer and { buf = target_buf } or {}
-
         pcall(del_keymap, mode, lhs, del_opts)
+        if rhs and config.restore_keys ~= false then
+          set_keymap(mode, lhs, rhs, restore_opts)
+        end
+      end
+
+      set_keymap(mode, lhs, function()
+        pcall(del_keymap, mode, lhs, is_buffer and { buf = target_buf } or {})
+
+        -- The plugin may already be loaded -- another trigger of the same
+        -- spec may have loaded it first. load_now returns without loading
+        -- anything in that case, and the mapping still has to be restored.
         load_now(nil)
 
         if rhs then
@@ -198,10 +225,7 @@ function M.register_keys(config, load_now)
         end
       end, opts)
 
-      teardown[#teardown + 1] = function()
-        local del_opts = is_buffer and { buf = target_buf } or {}
-        pcall(del_keymap, mode, lhs, del_opts)
-      end
+      teardown[#teardown + 1] = restore_keymap
     end
   end
   return teardown
@@ -227,8 +251,11 @@ end
 ---@param config table
 ---@param load_now function
 ---@param group integer|nil augroup for the trigger autocmds
+---@return function[] before_setup teardown callbacks that must run before the
+---   plugin's setup, because they hold a name the plugin wants to define
 ---@return function[] teardown callbacks that remove every registered trigger
 function M.register_all(config, load_now, group)
+  local before_setup = {}
   local teardown = {}
 
   local function collect(list)
@@ -237,12 +264,17 @@ function M.register_all(config, load_now, group)
     end
   end
 
+  -- The command stubs have to go before the plugin's setup runs. A stub is
+  -- a real user command, so it owns the name: the plugin's own
+  -- nvim_create_user_command() for that name would fail, and the command
+  -- would be gone once the stub was torn down.
+  collect(M.register_cmd(config, load_now, before_setup))
+
   collect(M.register_event(config, load_now, group))
-  collect(M.register_cmd(config, load_now))
   collect(M.register_keys(config, load_now))
   collect(M.register_ft(config, load_now, group))
 
-  return teardown
+  return before_setup, teardown
 end
 
 return M

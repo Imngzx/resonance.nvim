@@ -61,10 +61,11 @@ test.run_suite('resonance.behavior.triggers', {
       -- keymap and an event kept the other two alive as stubs after one
       -- of them fired, so the stale stubs still ran.
       test.stub_pack()
+      local rhs = function() end
       _G.resonance.load({
         src = 'https://github.com/test/sibling-triggers',
         cmd = 'ResonanceSiblingCmd',
-        keys = { { 'n', '<leader>Rs' } },
+        keys = { { 'n', '<leader>Rs', rhs } },
         event = { 'User', pattern = 'ResonanceSiblingEvent' },
         setup = function() end,
       })
@@ -79,12 +80,21 @@ test.run_suite('resonance.behavior.triggers', {
 
       -- Global maps are listed by nvim_get_keymap; buffer-local ones need
       -- nvim_buf_get_keymap. This keymap is global.
+      --
+      -- The keymap itself is not torn down: it is the binding the user
+      -- asked for, and only the part of it that loaded the plugin was
+      -- temporary. So the stub is replaced by the real mapping.
+      --
+      -- nvim_get_keymap reports the expanded lhs, so <leader>Rs comes
+      -- back as ' Rs'.
       local maps = api.nvim_get_keymap('n')
-      local found = false
+      local found = nil
       for i = 1, #maps do
-        if maps[i].lhs == '<leader>Rs' then found = true end
+        if maps[i].lhs:find('Rs') then found = maps[i] end
       end
-      test.assert_false(found, 'the keymap stub survived the load')
+      test.assert_not_nil(found, 'the keymap was removed instead of restored')
+      test.assert_eq(found.callback, rhs,
+        'the keymap is still the loading stub, not the real mapping')
 
       -- The event trigger is an autocmd in the plugin's trigger group.
       local group = 'Resonance_sibling-triggers'
@@ -93,6 +103,76 @@ test.run_suite('resonance.behavior.triggers', {
         if a.group_name == group then pending = pending + 1 end
       end
       test.assert_eq(pending, 0, 'the event trigger survived the load')
+    end,
+  },
+
+  {
+    name = 'triggers: an event trigger leaves the keymap working',
+    fn = function()
+      -- The keymap was torn down with the sibling triggers when the plugin
+      -- loaded through some other trigger. The user was left with a dead
+      -- keybinding and no error.
+      test.stub_pack()
+      local rhs = function() end
+      _G.resonance.load({
+        src = 'https://github.com/test/event-then-keys',
+        event = { 'User', pattern = 'ResonanceEventFirst' },
+        keys = { { 'n', '<leader>Re', rhs } },
+        setup = function() end,
+      })
+
+      -- The event fires, which loads the plugin.
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceEventFirst', modeline = false })
+      vim.wait(200)
+
+      local maps = api.nvim_get_keymap('n')
+      local found = nil
+      for i = 1, #maps do
+        if maps[i].lhs:find('Re') then found = maps[i] end
+      end
+      test.assert_not_nil(found, 'the keymap was removed when the plugin loaded')
+      test.assert_eq(found.callback, rhs,
+        'the keymap is still the loading stub, not the real mapping')
+    end,
+  },
+
+  {
+    name = 'triggers: the command stub is gone before the plugin defines its command',
+    fn = function()
+      -- A command stub is a real user command, so it owns the name. The
+      -- plugin's own nvim_create_user_command() for that name failed while
+      -- the stub was there, and the command was gone once the stub was
+      -- torn down.
+      --
+      -- The trigger that loads the plugin has to be a different one: when
+      -- the command itself is the trigger, the stub removes itself on the
+      -- way in, and the name is free anyway.
+      test.stub_pack()
+      _G.resonance.load({
+        src = 'https://github.com/test/cmd-stub-name',
+        cmd = 'ResonanceCmdName',
+        keys = { { 'n', '<leader>Rc', function() end } },
+        setup = function()
+          -- The plugin defines the command the stub was holding.
+          api.nvim_create_user_command('ResonanceCmdName', function() end, { nargs = 0 })
+        end,
+      })
+
+      -- The keymap fires, which loads the plugin.
+      local maps = api.nvim_get_keymap('n')
+      local stub = nil
+      for i = 1, #maps do
+        if maps[i].lhs:find('Rc') then stub = maps[i] end
+      end
+      test.assert_not_nil(stub, 'the keymap stub was not registered')
+      stub.callback()
+      vim.wait(200)
+
+      local cmds = api.nvim_get_commands({})
+      test.assert_not_nil(cmds['ResonanceCmdName'],
+        'the command was removed instead of being defined by the plugin')
+      test.assert_eq(cmds['ResonanceCmdName'].nargs, '0',
+        'the command is still the stub, not the one the plugin defined')
     end,
   },
 

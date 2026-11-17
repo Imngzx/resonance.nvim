@@ -507,11 +507,25 @@ function M.load(config)
   -- leaving them in place means they keep firing.
   local trigger_teardown = {}
 
-  local function teardown_triggers()
-    for i = 1, #trigger_teardown do
-      pcall(trigger_teardown[i])
+  -- The command stubs have to go before the plugin's setup runs. A stub is
+  -- a real user command, so it owns the name: the plugin's own
+  -- nvim_create_user_command() for that name would fail while the stub is
+  -- still there.
+  local trigger_teardown_before_setup = {}
+
+  local function run_teardown(list)
+    for i = 1, #list do
+      pcall(list[i])
+      list[i] = nil
     end
-    trigger_teardown = {}
+  end
+
+  local function teardown_triggers()
+    run_teardown(trigger_teardown)
+  end
+
+  local function teardown_command_stubs()
+    run_teardown(trigger_teardown_before_setup)
   end
 
   --- Load this spec's plugins now.
@@ -633,6 +647,14 @@ function M.load(config)
           ': plugin directory not found')
       end
     end
+
+    -- The command stubs own the command names, so they have to go before
+    -- the plugin is loaded at all. A plugin may define its command when
+    -- its module is required (:packadd), or when its setup() runs -- and
+    -- either way nvim_create_user_command() fails while the stub holds
+    -- the name. The command would then be gone once the stub was torn
+    -- down.
+    teardown_command_stubs()
 
     for i = 1, #parsed_names do
       pcall(nvim_cmd, { cmd = 'packadd', args = { parsed_names[i] } })
@@ -756,7 +778,12 @@ function M.load(config)
 
   -- Register the triggers in a group named after the plugin, so the replay
   -- can address them individually and exclude the ones that already ran.
-  trigger_teardown = triggers.register_all(config, load_now, triggers.trigger_group(group_name))
+  --
+  -- register_all returns two lists: the command stubs, which have to go
+  -- before the plugin is loaded, and everything else, which is torn down
+  -- once it has loaded.
+  trigger_teardown_before_setup, trigger_teardown =
+    triggers.register_all(config, load_now, triggers.trigger_group(group_name))
 end
 
 ---@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, table<string, string[]>

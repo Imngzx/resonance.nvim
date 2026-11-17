@@ -168,6 +168,56 @@ test.run_suite('resonance.loader.init', {
       end
     end,
   },
+
+  {
+    name = 'fired state: the buffer is forgotten when it is wiped',
+    fn = function()
+      -- fired_events[buf] and fired_groups[buf] are keyed by buffer id.
+      -- Without pruning, every buffer a user ever opened stayed in those
+      -- tables for the whole session.
+      local api = vim.api
+      local buf = api.nvim_create_buf(false, true)
+      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufEnter', { buffer = buf, modeline = false })
+
+      local live_loader = require('resonance.loader')
+      test.assert_true(live_loader.has_fired('BufReadPre', buf),
+        'the event was not recorded for the buffer')
+
+      api.nvim_buf_delete(buf, { force = true })
+      vim.wait(100)
+
+      test.assert_false(live_loader.has_fired('BufReadPre', buf),
+        'the fired state still holds the wiped buffer')
+    end,
+  },
+
+  {
+    name = 'the setup closure is not retained after the plugin loads',
+    fn = function()
+      -- The loader keeps a spec per plugin for the whole session. If that
+      -- copy carried the setup closure, everything the closure captured
+      -- stayed reachable for as long as Neovim ran.
+      local live_loader = require('resonance.loader')
+      local packs = vim.pack.get(nil, { offline = true, info = false })
+      if not packs or not packs[1] then return end
+
+      local target = packs[1].spec.name
+      local config = {
+        plugin = target,
+        setup = function() end,
+      }
+      live_loader.load(config)
+      vim.wait(300)
+
+      local retained = live_loader.specs[target]
+      test.assert_not_nil(retained, 'the spec was not retained')
+      test.assert_nil(retained.setup, 'the retained spec still holds the setup closure')
+      test.assert_nil(retained.config, 'the retained spec still holds the config closure')
+      -- The user's own table must not be mutated by the loader.
+      test.assert_not_nil(config.setup, "the loader cleared the user's setup field")
+    end,
+  },
 })
 
 test.print_summary()

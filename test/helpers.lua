@@ -20,6 +20,7 @@ function M.live()
   return {
     loader = require('resonance.loader'),
     dag = require('resonance.loader.dag'),
+    scanner = require('resonance.scanner'),
     state = require('resonance.ui.state'),
     actions = require('resonance.ui.actions'),
     utils = require('resonance.utils'),

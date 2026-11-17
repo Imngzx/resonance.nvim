@@ -495,6 +495,19 @@ function M.schedule_render()
   end)
 end
 
+-- Release the rendered lines and highlights. The next render clears them
+-- anyway, but without this the last render's data stayed reachable for as
+-- long as the UI was closed.
+function M.clear()
+  table_clear(lines)
+  table_clear(hls)
+  table_clear(line_parts)
+  line_idx = 0
+  cur_col = 0
+  table_clear(st.state.line_to_name)
+  table_clear(st.state.name_to_line)
+end
+
 function M.update_spinner()
   if not st.is_valid() or not st.state.checking then return end
   local buf = st.state.buf

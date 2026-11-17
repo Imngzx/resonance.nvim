@@ -264,7 +264,17 @@ function M.uninstall_plugin(name)
     local ok, err = pcall(pack.del, { name }, { force = true })
     if ok then
       utils.notify('Uninstalled ' .. name, vim_log_levels.INFO)
-      st.state.info = require('resonance.scanner').get_info()
+      -- Drop everything the UI cached for this plugin. Otherwise the
+      -- details of a plugin that is no longer on disk stay reachable for
+      -- the rest of the session.
+      st.state.pack_details[name] = nil
+      st.state.urls[name] = nil
+      st.state.commits[name] = nil
+      st.state.updates[name] = nil
+      st.state.expanded[name] = nil
+      local scanner = require('resonance.scanner')
+      scanner.load_times[name] = nil
+      st.state.info = scanner.get_info()
     else
       utils.notify('Uninstall failed: ' .. tostring(err), vim_log_levels.ERROR)
     end

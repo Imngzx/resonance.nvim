@@ -197,6 +197,7 @@ function M.open(ui_config)
     if st.state.win and nvim_win_is_valid(st.state.win) then
       pcall(nvim_win_close, st.state.win, true)
     end
+    render_mod.clear()
     st.state.win, st.state.buf = nil, nil
   end
 
@@ -209,6 +210,7 @@ function M.open(ui_config)
     once = true,
     callback = function()
       cancel_details_task()
+      render_mod.clear()
       st.state.win, st.state.buf = nil, nil
     end,
   })

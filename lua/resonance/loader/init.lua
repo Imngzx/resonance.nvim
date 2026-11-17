@@ -55,6 +55,24 @@ local plugin_triggers = {}
 -- Specs registered by loader
 local specs = {}
 
+-- The spec fields the loader keeps for the whole session. The setup
+-- closure is deliberately dropped: it is called once, when the plugin
+-- loads, and keeping it reachable would retain everything it captured for
+-- the rest of the session.
+--
+-- The rest of the spec is copied as it is, because the spec table is
+-- readable state -- get_dag_data, get_replay_info and the build hooks all
+-- read from it.
+local function retained_spec(config)
+  local copy = {}
+  for k, v in pairs(config) do
+    if k ~= 'setup' and k ~= 'config' then
+      copy[k] = v
+    end
+  end
+  return copy
+end
+
 -- URL -> spec name mapping
 local spec_urls = {}
 
@@ -230,6 +248,17 @@ local function setup_event_tracker()
       end,
     })
   end
+
+  -- The fired state is keyed by buffer id, so it has to be pruned when a
+  -- buffer goes away. Without this, every buffer a user ever opened stayed
+  -- in the tables for the whole session.
+  api.nvim_create_autocmd('BufWipeout', {
+    group = tracker_group,
+    callback = function(args)
+      fired_events[args.buf] = nil
+      fired_groups[args.buf] = nil
+    end,
+  })
 end
 
 setup_event_tracker()
@@ -409,7 +438,7 @@ function M.load(config)
     local name = parsed_names[i]
     disabled_plugins[name] = nil
     if name and trig_str then M.plugin_triggers[name] = trig_str end
-    if name then M.specs[name] = config end
+    if name then M.specs[name] = retained_spec(config) end
     -- Map URL to name for dependency resolution
     local target_url = type(pack_plugins[i]) == 'string' and pack_plugins[i] or
       (pack_plugins[i].src or pack_plugins[i][1])
@@ -635,7 +664,11 @@ function M.load(config)
 
     if ev and type(ev) == 'table' and ev.event and not state.replay_done then
       state.replay_done = true
-      config._replay_done = true
+      -- The retained spec is a copy, so the replay flag is set on it.
+      -- get_replay_info reads the copy; the user's own table is not
+      -- touched.
+      local retained = specs[current_name]
+      if retained then retained._replay_done = true end
       -- A replay re-fires autocmds, which can re-enter load_now. Bound the
       -- nesting so a plugin whose handler triggers the same event cannot
       -- recurse until Neovim aborts with E218.

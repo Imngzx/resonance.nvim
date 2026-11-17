@@ -104,6 +104,48 @@ test.run_suite('resonance.behavior.ui', {
   },
 
   {
+    name = 'actions: uninstall_plugin forgets everything it cached for the plugin',
+    fn = function()
+      -- The UI caches the details, url, commit, update state and expansion
+      -- of every plugin. A plugin that was uninstalled is no longer on disk,
+      -- so none of that should stay reachable.
+      local orig_confirm = vim.fn.confirm
+      vim.fn.confirm = function() return 1 end -- 'Yes'
+
+      local l = live()
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return {
+          del = function() return true end,
+          get = function() return {} end,
+        }
+      end
+
+      local name = 'gone-plugin'
+      l.state.state.pack_details[name] = { spec = { name = name } }
+      l.state.state.urls[name] = 'https://example.com/gone'
+      l.state.state.commits[name] = 'abc1234'
+      l.state.state.updates[name] = { has_update = true }
+      l.state.state.expanded[name] = true
+      l.scanner.load_times[name] = 1.5
+
+      with_capture(function()
+        l.actions.uninstall_plugin(name)
+      end)
+
+      vim.fn.confirm = orig_confirm
+      l.utils.get_pack = orig_get_pack
+
+      test.assert_nil(l.state.state.pack_details[name], 'pack_details was not pruned')
+      test.assert_nil(l.state.state.urls[name], 'urls was not pruned')
+      test.assert_nil(l.state.state.commits[name], 'commits was not pruned')
+      test.assert_nil(l.state.state.updates[name], 'updates was not pruned')
+      test.assert_nil(l.state.state.expanded[name], 'expanded was not pruned')
+      test.assert_nil(l.scanner.load_times[name], 'scanner.load_times was not pruned')
+    end,
+  },
+
+  {
     name = 'actions: checkout_plugin refuses a plugin with no git directory',
     fn = function()
       local l = live()
@@ -682,6 +724,37 @@ test.run_suite('resonance.behavior.ui', {
         'the details task survived the buffer being wiped')
       test.assert_nil(st.state.buf,
         'the UI buffer is still registered after it was wiped')
+    end,
+  },
+
+  {
+    name = 'render: closing the UI releases the rendered lines',
+    fn = function()
+      -- The render buffers are module-level, so the last render's lines and
+      -- highlights stay reachable while the UI is closed. They have to be
+      -- released when it closes.
+      local l = live()
+      require('resonance.ui').open({
+        border = 'rounded',
+        title = 'test',
+        width = 0.5,
+        height = 0.5,
+        backdrop = 0,
+      })
+      vim.wait(300)
+
+      local st = l.state.state
+      test.assert_true(count(st.line_to_name) > 0,
+        'the UI rendered no rows, so this test proves nothing')
+
+      local ui_buf = st.buf
+      api.nvim_buf_delete(ui_buf, { force = true })
+      vim.wait(300)
+
+      test.assert_eq(count(st.line_to_name), 0,
+        'the rendered row map was not released when the UI closed')
+      test.assert_eq(count(st.name_to_line), 0,
+        'the rendered name map was not released when the UI closed')
     end,
   },
 

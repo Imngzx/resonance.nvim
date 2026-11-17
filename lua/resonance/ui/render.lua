@@ -60,13 +60,10 @@ local BUTTONS = {
   { 'q', 'Quit', 'ResoBtnQuitKey', 'ResoBtnQuitText' },
 }
 
--- Cached stats
-local _cached_stats = nil
+-- The startup time is latched by resonance.stats() itself, so there is
+-- nothing to cache here: reading it is cheap and always current.
 local function get_stats()
-  if not _cached_stats then
-    _cached_stats = require('resonance').stats()
-  end
-  return _cached_stats
+  return require('resonance').stats()
 end
 
 -- Module-level render state (reused across calls)

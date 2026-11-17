@@ -233,7 +233,9 @@ resonance.load({
 
 Resonance provides a clean, zero-hack API to retrieve plugin statistics and exact startup times, heavily inspired by `lazy.nvim`.
 
-Because Resonance locks the "Time to UI" exactly at the first moment `require('resonance').stats()` is called, placing this in your dashboard's render function guarantees the most accurate startup time measurement.
+`startuptime` is a one-shot measurement: it is latched at `UIEnter`/`VimEnter` (or at the first `stats()` call, whichever comes first) and never changes afterwards. Placing this in your dashboard's render function therefore guarantees the most accurate startup time measurement.
+
+The plugin counts are read live on every call, because a plugin can load at any point -- after the first `stats()` call, or never.
 
 ### The `stats()` API
 
@@ -242,8 +244,8 @@ local stats = require("resonance").stats()
 -- returns:
 -- {
 --   count = 37,        -- Total number of plugins managed
---   loaded = 20,       -- Plugins loaded at startup
---   startuptime = 24.5,-- Startup time in milliseconds (Time to UI)
+--   loaded = 20,       -- Plugins currently loaded
+--   startuptime = 24.5,-- Startup time in milliseconds (Time to UI), latched
 --   times = { ... }    -- Table containing load times for individual plugins
 -- }
 ```

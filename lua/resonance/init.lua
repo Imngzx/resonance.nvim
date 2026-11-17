@@ -12,8 +12,19 @@ local vim_tbl_deep_extend = vim.tbl_deep_extend
 ---@diagnostic disable-next-line: undefined-field
 M._start_time = _G.start_time or hrtime()
 M._end_time = nil
-M._cached_stats = nil
 local loader_mod = nil
+
+-- The startup time is a one-shot measurement: it is the time from the
+-- start of Neovim to the moment the UI became usable. It is latched once
+-- and never changes afterwards.
+--
+-- The plugin counts are not: a plugin can load at any point, so they are
+-- read live from the scanner on every call.
+local function startup_ms()
+  if not M._start_time then return 0 end
+  M._end_time = M._end_time or hrtime()
+  return (M._end_time - M._start_time) / 1e6
+end
 
 ---@class ResonanceUIConfig
 ---@field border? string|table
@@ -111,26 +122,32 @@ function M.replay_for_buffer(buf)
   return loader_mod.replay_for_buffer(buf)
 end
 
+---Plugin statistics.
+---
+---`startuptime` is latched on the first call and never changes: it is the
+---time from startup to the moment the UI became usable.
+---
+---`count`, `loaded` and `times` are read live, because a plugin can load
+---at any point -- after the first call, or never.
 ---@return table
 function M.stats()
-  if not M._cached_stats then
-    local ms = 0
-    if M._start_time then
-      M._end_time = M._end_time or hrtime()
-      ms = (M._end_time - M._start_time) / 1e6
-    end
+  local info = require('resonance.scanner').get_info()
 
-    local info = require('resonance.scanner').get_info()
+  return {
+    count = info.total,
+    loaded = info.loaded,
+    startuptime = startup_ms(),
+    times = info.load_times,
+  }
+end
 
-    M._cached_stats = {
-      count = info.total,
-      loaded = info.loaded,
-      startuptime = ms,
-      times = info.load_times,
-    }
-  end
-
-  return M._cached_stats
+---Reset the module state (for testing).
+---
+---Clears the latched startup time and the cached loader module, so a
+---fresh `stats()` call measures from the start again.
+function M._reset()
+  M._end_time = nil
+  loader_mod = nil
 end
 
 function M.trigger_verylazy()

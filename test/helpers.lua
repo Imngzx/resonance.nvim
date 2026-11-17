@@ -18,6 +18,7 @@ local M = {}
 -- at file scope can be a different generation than the one under test.
 function M.live()
   return {
+    resonance = require('resonance'),
     loader = require('resonance.loader'),
     dag = require('resonance.loader.dag'),
     scanner = require('resonance.scanner'),

@@ -332,9 +332,14 @@ vim.schedule(function()
 end)
 ```
 
-`replay_for_buffer()` fires only the events that have **not** run for the
-buffer yet. Firing them unconditionally makes every handler run twice, and
-a duplicated `FileType` can reach `E218`.
+`replay_for_buffer()` fires each read event once per **trigger group** that
+has not yet run for the buffer. No handler runs twice for the same read,
+and a trigger registered after the event already fired still gets its
+chance to load — that is what makes the statusline and bufferline appear
+when Neovim is started with a file.
+
+Firing the events unconditionally instead makes every handler run twice,
+and a duplicated `FileType` can reach `E218`.
 
 For finer control, `require('resonance').has_fired(event, buf)` tells you
 whether an event has already run for a buffer.

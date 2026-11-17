@@ -188,21 +188,73 @@ test.run_suite('resonance.behavior', {
   -- ---------------------------------------------------------------------
 
   {
+    name = 'replay: a trigger registered after the event already fired still loads',
+    fn = function()
+      -- The regression: a plugin whose trigger is registered AFTER the
+      -- event it listens for already fired must still get its chance to
+      -- load. This is the `nvim <file>` / open-from-yazi path: BufReadPost
+      -- and BufEnter fire before UIEnter -> VeryLazy, and the UI plugins
+      -- (heirline, bpm, treesitter, lsp, ...) register their triggers in
+      -- VeryLazy, after the event is already behind them.
+      --
+      -- The fired-event state is tracked per buffer, so the replay used to
+      -- skip the event entirely and the plugin never loaded: no statusline,
+      -- no bufferline, no breadcrumb.
+      test.stub_pack()
+      local l = live()
+      local buf = api.nvim_create_buf(false, true)
+      local setup_ran = false
+
+      -- The buffer must name a file that exists on disk: replay_for_buffer
+      -- treats a named-but-missing buffer as a new file and fires
+      -- BufNewFile, which would let the trigger load for the wrong reason.
+      local file = vim.fn.tempname()
+      vim.fn.writefile({ 'x' }, file)
+      api.nvim_buf_set_name(buf, file)
+
+      -- The read events happen FIRST, before the trigger exists.
+      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPost', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufEnter', { buffer = buf, modeline = false })
+
+      -- The plugin registers its trigger NOW, after those events fired.
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-late-trigger',
+        event = { 'BufReadPost', 'BufNewFile', 'BufEnter' },
+        setup = function() setup_ran = true end,
+      })
+
+      -- The replay must give the late-registered trigger its chance.
+      local replayed = _G.resonance.replay_for_buffer(buf)
+      vim.wait(200)
+
+      test.assert_true(setup_ran,
+        'the late-registered trigger never fired: the replay returned [' ..
+        table.concat(replayed, ',') .. ']')
+    end,
+  },
+
+  {
     name = 'replay: the triggering event handler runs exactly once',
     fn = function()
+      test.stub_pack()
       local l = live()
       local buf = api.nvim_create_buf(false, true)
       local seen = recorder('BufReadPre', { group_name = 'ResonanceReplayOnce', buffer = buf })
+      local setup_ran = false
 
       _G.resonance.load({
         src = 'https://github.com/test/replay-once',
         event = 'BufReadPre',
-        setup = function() end,
+        setup = function() setup_ran = true end,
       })
 
       api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
       vim.wait(100)
 
+      -- The install must have succeeded, or the load aborted before the
+      -- replay block and this assertion would pass without testing it.
+      test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
       test.assert_eq(count(seen), 1)
     end,
   },
@@ -210,18 +262,23 @@ test.run_suite('resonance.behavior', {
   {
     name = 'replay: a successor event that has not fired yet is not replayed',
     fn = function()
+      test.stub_pack()
       local l = live()
       local seen = recorder('BufReadPost', { group_name = 'ResonanceReplayPending' })
+      local setup_ran = false
 
       _G.resonance.load({
         src = 'https://github.com/test/replay-pending',
         event = 'BufReadPre',
-        setup = function() end,
+        setup = function() setup_ran = true end,
       })
 
       api.nvim_exec_autocmds('BufReadPre', { modeline = false })
       vim.wait(100)
 
+      -- Without a successful install the load aborts before the replay
+      -- block, and this assertion would pass without testing anything.
+      test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
       -- BufReadPost is still to come for this read; firing it now would run
       -- the handler twice for a single read.
       test.assert_eq(count(seen), 0)
@@ -259,12 +316,14 @@ test.run_suite('resonance.behavior', {
   {
     name = 'replay: a read on one buffer does not replay another buffer',
     fn = function()
+      test.stub_pack()
       local l = live()
       local buf_a = api.nvim_create_buf(false, true)
       local buf_b = api.nvim_create_buf(false, true)
 
       local seen_a = recorder('BufReadPost', { group_name = 'ResonanceReplayBufA', buffer = buf_a })
       local seen_b = recorder('BufReadPost', { group_name = 'ResonanceReplayBufB', buffer = buf_b })
+      local setup_ran = false
 
       -- Buffer A's read already happened.
       api.nvim_exec_autocmds('BufReadPost', { buffer = buf_a, modeline = false })
@@ -273,13 +332,14 @@ test.run_suite('resonance.behavior', {
       _G.resonance.load({
         src = 'https://github.com/test/replay-two-buffers',
         event = 'BufNewFile',
-        setup = function() end,
+        setup = function() setup_ran = true end,
       })
 
       -- Buffer B is a different buffer, so A's state must not apply to it.
       api.nvim_exec_autocmds('BufNewFile', { buffer = buf_b, modeline = false })
       vim.wait(100)
 
+      test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
       test.assert_eq(count(seen_a), 1)
       test.assert_eq(count(seen_b), 0)
     end,
@@ -288,10 +348,12 @@ test.run_suite('resonance.behavior', {
   {
     name = 'replay: nested triggers do not recurse without bound',
     fn = function()
+      test.stub_pack()
       local l = live()
       local buf = api.nvim_create_buf(false, true)
       local depth = 0
       local max_depth = 0
+      local setup_ran = false
 
       local group = scratch_group('ResonanceReplayDepth')
       api.nvim_create_autocmd('BufReadPre', {
@@ -311,12 +373,15 @@ test.run_suite('resonance.behavior', {
       _G.resonance.load({
         src = 'https://github.com/test/replay-depth',
         event = 'BufReadPre',
-        setup = function() end,
+        setup = function() setup_ran = true end,
       })
 
       api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
       vim.wait(200)
 
+      -- Without a successful install the load aborts before the replay
+      -- block, and the depth bound is never exercised.
+      test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
       -- The loader must not stack replays on top of each other. The handler
       -- above recurses on its own, so the bound is on the loader's own
       -- contribution, which shows up as an unbounded depth here.
@@ -656,8 +721,10 @@ test.run_suite('resonance.behavior', {
       -- chain by firing the whole event would re-run those ungrouped
       -- triggers, and with two plugins on the same event each load would
       -- trigger the other's replay, recursing until Neovim raises E218.
+      test.stub_pack()
       local l = live()
       local post_fires = 0
+      local setups = 0
       api.nvim_create_autocmd('BufReadPost', {
         callback = function() post_fires = post_fires + 1 end,
       })
@@ -665,18 +732,21 @@ test.run_suite('resonance.behavior', {
       _G.resonance.load({
         src = 'https://github.com/test/replay-ungrouped-a',
         event = 'BufReadPre',
-        setup = function() end,
+        setup = function() setups = setups + 1 end,
       })
       _G.resonance.load({
         src = 'https://github.com/test/replay-ungrouped-b',
         event = 'BufReadPre',
-        setup = function() end,
+        setup = function() setups = setups + 1 end,
       })
 
       local buf = api.nvim_create_buf(false, true)
       api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
       vim.wait(300)
 
+      -- Without a successful install the load aborts before the replay
+      -- block, and this assertion would pass without testing anything.
+      test.assert_eq(setups, 2, 'the plugins never loaded: the replay block was never reached')
       -- The replay must not fire the ungrouped trigger at all.
       test.assert_eq(post_fires, 0)
     end,
@@ -687,8 +757,10 @@ test.run_suite('resonance.behavior', {
     fn = function()
       -- The shape that produced E218: an ungrouped handler that fires the
       -- event again, reached through the replay.
+      test.stub_pack()
       local l = live()
       local fires = 0
+      local setups = 0
       api.nvim_create_autocmd('BufReadPost', {
         callback = function()
           fires = fires + 1
@@ -701,18 +773,21 @@ test.run_suite('resonance.behavior', {
       _G.resonance.load({
         src = 'https://github.com/test/replay-recursion-a',
         event = 'BufReadPre',
-        setup = function() end,
+        setup = function() setups = setups + 1 end,
       })
       _G.resonance.load({
         src = 'https://github.com/test/replay-recursion-b',
         event = 'BufReadPre',
-        setup = function() end,
+        setup = function() setups = setups + 1 end,
       })
 
       local buf = api.nvim_create_buf(false, true)
       local ok, err = pcall(api.nvim_exec_autocmds, 'BufReadPre', { buffer = buf, modeline = false })
       vim.wait(300)
 
+      -- Without a successful install the load aborts before the replay
+      -- block, and this assertion would pass without testing anything.
+      test.assert_eq(setups, 2, 'the plugins never loaded: the replay block was never reached')
       test.assert_true(ok, 'the trigger recursed: ' .. tostring(err))
       -- The replay must not have reached the ungrouped handler.
       test.assert_eq(fires, 0)

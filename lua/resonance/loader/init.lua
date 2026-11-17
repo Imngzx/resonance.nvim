@@ -73,6 +73,17 @@ local MAX_REPLAY_DEPTH = 2
 -- events still pending for the current one.
 local fired_events = {}
 
+-- Which trigger groups have already run for a buffer.
+--
+-- The per-event table above answers "has this event fired for this buffer?".
+-- That is the wrong question for a trigger: a group registered AFTER the
+-- event fired has not seen the event yet, even though the event is in the
+-- past. Tracking the groups separately lets the replay give a late-registered
+-- trigger its chance, while still skipping the groups that already ran.
+--
+-- Keyed by buffer, then by group name.
+local fired_groups = {}
+
 -- BufRead and BufReadPost are aliases in Neovim: an autocmd registered for
 -- one fires for the other, and get_autocmds matches them together. The
 -- tracker only registers BufReadPost, so map BufRead onto it.
@@ -94,6 +105,25 @@ local function mark_fired(event, buf)
     fired_events[buf] = per_buf
   end
   per_buf[event_fired_key(event)] = true
+end
+
+-- Whether a trigger group has already run for a buffer.
+local function group_has_fired(group_name, buf)
+  if not group_name then return false end
+  local per_buf = fired_groups[buf]
+  if not per_buf then return false end
+  return per_buf[group_name] == true
+end
+
+-- Record that a trigger group has run for a buffer.
+local function mark_group_fired(group_name, buf)
+  if not group_name then return end
+  local per_buf = fired_groups[buf]
+  if not per_buf then
+    per_buf = {}
+    fired_groups[buf] = per_buf
+  end
+  per_buf[group_name] = true
 end
 
 local _plugin_dir_cache = nil
@@ -185,6 +215,18 @@ local function setup_event_tracker()
       group = tracker_group,
       callback = function(args)
         mark_fired(name, args.buf)
+        -- Mark every trigger group that existed when this event fired: they
+        -- have seen the event, so the replay must not fire them again.
+        --
+        -- A group registered AFTER the event is not marked here, which is
+        -- exactly what lets a late-registered trigger still load.
+        local autocmds = get_autocmds({ event = name })
+        for a = 1, #autocmds do
+          local autocmd = autocmds[a]
+          if autocmd.event == name and autocmd.group_name then
+            mark_group_fired(autocmd.group_name, args.buf)
+          end
+        end
       end,
     })
   end
@@ -206,14 +248,21 @@ end
 
 -- Replay the read events a buffer has already missed.
 --
--- Fires only the events that have already run for the buffer, so a handler
--- is not invoked twice for the same read. Events that are still pending for
--- the current read are left alone: Neovim fires them naturally.
+-- Fires only the trigger groups that have not yet run for the buffer, so a
+-- handler is not invoked twice for the same read. Events that are still
+-- pending for the current read are left alone: Neovim fires them naturally.
+--
+-- The unit of "already ran" is the trigger group, not the event. A group
+-- registered after the event already fired has not seen it yet, and must
+-- still get its chance to load: that is the `nvim <file>` path, where
+-- BufReadPost and BufEnter fire before UIEnter -> VeryLazy, and the UI
+-- plugins register their triggers in VeryLazy.
 ---@param buf integer
 ---@return string[] fired the events that were replayed
 function M.replay_for_buffer(buf)
   local fired = {}
   if not buf then return fired end
+  if not api.nvim_buf_is_valid(buf) then return fired end
   local api_exec = exec_autocmds
 
   -- A buffer with a name that exists on disk was read; one without was
@@ -225,30 +274,41 @@ function M.replay_for_buffer(buf)
     is_file = stat ~= nil and stat.type == 'file'
   end
 
-  if is_file then
-    if not has_fired('BufReadPre', buf) then
-      api_exec('BufReadPre', { buf = buf, modeline = false })
-      fired[#fired + 1] = 'BufReadPre'
+  -- Fire one event once per trigger group that has not run for this buffer.
+  --
+  -- Firing the whole event would re-run the groups that already saw it,
+  -- which is what caused the duplicate handlers and the E218 recursion. So
+  -- the event is fired once per pending group, scoped to that group.
+  local function fire_groups(event)
+    local autocmds = get_autocmds({ event = event })
+    local done = {}
+    local any = false
+    for a = 1, #autocmds do
+      local autocmd = autocmds[a]
+      -- get_autocmds matches BufRead and BufReadPost together, so filter to
+      -- the event actually being replayed.
+      if autocmd.event == event then
+        local group_name = autocmd.group_name
+        if group_name and not done[group_name] and not group_has_fired(group_name, buf) then
+          done[group_name] = true
+          mark_group_fired(group_name, buf)
+          api_exec(event, { buf = buf, group = group_name, modeline = false })
+          any = true
+        end
+      end
     end
-    if not has_fired('BufReadPost', buf) then
-      api_exec('BufReadPost', { buf = buf, modeline = false })
-      fired[#fired + 1] = 'BufReadPost'
-    end
-  else
-    if not has_fired('BufNewFile', buf) then
-      api_exec('BufNewFile', { buf = buf, modeline = false })
-      fired[#fired + 1] = 'BufNewFile'
-    end
-    if not has_fired('BufEnter', buf) then
-      api_exec('BufEnter', { buf = buf, modeline = false })
-      fired[#fired + 1] = 'BufEnter'
-    end
+    if any then fired[#fired + 1] = event end
   end
 
-  if not has_fired('FileType', buf) then
-    api_exec('FileType', { buf = buf, modeline = false })
-    fired[#fired + 1] = 'FileType'
+  if is_file then
+    fire_groups('BufReadPre')
+    fire_groups('BufReadPost')
+  else
+    fire_groups('BufNewFile')
+    fire_groups('BufEnter')
   end
+
+  fire_groups('FileType')
 
   return fired
 end
@@ -278,6 +338,7 @@ function M._reset()
   for k in pairs(M.plugin_triggers) do M.plugin_triggers[k] = nil end
   for k in pairs(M.spec_urls) do M.spec_urls[k] = nil end
   for k in pairs(fired_events) do fired_events[k] = nil end
+  for k in pairs(fired_groups) do fired_groups[k] = nil end
   replay_depth = 0
   _plugin_dir_cache = nil
 end
@@ -364,11 +425,32 @@ function M.load(config)
     end
   end
 
+  -- The name of the augroup that holds this spec's triggers. The replay
+  -- addresses trigger groups individually, so the loader has to know which
+  -- group belongs to which spec.
+  local group_name = parsed_names[1]
+  if not group_name then
+    local first = config.plugin
+    if type(first) == 'string' then
+      group_name = utils.extract_name(first)
+    elseif type(first) == 'table' then
+      local src = first.src or first[1] or first.url
+      group_name = first.name or (src and utils.extract_name(src))
+    end
+  end
+  local trigger_group_name = triggers.trigger_group_name(group_name)
+
   -- Create a single load_now function that loads all plugins in the group
   -- This ensures force_load_fns works for dependency resolution for any plugin in the group
   local current_name = parsed_names[1]
 
   local function load_now(ev, visiting_path)
+    -- This trigger group has now seen the event. Record it so a later replay
+    -- does not fire it a second time for the same buffer.
+    if ev and type(ev) == 'table' and ev.buf then
+      mark_group_fired(trigger_group_name, ev.buf)
+    end
+
     -- Track each member independently while sharing one group load callback.
     local state = plugin_state[current_name]
     if not state then
@@ -579,16 +661,6 @@ function M.load(config)
 
   -- Register the triggers in a group named after the plugin, so the replay
   -- can address them individually and exclude the ones that already ran.
-  local group_name = parsed_names[1]
-  if not group_name then
-    local first = config.plugin
-    if type(first) == 'string' then
-      group_name = utils.extract_name(first)
-    elseif type(first) == 'table' then
-      local src = first.src or first[1] or first.url
-      group_name = first.name or (src and utils.extract_name(src))
-    end
-  end
   triggers.register_all(config, load_now, triggers.trigger_group(group_name))
 end
 

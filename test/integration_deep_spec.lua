@@ -30,9 +30,11 @@ test.run_suite('resonance.loader.deep', {
       -- A buffer-scoped autocmd, like the ones that make the event chain
       -- non-empty. Replaying this event would re-run the very autocmd the
       -- loader is running inside, recursing until Neovim raises E218.
+      test.stub_pack()
       local buf = vim.api.nvim_create_buf(false, true)
       local group = vim.api.nvim_create_augroup('ResonanceReplayTest', { clear = true })
       local fired = 0
+      local setup_ran = false
       vim.api.nvim_create_autocmd('BufReadPre', {
         group = group,
         buffer = buf,
@@ -42,12 +44,15 @@ test.run_suite('resonance.loader.deep', {
       _G.resonance.load({
         src = 'https://github.com/test/replay-origin',
         event = 'BufReadPre',
-        setup = function() end,
+        setup = function() setup_ran = true end,
       })
 
       vim.api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
       vim.wait(100)
 
+      -- Without a successful install the load aborts before the replay
+      -- block, and this assertion would pass without testing anything.
+      test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
       -- The origin event must fire exactly once: the original, no replay.
       test.assert_eq(fired, 1)
     end,
@@ -59,8 +64,10 @@ test.run_suite('resonance.loader.deep', {
       -- A read that happened for one buffer must not suppress the events
       -- still pending for another buffer, and must not cause the first
       -- buffer's handlers to run again.
+      test.stub_pack()
       local group = vim.api.nvim_create_augroup('ResonanceReplayPerBuf', { clear = true })
       local counts = {}
+      local setup_ran = false
       vim.api.nvim_create_autocmd('BufReadPost', {
         group = group,
         callback = function(args) counts[args.buf] = (counts[args.buf] or 0) + 1 end,
@@ -74,7 +81,7 @@ test.run_suite('resonance.loader.deep', {
       _G.resonance.load({
         src = 'https://github.com/test/replay-perbuf',
         event = 'BufNewFile',
-        setup = function() end,
+        setup = function() setup_ran = true end,
       })
 
       -- Buffer B: a brand new file, its read has not happened yet.
@@ -82,6 +89,9 @@ test.run_suite('resonance.loader.deep', {
       vim.api.nvim_exec_autocmds('BufNewFile', { buffer = buf_b, modeline = false })
       vim.wait(100)
 
+      -- Without a successful install the load aborts before the replay
+      -- block, and this assertion would pass without testing anything.
+      test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
       -- Buffer A must not be replayed, and buffer B must not be replayed
       -- early: its read event is still pending and will fire naturally.
       test.assert_eq(counts[buf_a], 1)
@@ -95,8 +105,10 @@ test.run_suite('resonance.loader.deep', {
       -- BufRead and BufReadPost are still to come for the current read.
       -- Firing them from the replay would run them twice, and a handler that
       -- opens a file would recurse until Neovim raises E218.
+      test.stub_pack()
       local group = vim.api.nvim_create_augroup('ResonanceReplayPending', { clear = true })
       local read_count, post_count = 0, 0
+      local setup_ran = false
       vim.api.nvim_create_autocmd('BufRead', {
         group = group,
         callback = function() read_count = read_count + 1 end,
@@ -109,12 +121,15 @@ test.run_suite('resonance.loader.deep', {
       _G.resonance.load({
         src = 'https://github.com/test/replay-pending',
         event = 'BufReadPre',
-        setup = function() end,
+        setup = function() setup_ran = true end,
       })
 
       vim.api.nvim_exec_autocmds('BufReadPre', { modeline = false })
       vim.wait(100)
 
+      -- Without a successful install the load aborts before the replay
+      -- block, and this assertion would pass without testing anything.
+      test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
       -- Neither successor event may be replayed.
       test.assert_eq(read_count, 0)
       test.assert_eq(post_count, 0)

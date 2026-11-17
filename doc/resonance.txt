@@ -294,10 +294,13 @@ actually has.
         buf: buffer number
         Returns: table of the events that were replayed
 
-        Fires only the events that have not run for the buffer yet, so a
-        handler is never invoked twice for the same read. Events still
-        pending for the current read are left alone: Neovim fires them
-        naturally.
+        Fires each read event once per trigger group that has not yet run
+        for the buffer. A handler is therefore never invoked twice for the
+        same read, while a trigger registered after the event already fired
+        still gets its chance to load.
+
+        Events still pending for the current read are left alone: Neovim
+        fires them naturally. An invalid buffer id is ignored.
 
         Useful in a config that replays missed events at startup: >lua
             vim.schedule(function()

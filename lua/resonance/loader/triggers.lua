@@ -28,8 +28,15 @@ local vim_log_levels = vim.log.levels
 -- The group name is derived from the plugin name so it stays stable across
 -- registrations and unique per plugin.
 local function trigger_group(name)
+  return create_augroup(M.trigger_group_name(name), { clear = false })
+end
+
+-- The augroup name for a plugin. The loader needs the name as well as the
+-- group handle: the replay addresses trigger groups by name, and the fired
+-- state is tracked per group.
+function M.trigger_group_name(name)
   local safe = gsub(tostring(name or 'plugin'), '[^%w_.-]', '_')
-  return create_augroup('Resonance_' .. safe, { clear = false })
+  return 'Resonance_' .. safe
 end
 
 M.trigger_group = trigger_group

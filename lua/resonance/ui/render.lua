@@ -91,7 +91,9 @@ end
 local function nl()
   line_idx = line_idx + 1
   lines[line_idx] = table_concat(line_parts)
-  line_parts = {}
+  -- Clear the parts in place. Replacing the table allocated a fresh one
+  -- per rendered line, and made reset_render_state's table_clear a no-op.
+  table_clear(line_parts)
   cur_col = 0
 end
 
@@ -106,8 +108,10 @@ local function reset_render_state()
   table_clear(line_parts)
   line_idx = 0
   cur_col = 0
-  st.state.line_to_name = {}
-  st.state.name_to_line = {}
+  -- Clear the maps in place. Replacing them allocated two fresh tables on
+  -- every render, and any holder of the old table kept a stale copy.
+  table_clear(st.state.line_to_name)
+  table_clear(st.state.name_to_line)
 end
 
 -- DAG view rendering (must be before build_content for upvalue reference)

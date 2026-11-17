@@ -174,15 +174,15 @@ function M.open(ui_config)
       i = end_idx + 1
       if i <= total then
         vim_defer_fn(chunk, 5)
-      else
+      elseif i > 10 then
+        -- The first chunk ran synchronously, so the render below already
+        -- covers it. Only a deferred final chunk needs its own render.
         render_mod.schedule_render()
       end
     end
     chunk()
   end
   load_commits_async()
-
-  render_mod.render()
 
   -- Cancel the deferred details task when the UI closes. The task writes
   -- into st.state, so it must not outlive the window.

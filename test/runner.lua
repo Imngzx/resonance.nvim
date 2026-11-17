@@ -219,10 +219,20 @@ end
 local function reset_state()
   if _G.loader and _G.loader._reset then _G.loader._reset() end
   if _G.resonance and _G.resonance._reset then _G.resonance._reset() end
-  -- Close any open UI window from previous test
-  local state = package.loaded['resonance.ui.state']
-  if state and state.state and state.state.win and vim.api.nvim_win_is_valid(state.state.win) then
-    pcall(vim.api.nvim_win_close, state.state.win, true)
+  -- Close any open UI window from the previous test.
+  --
+  -- The window can belong to an older generation of the state module: the
+  -- runner resets package.loaded between tests, so the current instance
+  -- knows nothing about a window the previous one created. Reading only
+  -- the current instance leaves that window open, and the next open_ui()
+  -- then sees a valid window and returns early -- so the test would not
+  -- exercise the UI at all. Closing every floating window is the reliable
+  -- way to make each test start from a clean slate.
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    local config = vim.api.nvim_win_get_config(win)
+    if config and config.relative ~= '' then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
   end
   package.loaded['resonance.ui.state'] = nil
   local state = require('resonance.ui.state')

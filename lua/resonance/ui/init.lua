@@ -179,43 +179,6 @@ function M.open(ui_config)
       end
     end
     chunk()
-
-    -- Second pass: fetch branches/tags asynchronously (info=true is slow ~300ms)
-    --
-    -- This runs as a cancellable task so that closing the UI stops it. The
-    -- task writes into st.state, which the UI owns; a deferred callback has
-    -- no way to know the UI is gone.
-    local details_task = async.run('resonance_ui_details', function()
-      -- Yield once so the UI is interactive before the slow call.
-      async.sleep(50)
-      local pack2 = utils.get_pack()
-      if not pack2 then return end
-      local ok, packs = pcall(pack2.get, nil, { offline = true, info = true })
-      if not ok or type(packs) ~= 'table' then return end
-      -- The UI may have been closed while the fetch was running.
-      if not st.state.buf then return end
-      for p = 1, #packs do
-        local pk = packs[p]
-        local name = pk.spec.name
-        if pk.branches then
-          st.state.pack_details[name] = st.state.pack_details[name] or {}
-          st.state.pack_details[name].branches = pk.branches
-        end
-        if pk.tags then
-          st.state.pack_details[name] = st.state.pack_details[name] or {}
-          st.state.pack_details[name].tags = pk.tags
-        end
-      end
-      render_mod.schedule_render()
-    end)
-    details_task:on_complete(function(err)
-      if not err then return end
-      -- A cancelled task reports the cancellation; that is expected.
-      if st.state.buf then
-        utils.notify('Failed to load plugin details: ' .. tostring(err), vim_log_levels.ERROR)
-      end
-    end)
-    st.state.details_task = details_task
   end
   load_commits_async()
 

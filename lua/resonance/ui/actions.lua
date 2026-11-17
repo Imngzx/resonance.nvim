@@ -163,10 +163,58 @@ function M.check_updates_network()
   return true
 end
 
+--- Fetch the branches and tags for one plugin.
+---
+--- The UI used to ask pack.get for info = true across every installed
+--- plugin when it opened. That is ~420 ms at 49 plugins and a ~2.5 s
+--- main-thread freeze at 300 -- all of it for the branches and tags,
+--- which are only shown on an expanded row. Now only the row that is
+--- expanded is asked about.
+---
+--- The query runs as a cancellable task: it writes into st.state, which
+--- the UI owns, and a deferred callback has no way to know the UI is
+--- gone.
+---@param name string
+local function fetch_plugin_details(name)
+  local details = st.state.pack_details[name]
+  -- Already fetched: nothing to do.
+  if details and (details.branches or details.tags) then return end
+
+  local pack = utils.get_pack()
+  if not pack then return end
+
+  local task = async.run('resonance_ui_details', function()
+    -- Yield once so the UI stays interactive.
+    async.sleep(50)
+    local ok, packs = pcall(pack.get, { name }, { offline = true, info = true })
+    if not ok or type(packs) ~= 'table' or not packs[1] then return end
+    -- The UI may have been closed while the fetch was running.
+    if not st.state.buf then return end
+    local pk = packs[1]
+    local entry = st.state.pack_details[name] or {}
+    if pk.branches then entry.branches = pk.branches end
+    if pk.tags then entry.tags = pk.tags end
+    st.state.pack_details[name] = entry
+    render_mod.schedule_render()
+  end)
+  task:on_complete(function(err)
+    if not err then return end
+    -- A cancelled task reports the cancellation; that is expected.
+    if st.state.buf then
+      utils.notify('Failed to load plugin details: ' .. tostring(err), vim_log_levels.ERROR)
+    end
+  end)
+  st.state.details_task = task
+end
+
 function M.toggle_details()
   local name = st.plugin_at_cursor()
   if not name then return end
-  st.state.expanded[name] = not st.state.expanded[name]
+  local expanding = not st.state.expanded[name]
+  st.state.expanded[name] = expanding or nil
+  if expanding then
+    fetch_plugin_details(name)
+  end
   render_mod.render()
 end
 

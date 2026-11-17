@@ -596,13 +596,40 @@ test.run_suite('resonance.behavior.ui', {
       -- The details task writes into the UI state. A deferred callback has
       -- no way to know the UI is gone, so it runs as a cancellable task that
       -- the close handler cancels.
+      --
+      -- The task is started by expanding a row, not by opening the UI: the
+      -- UI no longer asks for the details of every plugin up front.
       local l = live()
-      require('resonance').open_ui()
+      local buf = api.nvim_create_buf(false, true)
+      local win = api.nvim_open_win(buf, false, {
+        relative = 'editor', row = 1, col = 1, width = 40, height = 10,
+      })
+      l.state.state.buf = buf
+      l.state.state.win = win
+      l.state.state.info = {
+        total = 1,
+        loaded = 1,
+        plugins = {
+          name = { 'some-plugin' },
+          type = { 'opt' },
+          path = { '/tmp' },
+          loaded = { true },
+          disabled = { false },
+          trigger = { 'event' },
+        },
+      }
+      api.nvim_set_current_win(win)
+      require('resonance.ui.render').render()
+      local plugin_line = l.state.state.name_to_line['some-plugin']
+      test.assert_not_nil(plugin_line)
+      api.nvim_win_set_cursor(win, { plugin_line, 0 })
+
+      l.actions.toggle_details()
       vim.wait(100)
 
       local st = l.state
       test.assert_not_nil(st.state.details_task,
-        'the deferred details pass is not running as a task')
+        'the details pass is not running as a task')
 
       -- Close the UI the way the keymap does.
       local task = st.state.details_task
@@ -622,20 +649,33 @@ test.run_suite('resonance.behavior.ui', {
       -- The details task was only cancelled by the q/Esc keymaps and the
       -- native close handler. Closing the UI another way -- :q, <C-w>c, or
       -- :bwipeout -- left the task running and st.state.buf non-nil, so
-      -- the second pass still ran pack.get(info=true) 50 ms later and
+      -- the details pass still ran pack.get(info=true) 50 ms later and
       -- wrote into a buffer nobody owned.
+      --
+      -- The UI has to be opened through open_ui: that is where the
+      -- BufWipeout autocmd is registered.
       local l = live()
       require('resonance').open_ui()
       vim.wait(100)
 
       local st = l.state
+      local ui_buf = st.state.buf
+      test.assert_not_nil(ui_buf)
+
+      -- Start the details task by expanding a row.
+      local plugin_line = st.state.name_to_line and st.state.name_to_line['resonance.nvim']
+      if plugin_line and st.state.win and api.nvim_win_is_valid(st.state.win) then
+        api.nvim_set_current_win(st.state.win)
+        api.nvim_win_set_cursor(st.state.win, { plugin_line, 0 })
+        l.actions.toggle_details()
+        vim.wait(100)
+      end
+
       test.assert_not_nil(st.state.details_task,
-        'the deferred details pass is not running as a task')
-      local buf = st.state.buf
-      test.assert_not_nil(buf)
+        'the details pass is not running as a task')
 
       -- Close the UI the way :q and <C-w>c do: the buffer goes away.
-      api.nvim_buf_delete(buf, { force = true })
+      api.nvim_buf_delete(ui_buf, { force = true })
       vim.wait(300)
 
       test.assert_nil(st.state.details_task,
@@ -728,6 +768,111 @@ test.run_suite('resonance.behavior.ui', {
       test.assert_eq(require('resonance.ui.state').plugin_at_cursor(), 'a-plugin')
 
       api.nvim_win_close(win, true)
+    end,
+  },
+
+  {
+    name = 'ui: opening the UI does not fetch info for every plugin',
+    fn = function()
+      -- Pass 2 asked pack.get for info = true across every installed
+      -- plugin, 50 ms after the UI opened. That is ~420 ms at 49 plugins
+      -- and a ~2.5 s main-thread freeze at 300 -- all of it for the
+      -- branches and tags, which are only shown on an expanded row.
+      --
+      -- The UI modules capture `utils` when they are first required, so
+      -- the stub has to be installed on that exact instance. Requiring
+      -- resonance.ui first forces the capture.
+      local l = live()
+      require('resonance.ui')
+      local utils = require('resonance.utils')
+      local real_get = utils.get_pack()
+      test.assert_not_nil(real_get, 'vim.pack is not available')
+
+      local info_calls = {}
+      local stub = {
+        get = function(names, opts)
+          if opts and opts.info then
+            -- names can be nil (every plugin), and assigning nil to a table
+            -- slot is a no-op, so the request has to be recorded explicitly.
+            info_calls[#info_calls + 1] = names or 'ALL'
+          end
+          return real_get(names, opts)
+        end,
+      }
+      for key, value in pairs(real_get) do
+        if stub[key] == nil then stub[key] = value end
+      end
+      local orig = utils.get_pack
+      utils.get_pack = function() return stub end
+
+      require('resonance').open_ui()
+      vim.wait(400)
+
+      utils.get_pack = orig
+
+      test.assert_eq(#info_calls, 0,
+        'opening the UI fetched info = true for ' .. #info_calls .. ' request(s)')
+    end,
+  },
+
+  {
+    name = 'ui: expanding a row fetches info for that plugin only',
+    fn = function()
+      local l = live()
+      local utils = l.utils
+      local real_get = utils.get_pack()
+      test.assert_not_nil(real_get, 'vim.pack is not available')
+
+      local info_calls = {}
+      local stub = {
+        get = function(names, opts)
+          if opts and opts.info then
+            info_calls[#info_calls + 1] = names
+          end
+          return real_get(names, opts)
+        end,
+      }
+      for key, value in pairs(real_get) do
+        if stub[key] == nil then stub[key] = value end
+      end
+      local orig = utils.get_pack
+      utils.get_pack = function() return stub end
+
+      -- Put a plugin row on the screen and put the cursor on it.
+      local buf = api.nvim_create_buf(false, true)
+      local win = api.nvim_open_win(buf, false, {
+        relative = 'editor', row = 1, col = 1, width = 40, height = 10,
+      })
+      l.state.state.buf = buf
+      l.state.state.win = win
+      l.state.state.info = {
+        total = 1,
+        loaded = 1,
+        plugins = {
+          name = { 'some-plugin' },
+          type = { 'opt' },
+          path = { '/tmp' },
+          loaded = { true },
+          disabled = { false },
+          trigger = { 'event' },
+        },
+      }
+      api.nvim_set_current_win(win)
+      require('resonance.ui.render').render()
+      local plugin_line = l.state.state.name_to_line['some-plugin']
+      test.assert_not_nil(plugin_line)
+      api.nvim_win_set_cursor(win, { plugin_line, 0 })
+
+      l.actions.toggle_details()
+      vim.wait(200)
+
+      utils.get_pack = orig
+      api.nvim_win_close(win, true)
+
+      test.assert_eq(#info_calls, 1,
+        'expanding a row made ' .. #info_calls .. ' info requests')
+      test.assert_eq(info_calls[1][1], 'some-plugin',
+        'the info request was not for the expanded plugin')
     end,
   },
 

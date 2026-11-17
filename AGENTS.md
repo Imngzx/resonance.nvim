@@ -10,13 +10,17 @@
 
 | Path | Role |
 |---|---|
-| `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `stats()`, `open_ui()`, `replay_for_buffer()` |
+| `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `stats()`, `open_ui()`, `has_fired()`, `replay_for_buffer()` |
 | `lua/resonance/loader/` | Control plane: `init` (load/force-load), `spec` (normalize), `triggers` (autocmd/cmd/keymap/ft), `build` (build hooks), `dag` (dependency + event-chain data) |
 | `lua/resonance/scanner.lua` | Read-only discovery of installed plugins (SOA parallel arrays) |
 | `lua/resonance/ui/` | Panel: `init` (window + keymaps), `state` (singleton), `render`, `actions` |
 | `lua/resonance/utils.lua` | Shared helpers — **`utils.get_pack()` lives here** |
 
 Entry point: `require('resonance').setup()`.
+
+**Tools:** `rg` (ripgrep) for content search, `fd` for file finding — prefer
+both over `grep` and `find`. `nvim` for headless testing, `lua-language-server`
+for diagnostics.
 
 Installed copy (what users actually run, and what the test suite exercises):
 
@@ -157,7 +161,9 @@ address it.
 
 **Modify the build system** — `loader/build.lua`: `run_build()`,
 `check_and_build()`, `mark_build_success()`, `PackChanged` autocmd. The
-`.resonance_built` marker lives in the plugin's own directory.
+`.resonance_built` hash marker currently lives in the plugin's own
+directory, which dirties its git worktree — `plan.md` item 13 moves it to
+`stdpath('state')`. Update this line when that lands.
 
 ---
 

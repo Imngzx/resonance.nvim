@@ -307,6 +307,42 @@ test.run_suite('resonance.loader.deep', {
   },
 
   {
+    name = 'dependency: a failed dependency install stops the parent',
+    fn = function()
+      -- The dependency is registered through resonance.load(), so it takes
+      -- the "dependency is in M.specs" branch. That branch called the
+      -- dependency's loader and discarded the return value, so a failed
+      -- install was invisible: the parent went on to install and run its
+      -- own setup() with a broken dependency.
+      -- Only the dependency fails to install. The parent installs fine, so
+      -- the test proves the parent was stopped by the dependency's failure
+      -- rather than by its own.
+      test.stub_pack({
+        add_error = function(name) return name == 'broken-dep' end,
+        add_error_message = 'install failed for broken-dep',
+      })
+      local parent_setup_ran = false
+      _G.resonance.load({
+        src = 'https://github.com/test/broken-dep',
+        event = { 'User', pattern = 'BrokenDepEvent' },
+        setup = function() end,
+      })
+      _G.resonance.load({
+        src = 'https://github.com/test/parent-plugin',
+        dependencies = { 'https://github.com/test/broken-dep' },
+        event = { 'User', pattern = 'BrokenDepEvent' },
+        setup = function() parent_setup_ran = true end,
+      })
+
+      vim.api.nvim_exec_autocmds('User', { pattern = 'BrokenDepEvent', modeline = false })
+      vim.wait(200)
+
+      test.assert_false(parent_setup_ran,
+        'the parent ran setup() even though its dependency failed to install')
+    end,
+  },
+
+  {
     name = 'dependency: transitive dependencies work',
     fn = function()
       test.stub_pack()

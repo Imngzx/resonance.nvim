@@ -129,7 +129,7 @@ end
 -- Only `add` is replaced. `get` delegates to the real vim.pack so the
 -- scanner and the fallback tests keep seeing the real plugin set.
 --
--- @param opts table|nil { installed = table<string,boolean>, add_error = string }
+-- @param opts table|nil { installed = table<string,boolean>, add_error = string|function, add_error_message = string }
 -- @return table stub, function restore
 local function stub_pack(opts)
   opts = opts or {}
@@ -164,7 +164,20 @@ local function stub_pack(opts)
     calls = calls,
     add = function(specs)
       calls[#calls + 1] = specs
-      if opts.add_error then error(opts.add_error) end
+      if opts.add_error then
+        -- A function is a predicate: it decides per plugin name, so a test
+        -- can fail one install and let the others through.
+        if type(opts.add_error) == 'function' then
+          for _, spec in ipairs(specs) do
+            local name = spec_name(spec)
+            if name and opts.add_error(name) then
+              error(opts.add_error_message or 'install failed for ' .. name)
+            end
+          end
+        else
+          error(opts.add_error)
+        end
+      end
       for _, spec in ipairs(specs) do
         local name = spec_name(spec)
         if name then

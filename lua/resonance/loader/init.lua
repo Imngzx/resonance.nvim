@@ -449,6 +449,14 @@ function M.load(config)
   -- This ensures force_load_fns works for dependency resolution for any plugin in the group
   local current_name = parsed_names[1]
 
+  --- Load this spec's plugins now.
+  ---
+  --- Returns true when the plugins are loaded (or were already loaded), and
+  --- false when the load failed: an install error, or a dependency cycle
+  --- that was aborted. A dependency that returns false stops its parent:
+  --- running the parent's setup() with a broken dependency is worse than
+  --- not running it at all.
+  ---@return boolean ok
   local function load_now(ev, visiting_path)
     -- This trigger group has now seen the event. Record it so a later replay
     -- does not fire it a second time for the same buffer.
@@ -487,11 +495,11 @@ function M.load(config)
       if visiting_path[current_name] then
         local msg = table_concat(path_order, ' -> ') .. ' -> ' .. current_name
         utils.notify('Circular dependency detected: ' .. msg .. ' (aborting)', vim_log_levels.ERROR)
-        return
+        return false
       end
     end
 
-    if all_loaded then return end
+    if all_loaded then return true end
     state.loaded = true
 
     -- Abort the load when an install fails. The plugin is left unloaded so a
@@ -506,7 +514,7 @@ function M.load(config)
         end
       end
       utils.notify(message, vim_log_levels.ERROR)
-      return
+      return false
     end
 
     if current_name then
@@ -522,7 +530,13 @@ function M.load(config)
         (dep_url and M.spec_urls[dep_url])
       if spec_name and M.specs[spec_name] then
         local fn = force_load_fns[spec_name]
-        if fn then fn(nil, visiting_path) end
+        -- The dependency's loader reports its own failure. A dependency
+        -- that failed to install must stop the parent: running the
+        -- parent's setup() with a broken dependency is worse than not
+        -- running it at all.
+        if fn and fn(nil, visiting_path) == false then
+          return fail_install('Dependency failed to load: ' .. dep.name)
+        end
       else
         local dep_ok, dep_err = pack_install({ dep.raw })
         if not dep_ok then
@@ -606,7 +620,7 @@ function M.load(config)
       -- A replay re-fires autocmds, which can re-enter load_now. Bound the
       -- nesting so a plugin whose handler triggers the same event cannot
       -- recurse until Neovim aborts with E218.
-      if replay_depth >= MAX_REPLAY_DEPTH then return end
+      if replay_depth >= MAX_REPLAY_DEPTH then return true end
 
       -- Only replay events that have already fired for this buffer. When a
       -- plugin loads from BufReadPre, Neovim still has BufRead and BufReadPost
@@ -620,7 +634,7 @@ function M.load(config)
       if not has_fired(ev.event, ev.buf) then
         -- The trigger is the first event of its group, so nothing has fired
         -- yet and there is nothing to replay.
-        return
+        return true
       end
 
       local chain = ev.event ~= 'User' and dag._get_event_chain_internal(ev.event, ev.buf, ev.data) or
@@ -657,6 +671,8 @@ function M.load(config)
       replay_depth = replay_depth - 1
       if not replay_ok then error(replay_err) end
     end
+
+    return true
   end
 
   -- Store force_load for ALL plugins in the group (so dependency resolution works for any of them)

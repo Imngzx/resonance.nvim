@@ -523,9 +523,13 @@ test.run_suite('resonance.behavior.ui', {
       -- The user config used to fire BufReadPre/BufReadPost/FileType for
       -- every open buffer, so every handler ran twice.
       local l = live()
-      local counts = { BufReadPre = 0, BufReadPost = 0, FileType = 0 }
+      local counts = { BufReadPre = 0, BufReadPost = 0, BufEnter = 0, FileType = 0 }
       local group = scratch_group('ResonanceReplayProbe')
-      local events = { 'BufReadPre', 'BufReadPost', 'FileType' }
+      -- Opening a file fires all four. BufEnter is in the list because
+      -- Neovim fires it for every buffer, not only new ones -- the replay
+      -- has to treat it the same way, or a BufEnter-only trigger group
+      -- never gets replayed on the `nvim <file>` path.
+      local events = { 'BufReadPre', 'BufReadPost', 'BufEnter', 'FileType' }
 
       local buf = api.nvim_create_buf(false, true)
       vim.fn.writefile({ 'x' }, '/tmp/resonance-replay-probe.txt')
@@ -551,14 +555,15 @@ test.run_suite('resonance.behavior.ui', {
       end
       vim.wait(100)
 
-      local before = { counts.BufReadPre, counts.BufReadPost, counts.FileType }
+      local before = { counts.BufReadPre, counts.BufReadPost, counts.BufEnter, counts.FileType }
 
       -- The replay must not run them a second time.
       local fired = l.loader.replay_for_buffer(buf)
       test.assert_eq(#fired, 0)
       test.assert_eq(counts.BufReadPre, before[1])
       test.assert_eq(counts.BufReadPost, before[2])
-      test.assert_eq(counts.FileType, before[3])
+      test.assert_eq(counts.BufEnter, before[3])
+      test.assert_eq(counts.FileType, before[4])
     end,
   },
 

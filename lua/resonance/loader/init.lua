@@ -300,14 +300,19 @@ function M.replay_for_buffer(buf)
     if any then fired[#fired + 1] = event end
   end
 
+  -- The is_file split decides between the events that genuinely differ for
+  -- an existing file versus a new one. BufEnter fires for every buffer, so
+  -- it is replayed either way -- putting it in the "not a file" branch left
+  -- a BufEnter-only trigger group permanently unreplayed on the
+  -- `nvim <file>` path.
   if is_file then
     fire_groups('BufReadPre')
     fire_groups('BufReadPost')
   else
     fire_groups('BufNewFile')
-    fire_groups('BufEnter')
   end
 
+  fire_groups('BufEnter')
   fire_groups('FileType')
 
   return fired

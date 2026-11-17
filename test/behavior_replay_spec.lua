@@ -66,6 +66,45 @@ test.run_suite('resonance.behavior.replay', {
   },
 
   {
+    name = 'replay: a BufEnter-only trigger loads for a file that exists on disk',
+    fn = function()
+      -- BufEnter fires for EVERY buffer, not only new ones. The replay
+      -- picked its events from whether the buffer is a file on disk and
+      -- put BufEnter in the "not a file" branch, so a BufEnter-only
+      -- trigger group was never replayed for an existing file -- the
+      -- plugin silently never loaded.
+      test.stub_pack()
+      local buf = api.nvim_create_buf(false, true)
+      local setup_ran = false
+
+      -- The buffer must name a file that exists on disk. That is the case
+      -- that used to skip BufEnter.
+      local file = vim.fn.tempname()
+      vim.fn.writefile({ 'x' }, file)
+      api.nvim_buf_set_name(buf, file)
+
+      -- The read events happen FIRST, before the trigger exists.
+      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPost', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufEnter', { buffer = buf, modeline = false })
+
+      -- The plugin registers its BufEnter-only trigger NOW.
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-bufenter-only',
+        event = 'BufEnter',
+        setup = function() setup_ran = true end,
+      })
+
+      local replayed = _G.resonance.replay_for_buffer(buf)
+      vim.wait(200)
+
+      test.assert_true(setup_ran,
+        'the BufEnter-only trigger never fired: the replay returned [' ..
+        table.concat(replayed, ',') .. ']')
+    end,
+  },
+
+  {
     name = 'replay: the triggering event handler runs exactly once',
     fn = function()
       test.stub_pack()

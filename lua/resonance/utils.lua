@@ -3,10 +3,17 @@ local M = {}
 local pcall = pcall
 local type = type
 local string_match = string.match
+local string_sub = string.sub
+local string_gsub = string.gsub
 local table_concat = table.concat
 local table_sort = table.sort
 local string_lower = string.lower
 local vim_notify = vim.notify
+local uv = vim.uv
+local uv_fs_open = uv.fs_open
+local uv_fs_fstat = uv.fs_fstat
+local uv_fs_read = uv.fs_read
+local uv_fs_close = uv.fs_close
 
 local _snacks_checked = false
 local _snacks_notifier = nil
@@ -16,6 +23,54 @@ M.is_windows = function() return jit.os == 'Windows' end
 M.fast_normalize = function(path)
   if not path then return path end
   return vim.fs.normalize(path)
+end
+
+--- Read the commit a git working tree is on, without spawning a subprocess.
+---
+--- `git rev-parse HEAD` costs a process per call, and the build check runs it
+--- for every plugin at startup. Reading the git files directly costs a few
+--- file reads instead.
+---
+--- The hash is truncated to seven characters, like `git rev-parse --short`.
+---@param path string The plugin directory.
+---@return string|nil
+function M.get_local_hash(path)
+  if not path or path == '' then return nil end
+  local git_dir = path .. '/.git'
+
+  local function fast_read(file_path)
+    local fd = uv_fs_open(file_path, 'r', 438)
+    if not fd then return nil end
+    local stat = uv_fs_fstat(fd)
+    local content = stat and uv_fs_read(fd, stat.size, 0) or uv_fs_read(fd, 65536, 0)
+    uv_fs_close(fd)
+    return content
+  end
+
+  local head = fast_read(git_dir .. '/HEAD')
+  if not head then return nil end
+
+  local ref = string_match(head, 'ref:%s*(%S+)')
+  if ref then
+    local ref_content = fast_read(git_dir .. '/' .. ref)
+    if ref_content then
+      local hash = string_match(ref_content, '^(%x+)')
+      return hash and string_sub(hash, 1, 7) or nil
+    else
+      local packed = fast_read(git_dir .. '/packed-refs')
+      if packed then
+        local escaped_ref = string_gsub(ref, '[%-%.%+%[%]%(%)%$%^%%%?%*]', '%%%1')
+        local hash = string_match(packed, '(%x+)%s+' .. escaped_ref)
+        if hash then
+          return string_sub(hash, 1, 7)
+        end
+      end
+    end
+  else
+    local hash = string_match(head, '^(%x+)')
+    return hash and string_sub(hash, 1, 7) or nil
+  end
+  return nil
 end
 
 --- Resolve the native vim.pack module, if available.

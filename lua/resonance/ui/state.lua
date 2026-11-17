@@ -3,8 +3,6 @@ local api = vim.api
 local uv = vim.uv
 
 local string_match = string.match
-local string_gsub = string.gsub
-local string_sub = string.sub
 local vim_trim = vim.trim
 local uv_fs_open = uv.fs_open
 local uv_fs_close = uv.fs_close
@@ -215,41 +213,7 @@ function M.get_src_url(path)
 end
 
 function M.get_local_hash(path)
-  local git_dir = path .. '/.git'
-
-  local function fast_read(file_path)
-    local fd = uv_fs_open(file_path, 'r', 438)
-    if not fd then return nil end
-    local stat = uv_fs_fstat(fd)
-    local content = stat and uv_fs_read(fd, stat.size, 0) or uv_fs_read(fd, 65536, 0)
-    uv_fs_close(fd)
-    return content
-  end
-
-  local head = fast_read(git_dir .. '/HEAD')
-  if not head then return nil end
-
-  local ref = string_match(head, 'ref:%s*(%S+)')
-  if ref then
-    local ref_content = fast_read(git_dir .. '/' .. ref)
-    if ref_content then
-      local hash = string_match(ref_content, '^(%x+)')
-      return hash and string_sub(hash, 1, 7) or nil
-    else
-      local packed = fast_read(git_dir .. '/packed-refs')
-      if packed then
-        local escaped_ref = string_gsub(ref, '[%-%.%+%[%]%(%)%$%^%%%?%*]', '%%%1')
-        local hash = string_match(packed, '(%x+)%s+' .. escaped_ref)
-        if hash then
-          return string_sub(hash, 1, 7)
-        end
-      end
-    end
-  else
-    local hash = string_match(head, '^(%x+)')
-    return hash and string_sub(hash, 1, 7) or nil
-  end
-  return nil
+  return require('resonance.utils').get_local_hash(path)
 end
 
 function M.refresh_dag_data()

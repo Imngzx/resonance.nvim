@@ -193,10 +193,20 @@ Function hook (receives plugin directory):
       vim.system({'cargo', 'build', '--release'}, {cwd = dir})
     end
 
+A function hook may return the object it started the work with. The build
+is not marked as successful until that work has finished, so a hook that
+runs `vim.system()` or returns a promise is waited for:
+    build = function(dir)
+      return vim.system({'cargo', 'build', '--release'}, {cwd = dir})
+    end
+
 Build runs automatically:
 - On install (via PackChanged event)
 - On update (when git hash changes)
 - Hash cached in `.resonance_built` to avoid rebuilds
+
+The commit is read from the plugin's git files, so the check spawns no
+subprocesses.
 
 4.4 Version Pinning                                *resonance-version*
 

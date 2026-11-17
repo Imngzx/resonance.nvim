@@ -199,6 +199,140 @@ test.run_suite('resonance.loader.build', {
       uv.fs_rmdir(dir)
     end,
   },
+
+  {
+    name = 'check_and_build: spawns no subprocess to find the commit',
+    fn = function()
+      -- The build check runs for every plugin with a build hook at startup.
+      -- Running `git rev-parse HEAD` for each one is a process per plugin,
+      -- all at once, with nothing bounding how many run at the same time.
+      -- The commit is read from the git files instead.
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      vim.fn.system({ 'git', 'init', '-q', dir })
+      vim.fn.writefile({ 'x' }, dir .. '/file.txt')
+      vim.fn.system({ 'git', '-C', dir, 'add', '.' })
+      vim.fn.system({
+        'git', '-C', dir, '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+        'commit', '-q', '-m', 'initial',
+      })
+
+      -- A shim on PATH counts the git processes that actually get spawned.
+      -- Stubbing vim.system would not work: the build module captures it
+      -- when it loads, so a later stub is never seen.
+      local shim = vim.fn.tempname()
+      vim.fn.mkdir(shim, 'p')
+      local log = shim .. '/count'
+      vim.fn.writefile({ '#!/bin/sh', 'echo x >> ' .. log, 'exec /usr/bin/git "$@"' },
+        shim .. '/git')
+      vim.fn.setfperm(shim .. '/git', 'rwxr-xr-x')
+
+      local orig_path = vim.env.PATH
+      vim.env.PATH = shim .. ':' .. orig_path
+
+      local built = false
+      build.check_and_build('nocmd', dir, function() built = true end)
+      vim.wait(1500)
+
+      vim.env.PATH = orig_path
+
+      local spawned = 0
+      if uv.fs_stat(log) then
+        local fd = uv.fs_open(log, 'r', 438)
+        local stat = uv.fs_fstat(fd)
+        spawned = #vim.split(uv.fs_read(fd, stat.size, 0), '\n', { trimempty = true })
+        uv.fs_close(fd)
+      end
+
+      test.assert_eq(spawned, 0, 'the build check spawned a git subprocess')
+      test.assert_true(built, 'the build did not run for a real git working tree')
+
+      uv.fs_unlink(dir .. '/.resonance_built')
+      vim.fn.delete(dir, 'rf')
+      vim.fn.delete(shim, 'rf')
+    end,
+  },
+
+  {
+    name = 'check_and_build: does not rebuild when the commit has not moved',
+    fn = function()
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      vim.fn.system({ 'git', 'init', '-q', dir })
+      vim.fn.writefile({ 'x' }, dir .. '/file.txt')
+      vim.fn.system({ 'git', '-C', dir, 'add', '.' })
+      vim.fn.system({
+        'git', '-C', dir, '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+        'commit', '-q', '-m', 'initial',
+      })
+
+      local built = 0
+      local function build_fn() built = built + 1 end
+
+      build.check_and_build('once', dir, build_fn)
+      vim.wait(1500)
+      test.assert_eq(built, 1, 'the first check did not build')
+
+      -- The marker now holds the current commit, so the second check must
+      -- not build again.
+      build.check_and_build('once', dir, build_fn)
+      vim.wait(1500)
+      test.assert_eq(built, 1, 'the second check rebuilt an unchanged commit')
+
+      uv.fs_unlink(dir .. '/.resonance_built')
+      vim.fn.delete(dir, 'rf')
+    end,
+  },
+
+  {
+    name = 'run_build: waits for an async build hook before marking it built',
+    fn = function()
+      -- A Lua build hook that hands back a vim.SystemObj has not finished
+      -- when the hook returns. Marking the build as successful then would
+      -- make the next check skip a build that never ran.
+      local dir = '/tmp/test_build_async_' .. os.time()
+      uv.fs_mkdir(dir, 493)
+
+      local marker = dir .. '/done.txt'
+      local settled = false
+      local sys = vim.system({ 'sh', '-c', 'sleep 0.3; echo done > ' .. marker }, { text = true })
+
+      build.run_build('async', dir, function() return sys end, 'hash1',
+        function() settled = true end)
+      vim.wait(1500)
+
+      test.assert_true(settled, 'the completion callback never fired')
+      test.assert_true(uv.fs_stat(marker) ~= nil,
+        'the build was marked successful before the async work finished')
+
+      uv.fs_unlink(dir .. '/.resonance_built')
+      uv.fs_unlink(marker)
+      uv.fs_rmdir(dir)
+    end,
+  },
+
+  {
+    name = 'run_build: reports a failed async build hook',
+    fn = function()
+      local dir = '/tmp/test_build_async_fail_' .. os.time()
+      uv.fs_mkdir(dir, 493)
+
+      local result = nil
+      local sys = vim.system({ 'sh', '-c', 'exit 3' }, { text = true })
+
+      build.run_build('asyncfail', dir, function() return sys end, 'hash1',
+        function(ok, err) result = { ok = ok, err = err } end)
+      vim.wait(1500)
+
+      test.assert_not_nil(result, 'the completion callback never fired')
+      test.assert_false(result.ok, 'a failed build was reported as successful')
+      test.assert_nil(uv.fs_stat(dir .. '/.resonance_built'),
+        'a failed build was marked as built')
+
+      uv.fs_unlink(dir .. '/.resonance_built')
+      uv.fs_rmdir(dir)
+    end,
+  },
 })
 
 test.print_summary()

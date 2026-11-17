@@ -237,6 +237,19 @@ function M.open(ui_config)
     st.state.win, st.state.buf = nil, nil
   end
 
+  -- The UI can be closed without going through the keymaps: :q, <C-w>c and
+  -- :bwipeout all remove the buffer. The details task writes into st.state,
+  -- so it must not outlive the buffer. A BufWipeout autocmd on the UI
+  -- buffer catches every way of closing it.
+  api.nvim_create_autocmd('BufWipeout', {
+    buffer = st.state.buf,
+    once = true,
+    callback = function()
+      cancel_details_task()
+      st.state.win, st.state.buf = nil, nil
+    end,
+  })
+
   local ok_snacks, snacks = pcall(require, 'snacks')
   local ok_nui, Popup = pcall(require, 'nui.popup')
 

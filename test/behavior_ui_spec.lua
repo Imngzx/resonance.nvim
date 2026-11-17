@@ -617,6 +617,35 @@ test.run_suite('resonance.behavior.ui', {
   },
 
   {
+    name = 'ui: wiping the UI buffer cancels the deferred details task',
+    fn = function()
+      -- The details task was only cancelled by the q/Esc keymaps and the
+      -- native close handler. Closing the UI another way -- :q, <C-w>c, or
+      -- :bwipeout -- left the task running and st.state.buf non-nil, so
+      -- the second pass still ran pack.get(info=true) 50 ms later and
+      -- wrote into a buffer nobody owned.
+      local l = live()
+      require('resonance').open_ui()
+      vim.wait(100)
+
+      local st = l.state
+      test.assert_not_nil(st.state.details_task,
+        'the deferred details pass is not running as a task')
+      local buf = st.state.buf
+      test.assert_not_nil(buf)
+
+      -- Close the UI the way :q and <C-w>c do: the buffer goes away.
+      api.nvim_buf_delete(buf, { force = true })
+      vim.wait(300)
+
+      test.assert_nil(st.state.details_task,
+        'the details task survived the buffer being wiped')
+      test.assert_nil(st.state.buf,
+        'the UI buffer is still registered after it was wiped')
+    end,
+  },
+
+  {
     name = 'render: a plugin with no type does not break the render',
     fn = function()
       local l = live()

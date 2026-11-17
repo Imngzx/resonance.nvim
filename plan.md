@@ -20,8 +20,8 @@ source:
 | `note/knowledge/plan-2026-11-17.md` | items 0–4 | **done** (previous session) |
 | User report (this session) | `r` key notification spam | **confirmed by reproduction** |
 
-Items already resolved are listed in [Already resolved](#already-resolved) and
-are **not** repeated in the work batches.
+Items already resolved are listed under "Already resolved" in `fix.md` and are
+**not** repeated in the work batches.
 
 ---
 
@@ -48,12 +48,13 @@ are **not** repeated in the work batches.
   press regardless.
 - **Reproduction (verified, headless):**
 
-  ```
+  ```text
   SPAM_NOTES=3
   N[1]=Resonating in background...
   N[2]=Resonating in background...
   N[3]=Resonating in background...
   ```
+
 - **Desired behaviour (user's words):** "I prefer notify and blocks the user r
   during resonating (after user pressed r)". So: **one** notification on the
   first press, and subsequent presses during the check do nothing — no second

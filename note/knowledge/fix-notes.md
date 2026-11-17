@@ -4,6 +4,11 @@
 > 评审日期：2026-10-17
 > 评审环境：Neovim **0.12.6**（LuaJIT 2.1），仓库根目录直接入 `rtp` 做 headless 实测
 > 说明：本文是架构快照，结论基于当时的 `HEAD`（`c673fbb`）。带「实测」标记的结论均已在本机复现。
+>
+> **2026-11-17 复核：** 本文的问题清单已对照当前源码（`38375de`）逐条核验。
+> 已过时的行已划掉并注明原因，新发现的问题已补入。
+> **当前唯一权威的待办清单是仓库根目录的 `plan.md`** —— 本文保留架构分析价值，
+> 但不再作为执行依据。
 
 ---
 
@@ -58,7 +63,7 @@ load(spec)
   → triggers.register_all    -- 挂 autocmd / user command / keymap
 ```
 
-**此阶段不下载、不 packadd。**
+此阶段不下载、不 packadd。
 
 ### B. 触发链路（首次使用）
 
@@ -104,12 +109,17 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 ### P1 —— 正确性缺陷（剩余未修复）
 
+> **2026-11-17 复核：** 下表每一行都对照当前源码重新核验过。标「已修复」的行已移入
+> 下方的已修复表；标「部分」的说明还剩什么。完整、可执行的清单见仓库根目录的
+> `plan.md`。
+
 | 问题                                      | 位置                                          | 说明                                                                                                                                                                                                               |
 | ----------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **无 trigger 的 spec 永远不加载也不安装** | `triggers.register_all`                       | `load()` 只注册触发器；没有 `event/cmd/keys/ft` 就没有任何路径走到 `pack_add`。缺 `lazy=false` / eager 入口，而 `doc/resonance.txt` 还说 "load 由 setup 内部调用"，与实现不符。                                    |
 | **触发器不回收**                          | `triggers.lua`                                | 一个 spec 同时有 event+cmd+keys 时，只有先触发的那个被删；`once` autocmd 之后会空转一次，keymap 残留成"删除→重放"闭包。卸载插件后 specs/triggers 也永不清除。                                                      |
-| **`_plugin_dir_cache` 永不失效**          | `loader/init.lua:35-79`                       | 首次 `pack.add` 新装的插件不在缓存里，`get_plugin_dir` 返回 nil（`PackChanged` 因带 `data.path` 侥幸绕过）。                                                                                                       |
-| **UI 状态陈旧**                           | `actions.lua:99-147`                          | update/uninstall 后不刷新 `st.state.info`；`check_updates_network` 不先清空 `updates`（远端回退后仍显示旧 pending）；`pack_details` / `expanded` 在 `open()` 里不复位。                                            |
+| **`_plugin_dir_cache` 永不失效**          | `loader/init.lua:129`                         | 首次 `pack.add` 新装的插件不在缓存里，`get_plugin_dir` 返回 nil（`PackChanged` 因带 `data.path` 侥幸绕过）。缓存只在 `M._reset()` 里清空，从不在 `PackChanged` 时失效。                                                    |
+| **UI 状态陈旧**                           | `actions.lua` / `ui/init.lua`                 | **部分已修复**：`check_updates_network` 现在会清空 `updates`（`actions.lua:57`），但 `pending_count` 没清（spinner 计数会累加）；`pack_details` / `expanded` 在 `open()` 里仍不复位。                                                   |
+| **`r` 键重复触发时通知刷屏**（2026-11-17 用户报告） | `ui/init.lua:46-50`                  | 重入保护在 `actions.check_updates_network()` 内部，而通知写在 keymap 里、位于保护之外；该函数无返回值，keymap 无从判断，于是每按一次都弹一条 "Resonating in background..."。实测按 3 次弹 3 条。期望：只通知一次，且检查期间 `r` 失效。 |
 
 ### P1 —— 已修复 (2026-10-19 至 2026-10-22)
 
@@ -122,6 +132,13 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 | 固定 64KB 读取                            | b40a149     | 使用 `uv_fs_fstat` 获取文件大小，读取完整文件内容                                                                        |
 | DAG 重放信息丢失 autocmd group 名称        | 6f5b0d3     | `get_replay_info()` 恢复显示 autocmd group 名称                                                                          |
 
+### P1 —— 已修复 (2026-11-17)
+
+| 问题                                      | 修复 Commit | 说明                                                                                                                     |
+| ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `replay_for_buffer` 饿死迟注册的 trigger  | 38375de     | 改为按 **trigger group** 记录已触发状态，而非按事件；`nvim <file>` / yazi 打开时状态栏、bufferline、面包屑不再缺失 |
+| 9 个 replay 测试空跑（断言从未执行）       | 38375de     | 补上 `test.stub_pack()` 并断言 `setup` 确实执行过；正反两个方向都做过 mutation 验证                                  |
+
 ### P2 —— 架构与可维护性
 
 - **循环依赖 + 反向依赖**：`scanner → loader`（只为取 `plugin_triggers`）与 `loader → scanner`（只为写 `load_times`）；`ui/render → resonance`（`stats`）→ `scanner → loader`。缺一个中立的 `registry` 层，导致"打开一个只读面板"会把整个控制面（含 build autocmd）拖进来。
@@ -129,12 +146,16 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 - **"不修改用户 spec"的注释已失效**：`config._force_load = ...`、`config._replay_done = true` 仍写回用户表；`spec.parse_config` 也就地改 `config`（`spec.lua:18-40`）。`note/knowledge` 里写的 "fixed" 已不成立。
 - **`load_now` 是上帝函数**：循环检测、依赖、安装、`packadd`、setup 调用、计时、重放全在 ~100 行闭包里；`current_name = parsed_names[1]` 让多插件 spec 的依赖/环检测语义含糊；几乎无法单测。
 - **重复与死代码**：`is_plugin_list` 判断写了两份（`init.lua:96` / `spec.lua:8`）；scanner 排序逻辑复制两遍；`utils.is_windows`、`scanner.get_detailed_info`、`rev_to` / `manifest` 均无消费者；`loader._get_event_chain_internal(event)` 包装丢掉 buf/data。
-- **零测试、零 CI、无格式化/静态检查配置**（只有 `.editorconfig` 和 `.markdownlint.json`），也没有 `:checkhealth`。这类"状态机 + 异步 + 自动命令"的代码不测几乎必然回归。
-- **文档漂移**（影响面最大的一类问题）：
-  - README bootstrap 用了 `Vim.fn/Vim.uv/Vim.notify/Vim.system`（`README.md:36-46`），实际应为 `vim.*`；
-  - `doc/resonance.txt:198` 与 `note/` 写 DAG 键是 `g`，代码是 `A`（`ui/init.lua:97`）；
-  - `doc` 说 `open_ui([ui_config])` 可覆盖配置，代码忽略参数（`init.lua:132`）；
-  - `doc` 说 `resonance.setup()` 接受插件列表，实际只接受 UI 配置；
+- **测试已有，但 CI / 格式化 / 静态检查仍缺**：2026-11-17 复核——仓库现有 13 个测试文件、197 个用例全部通过，"零测试"的说法已过时。仍缺 CI、`stylua` / `luacheck` 配置，以及 `:checkhealth`。
+- **`M.stats()` 永久冻结 + `M._reset()` 不存在**（2026-11-17 新增）：`init.lua:116-133` 首次调用就把 `count` / `loaded` 整表缓存；`test/runner.lua` 调用的 `resonance._reset()` 在 `resonance/init.lua` 里根本没有（只有 `loader/init.lua` 和 `ui/state.lua` 有）。
+- **`test/build_spec.lua` 存在假阳性**（2026-11-17 新增）：`build_spec.lua:28-42`（`check_and_build: skips when hash matches`）断言 `built == false` 之后立刻返回，没有 `vim.wait()`，异步的 `git rev-parse` 根本还没跑——测试通过与否与被测逻辑无关。
+- **文档漂移**（影响面最大的一类问题，2026-11-17 复核）：
+  - ~~README bootstrap 用了 `Vim.fn/Vim.uv/Vim.notify/Vim.system`~~ —— **已过时**，当前 README 零匹配；
+  - ~~`note/` 写 DAG 键是 `g`~~ —— **已过时**，`doc/resonance.txt:224` 已经写 `A`；
+  - `doc/resonance.txt:273` 说 `open_ui([ui_config])` 可覆盖配置，代码忽略参数（`init.lua:162-164`）—— **仍然成立**；
+  - `doc/resonance.txt:108` 说 `resonance.setup()` 接受插件列表，实际只接受 UI 配置（`init.lua:69-74`）；Quick Start（`doc/resonance.txt:68-100`）整段示例都传错了 —— **仍然成立**；
+  - `doc/resonance.txt:168` 说 `lazy = true` "Cannot combine with explicit event/cmd/keys/ft"，而 `spec.lua:44-48` 实际是把 `VeryLazy` **追加**成额外 trigger，`README.md:181` 也写对了 —— **两个文件自相矛盾**；
+  - `doc/resonance.txt` Section 7 列出的 `ResonanceLoad` / `ResonanceUpdate` / `ForceLoad<Name>` 事件在源码里不存在 —— **仍然成立**；
 
 ### P2 —— 已修复 (2026-10-22)
 
@@ -147,9 +168,11 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 ### P3 —— 性能与体验
 
-- **`r` 键"网络检查"阻塞主线程**：`actions.lua:50-89` 在 `vim.defer_fn(...,1)` 后同步调用 `vim.pack.get(info=true, offline=false)`（README 自述 ~2s+），期间编辑器完全冻结，spinner 也不动。`update_plugins` 里的 `vim.pack.update(..., {force=true, offline=false})` 同样阻塞。与 README 的 "Fast / async" 定位矛盾。
-- **spinner 每 100ms 触发一次全量重绘**：`render()` 重写整个 buffer + 重建全部 extmark（每个高亮片段一个），N 个插件时是 O(N·segments) 的无效工作，而实际只变了一行。
-- **首次触发可能现场 clone**：安装被推迟到 trigger 时，第一次按键可能同步执行 `vim.pack.add`（`pack.txt` 明确"安装并行但会等待完成"），出现按键卡顿；lazy.nvim 是在启动后后台安装来规避。
+> **2026-11-17 复核：** 标注「已过时」的行已删除或划掉，其余行仍成立。
+
+- ~~**`r` 键"网络检查"阻塞主线程**~~ —— **已过时**。`check_updates_network()` 现在走 `vim.async` + 信号量，git fetch 全部非阻塞。残留问题是**通知刷屏**（见 P1 表的新行），不是阻塞。
+- ~~**spinner 每 100ms 触发一次全量重绘**~~ —— **已过时**。`render.lua:494-522` 的 `update_spinner()` 只重写一行和两个 extmark。
+- **首次触发可能现场 clone**：安装被推迟到 trigger 时，第一次按键可能同步执行 `vim.pack.add`（`pack.txt` 明确"安装并行但会等待完成"），出现按键卡顿；lazy.nvim 是在启动后后台安装来规避。**注：2026-11-17 已确认这是刻意设计** —— `note/knowledge/plan-2026-11-17.md` item 4 说明安装必须保持阻塞，否则 `setup()` 会在插件落盘前执行。
 - **`check_and_build` 无并发上限**：启动时每个带 build 的插件都会立刻 `async.run` 一次 `git rev-parse`，semaphore 只护住了真正的构建。
 - **`.resonance_built` 写在插件目录内**（`build.lua:25`）：污染插件 git 工作区，应放 `stdpath('state')`。
 - **UI 小问题**：`dd` 这类双键映射配 `nowait` 会让单独按 `d` 等待 `timeoutlen`；`cmd` 触发器桩命令用 `nargs='*'` + `complete='file'`，与真实命令签名不符时会误报错。
@@ -164,11 +187,33 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 ## 6. 建议的修复顺序
 
+> **2026-11-17：** 本节已过时 —— 其中多项已完成。执行顺序以仓库根目录的
+> `plan.md` 为准。保留原文仅供对照。
+
 1. **P1 剩余项**：`_plugin_dir_cache` 失效挂到 `PackChanged`；触发器回收机制；无 trigger spec 的 eager 加载入口；UI 状态自洽刷新。
 2. **P2 架构**：拆分 `load_now` 为 `resolve_deps / ensure_installed / activate / replay`；引入中立 `registry` 层打破 `scanner↔loader` 环；require 期副作用延迟到首次调用；补齐测试/CI/checkhealth。
 3. **P3 体验**：`r`/`U` 改用 `vim.system` 异步链（或 `vim.async` 协程），仅重绘 spinner 行；后台预安装机制；`.resonance_built` 迁移到 `stdpath('state')`。
 4. **文档同步**：README `Vim.*` → `vim.*`；`doc/resonance.txt` DAG 键 `g` → `A`；`open_ui` 参数生效；`setup` vs `load` 文档修正。
 5. **工程化**：plenary / busted 测试 `spec.parse_config` + 依赖加载状态机 + 触发器清理；stylua / luacheck + CI。
+
+### 2026-11-17 状态对照
+
+| 原建议项 | 状态 |
+|---|---|
+| 测试补齐 | **已完成** —— 13 个测试文件，197 个用例全绿 |
+| `r` 键异步化 | **已完成** —— `vim.async` + 信号量 |
+| 仅重绘 spinner 行 | **已完成** —— `update_spinner()` 只写一行 |
+| README `Vim.*` → `vim.*` | **已完成** —— 当前 README 零匹配 |
+| DAG 键 `g` → `A` | **已完成** —— `doc/resonance.txt:224` 已是 `A` |
+| `_plugin_dir_cache` 挂 `PackChanged` | **仍待办** |
+| 触发器回收机制 | **仍待办** |
+| 无 trigger spec 的 eager 入口 | **仍待办** |
+| UI 状态自洽刷新 | **仍待办**（`pending_count` / `pack_details` / `expanded`） |
+| 拆分 `load_now`、引入 `registry` 层 | **仍待办** |
+| require 期副作用延迟 | **仍待办** |
+| `open_ui` 参数生效 | **仍待办** —— 文档写错了，代码其实是对的，应改文档 |
+| `setup` vs `load` 文档修正 | **仍待办** |
+| CI / stylua / luacheck / checkhealth | **仍待办** |
 
 ---
 

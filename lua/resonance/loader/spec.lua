@@ -2,6 +2,11 @@ local M = {}
 local utils = require('resonance.utils')
 
 -- Parse and normalize plugin configuration
+--
+-- The caller's table is never modified. A spec is the user's own table,
+-- and it stays theirs: the normalization happens on a copy, so a config
+-- that is loaded twice, inspected afterwards, or shared between two
+-- plugin managers sees exactly what it was written as.
 ---@param config table
 ---@return table|nil
 function M.parse_config(config)
@@ -13,6 +18,15 @@ function M.parse_config(config)
   if is_plugin_list then
     return nil -- handled by caller
   end
+
+  -- Work on a copy from here on. The shallow copy is enough for the
+  -- fields this function rewrites; the one nested table it rewrites (the
+  -- keys list) is copied separately below.
+  local parsed = {}
+  for k, v in pairs(config) do
+    parsed[k] = v
+  end
+  config = parsed
 
   -- Normalize plugin field
   if not config.plugin and (config.src or config.url or type(config[1]) == 'string') then
@@ -84,12 +98,19 @@ function M.parse_config(config)
     if type(keys) == 'function' then
       -- Function returning keymaps: keep as-is, will be called at registration time
     else
+      -- The list is the user's own, so the shorthand entries are rewritten
+      -- in a copy of it.
+      local normalized = {}
       for i = 1, #keys do
-        if type(keys[i]) == 'string' then
+        normalized[i] = keys[i]
+      end
+      for i = 1, #normalized do
+        if type(normalized[i]) == 'string' then
           -- Shorthand: "<leader>x" -> {"n", "<leader>x"}
-          keys[i] = {'n', keys[i]}
+          normalized[i] = { 'n', normalized[i] }
         end
       end
+      config.keys = normalized
     end
   end
 

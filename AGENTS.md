@@ -11,12 +11,19 @@
 | Path | Role |
 |---|---|
 | `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `stats()`, `open_ui()`, `has_fired()`, `replay_for_buffer()` |
+| `lua/resonance/registry.lua` | Shared pure data: specs, triggers, disabled plugins, load times, plugin dirs. No side effects. |
 | `lua/resonance/loader/` | Control plane: `init` (load/force-load), `spec` (normalize), `triggers` (autocmd/cmd/keymap/ft), `build` (build hooks), `dag` (dependency + event-chain data) |
 | `lua/resonance/scanner.lua` | Read-only discovery of installed plugins (SOA parallel arrays) |
 | `lua/resonance/ui/` | Panel: `init` (window + keymaps), `state` (singleton), `render`, `actions` |
 | `lua/resonance/utils.lua` | Shared helpers — **`utils.get_pack()` lives here** |
 
 Entry point: `require('resonance').setup()`.
+
+**The scanner must not require the loader.** The shared state lives in
+`registry.lua`, which depends on neither. The loader and the scanner both
+require the registry, so the cycle is gone: requiring the scanner no
+longer drags the control plane — and its `PackChanged` build autocmd —
+into the read-only panel.
 
 **Tools:** `rg` (ripgrep) for content search, `fd` for file finding — prefer
 both over `grep` and `find`. `nvim` for headless testing, `lua-language-server`

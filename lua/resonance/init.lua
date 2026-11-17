@@ -84,6 +84,14 @@ function M.setup(opts)
   create_user_command('Resonance', function()
     M.open_ui()
   end, { desc = 'Open Resonance UI' })
+
+  -- The loader's event tracker has to be in place before the first read
+  -- event fires, or the events that already fired are not recorded and
+  -- the replay fires them a second time.
+  if not loader_mod then
+    loader_mod = require('resonance.loader')
+  end
+  loader_mod.setup()
 end
 
 ---@param spec ResonanceLoadSpec|ResonanceLoadSpec[]

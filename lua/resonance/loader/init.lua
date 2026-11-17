@@ -1,5 +1,6 @@
 local M = {}
 local utils = require('resonance.utils')
+local registry = require('resonance.registry')
 local spec = require('resonance.loader.spec')
 local triggers = require('resonance.loader.triggers')
 local build = require('resonance.loader.build')
@@ -9,15 +10,12 @@ local api = vim.api
 local uv = vim.uv
 
 -- The cached plugin directories. Built once and then reused.
-local _plugin_dir_cache = nil
-
--- Drop the cached plugin directories.
 --
 -- The cache is built once and then reused, so a plugin installed or
 -- removed during the session was not in it: get_plugin_dir returned nil
 -- for a plugin that was on disk, and the build hook was skipped.
 local function invalidate_plugin_dir_cache()
-  _plugin_dir_cache = nil
+  registry.invalidate_plugin_dirs()
 end
 
 -- Install specs with vim.pack. `pack.add` raises when an install fails, so
@@ -61,14 +59,13 @@ local plugin_state = {}
 -- Force-load functions keyed by plugin name
 local force_load_fns = {}
 
--- Plugins disabled by a false cond predicate
-local disabled_plugins = {}
-
--- Plugin triggers registered by loader
-local plugin_triggers = {}
-
--- Specs registered by loader
-local specs = {}
+-- The shared, pure-data state lives in the registry, so the scanner can
+-- read it without requiring the loader -- which would close a cycle and
+-- drag the whole control plane into the read-only UI panel.
+local disabled_plugins = registry.disabled_plugins
+local plugin_triggers = registry.plugin_triggers
+local specs = registry.specs
+local spec_urls = registry.spec_urls
 
 -- The spec fields the loader keeps for the whole session. The setup
 -- closure is deliberately dropped: it is called once, when the plugin
@@ -87,9 +84,6 @@ local function retained_spec(config)
   end
   return copy
 end
-
--- URL -> spec name mapping
-local spec_urls = {}
 
 -- Guards against recursive event replay. Replaying an event re-fires the
 -- autocmds for it, which can re-enter load_now and start another replay.
@@ -160,8 +154,8 @@ local function mark_group_fired(group_name, buf)
 end
 
 local function populate_plugin_dir_cache()
-  if _plugin_dir_cache then return end
-  _plugin_dir_cache = {}
+  if registry.plugin_dirs then return end
+  registry.plugin_dirs = {}
 
   local pack = utils.get_pack()
   if pack then
@@ -169,7 +163,7 @@ local function populate_plugin_dir_cache()
     for i = 1, #packs do
       local p = packs[i]
       if p.path and p.spec and p.spec.name then
-        _plugin_dir_cache[p.spec.name] = p.path
+        registry.plugin_dirs[p.spec.name] = p.path
       end
     end
     return
@@ -190,7 +184,7 @@ local function populate_plugin_dir_cache()
               local pname, ptyp = fs_scandir_next(sub)
               if not pname then break end
               if ptyp == 'directory' or ptyp == 'link' then
-                _plugin_dir_cache[pname] = target_dir .. '/' .. pname
+                registry.plugin_dirs[pname] = target_dir .. '/' .. pname
               end
             end
           end
@@ -201,10 +195,10 @@ local function populate_plugin_dir_cache()
 end
 
 local function get_plugin_dir(name)
-  local cache = _plugin_dir_cache
+  local cache = registry.plugin_dirs
   if not cache then
     populate_plugin_dir_cache()
-    cache = _plugin_dir_cache
+    cache = registry.plugin_dirs
   end
   return cache and cache[name] or nil
 end
@@ -274,7 +268,14 @@ local function setup_event_tracker()
   })
 end
 
-setup_event_tracker()
+-- The event tracker is installed on first use, not when the module is
+-- required. Requiring the loader used to install five autocmds and a
+-- BufWipeout handler as a side effect, which meant that anything that
+-- merely touched the loader paid for a control plane it did not ask for.
+local function ensure_event_tracker()
+  if tracker_group then return end
+  setup_event_tracker()
+end
 
 -- Whether an event has already fired for a buffer.
 --
@@ -285,6 +286,7 @@ setup_event_tracker()
 ---@return boolean
 function M.has_fired(event, buf)
   if not event or not buf then return false end
+  ensure_event_tracker()
   return has_fired(event, buf)
 end
 
@@ -305,6 +307,7 @@ function M.replay_for_buffer(buf)
   local fired = {}
   if not buf then return fired end
   if not api.nvim_buf_is_valid(buf) then return fired end
+  ensure_event_tracker()
   local api_exec = exec_autocmds
 
   -- A buffer with a name that exists on disk was read; one without was
@@ -368,22 +371,37 @@ M.run_build = build.run_build
 M.check_and_build = build.check_and_build
 M.mark_build_success = build.mark_build_success
 M.setup_packchanged_autocmd = build.setup_packchanged_autocmd
-build.setup_packchanged_autocmd(get_plugin_dir)
-
--- A plugin installed or removed during the session was not in the cached
--- plugin directories, so the cache has to go when one is.
-api.nvim_create_autocmd('PackChanged', {
-  group = api.nvim_create_augroup('ResonancePluginDirCache', { clear = true }),
-  callback = function()
-    invalidate_plugin_dir_cache()
-  end,
-})
 
 M.plugin_triggers = plugin_triggers
 M.specs = specs
 M.spec_urls = spec_urls
 M.disabled_plugins = disabled_plugins
 M.force_load_fns = force_load_fns
+
+-- The autocmds the loader needs are installed on first use, not when the
+-- module is required. Requiring the loader used to register two
+-- PackChanged handlers and five event-tracker autocmds as a side effect,
+-- so anything that merely touched the loader -- the scanner, for one --
+-- installed a control plane it never asked for.
+--
+-- The guard is a flag rather than the tracker group, because the two
+-- halves are installed independently.
+local autocmds_installed = false
+local function ensure_autocmds()
+  if autocmds_installed then return end
+  autocmds_installed = true
+
+  build.setup_packchanged_autocmd(get_plugin_dir)
+
+  -- A plugin installed or removed during the session was not in the cached
+  -- plugin directories, so the cache has to go when one is.
+  api.nvim_create_autocmd('PackChanged', {
+    group = api.nvim_create_augroup('ResonancePluginDirCache', { clear = true }),
+    callback = function()
+      invalidate_plugin_dir_cache()
+    end,
+  })
+end
 
 -- Reset all internal state (for testing)
 function M._reset()
@@ -395,8 +413,26 @@ function M._reset()
   for k in pairs(M.spec_urls) do M.spec_urls[k] = nil end
   for k in pairs(fired_events) do fired_events[k] = nil end
   for k in pairs(fired_groups) do fired_groups[k] = nil end
+  for k in pairs(registry.load_times) do registry.load_times[k] = nil end
   replay_depth = 0
-  _plugin_dir_cache = nil
+  registry.invalidate_plugin_dirs()
+  -- The autocmds are still installed, so the guard stays set: reinstalling
+  -- them would create a second copy of every handler.
+end
+
+-- Install the control plane.
+--
+-- The event tracker has to be in place before the first read event fires,
+-- or the events that already fired are not recorded and the replay fires
+-- them a second time. So this is called from resonance.setup(), which is
+-- the first thing a config does.
+--
+-- It is a separate call, not a require-time side effect, because anything
+-- that merely touches the loader -- the scanner, for one -- must not
+-- install autocmds it never asked for.
+function M.setup()
+  ensure_autocmds()
+  ensure_event_tracker()
 end
 
 -- Export module table for testing state
@@ -409,6 +445,11 @@ M._internal = {
 
 ---@param config table
 function M.load(config)
+  -- This is the first thing a user does with Resonance, so it is where
+  -- the control plane is installed.
+  ensure_autocmds()
+  ensure_event_tracker()
+
   local is_plugin_list = type(config[1]) == 'table'
     and not config.plugin and not config.url and not config.src
     and not config.event and not config.cmd and not config.keys
@@ -701,9 +742,8 @@ function M.load(config)
     end
 
     local duration = (hrtime() - start_ms) / 1e6
-    local scanner = package.loaded['resonance.scanner'] or require('resonance.scanner')
     for i = 1, #parsed_names do
-      scanner.load_times[parsed_names[i]] = duration
+      registry.load_times[parsed_names[i]] = duration
     end
 
     if ev and type(ev) == 'table' and ev.event and not state.replay_done then

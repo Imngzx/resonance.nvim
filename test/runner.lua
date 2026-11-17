@@ -85,7 +85,7 @@ end
 -- The suite exercises the installed copy, not this repo. A stale sync means the
 -- tests silently validate old code, so fail loudly instead.
 local MODULE_FILES = {
-  'init.lua', 'scanner.lua', 'utils.lua',
+  'init.lua', 'scanner.lua', 'utils.lua', 'registry.lua',
   'loader/init.lua', 'loader/spec.lua', 'loader/triggers.lua',
   'loader/build.lua', 'loader/dag.lua',
   'ui/init.lua', 'ui/state.lua', 'ui/render.lua', 'ui/actions.lua',
@@ -245,6 +245,10 @@ local function reset_state()
   package.loaded['resonance.ui.actions'] = nil
   package.loaded['resonance.scanner'] = nil
   package.loaded['resonance.utils'] = nil
+  -- The registry holds the shared state, so it has to start empty. The
+  -- loader's _reset() clears most of it, but the load times live there
+  -- too, and a leftover entry would show up in the next test.
+  package.loaded['resonance.registry'] = nil
   load_installed()
 end
 

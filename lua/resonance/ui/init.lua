@@ -4,6 +4,7 @@ local st = require('resonance.ui.state')
 local render_mod = require('resonance.ui.render')
 local actions = require('resonance.ui.actions')
 local utils = require('resonance.utils')
+local registry = require('resonance.registry')
 
 local pcall = pcall
 local pairs = pairs
@@ -166,8 +167,10 @@ function M.open(ui_config)
             st.state.urls[p_name] = st.get_src_url(p_path) or 'unknown'
           end
         else
-          local loader = package.loaded['resonance.loader'] or require('resonance.loader')
-          local disabled = loader.disabled_plugins and loader.disabled_plugins[p_name]
+          -- The disabled plugins live in the registry, not in the loader:
+          -- the panel is read-only, and requiring the loader for one
+          -- lookup would pull the whole control plane into it.
+          local disabled = registry.disabled_plugins[p_name]
           if disabled and disabled.url then st.state.urls[p_name] = disabled.url end
         end
       end

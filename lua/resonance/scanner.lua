@@ -1,5 +1,6 @@
 local M = {}
 local utils = require('resonance.utils')
+local registry = require('resonance.registry')
 
 local uv = vim.uv
 local fs_scandir = uv.fs_scandir
@@ -7,7 +8,10 @@ local fs_scandir_next = uv.fs_scandir_next
 local fn_stdpath = vim.fn.stdpath
 local nvim_list_runtime_paths = vim.api.nvim_list_runtime_paths
 local string_lower = string.lower
-M.load_times = {}
+
+-- The load times live in the registry, so the loader can record them
+-- without the scanner having to require the loader.
+M.load_times = registry.load_times
 
 local pack_dir_base = utils.fast_normalize(fn_stdpath('data') .. '/site/pack')
 
@@ -21,7 +25,23 @@ local function build_loaded_set()
   return loaded_set
 end
 
-local function append_disabled(plugins, total, disabled_plugins, loader)
+-- The installation directory of a plugin.
+--
+-- A plugin disabled by a false `cond` is in the registry but not in
+-- vim.pack, so the scanner has nowhere else to ask. The lookup lives in
+-- the registry for the same reason the rest of the state does: the
+-- scanner must not require the loader.
+local function plugin_dir(name)
+  local cache = registry.plugin_dirs
+  if not cache then
+    -- The loader populates the cache. If it has not run yet, there is
+    -- nothing to report: the plugin is not known to be installed.
+    return nil
+  end
+  return cache[name]
+end
+
+local function append_disabled(plugins, total, disabled_plugins)
   local seen = {}
   for i = 1, total do
     seen[plugins.name[i]] = true
@@ -32,7 +52,7 @@ local function append_disabled(plugins, total, disabled_plugins, loader)
       total = total + 1
       plugins.name[total] = name
       plugins.type[total] = 'opt'
-      plugins.path[total] = loader.get_plugin_dir(name) or ''
+      plugins.path[total] = plugin_dir(name) or ''
       plugins.loaded[total] = false
       plugins.disabled[total] = true
       plugins.trigger[total] = disabled.trigger or 'none'
@@ -98,7 +118,7 @@ local function fallback_scan(plugin_triggers, disabled_plugins)
     end
   end
 
-  total_count = append_disabled(plugins, total_count, disabled_plugins, require('resonance.loader'))
+  total_count = append_disabled(plugins, total_count, disabled_plugins)
   local indices = utils.sort_plugins(plugins, total_count)
 
   local sorted_plugins = utils.apply_sort(plugins, indices, total_count,
@@ -117,9 +137,8 @@ function M.get_info(opts)
   opts = opts or {}
   local info_mode = opts.info == true
   local offline = opts.offline ~= false
-  local loader = require('resonance.loader')
-  local plugin_triggers = loader.plugin_triggers or {}
-  local disabled_plugins = loader.disabled_plugins or {}
+  local plugin_triggers = registry.plugin_triggers
+  local disabled_plugins = registry.disabled_plugins
 
   local pack = utils.get_pack()
   if pack then
@@ -166,7 +185,7 @@ function M.get_info(opts)
         if plugins.loaded[total_count] then loaded_count = loaded_count + 1 end
       end
 
-      total_count = append_disabled(plugins, total_count, disabled_plugins, loader)
+      total_count = append_disabled(plugins, total_count, disabled_plugins)
       local indices = utils.sort_plugins(plugins, total_count)
       local sorted_plugins = utils.apply_sort(plugins, indices, total_count,
         { 'name', 'type', 'path', 'loaded', 'disabled', 'trigger', 'rev', 'rev_to', 'manifest' })

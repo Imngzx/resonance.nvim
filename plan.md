@@ -442,7 +442,9 @@ there is no plugin list at all.
 ### 14. `scanner` ↔ `loader` circular dependency; user specs are mutated
 
 - **Files:** `lua/resonance/scanner.lua`, `lua/resonance/utils.lua`, `lua/resonance/loader/init.lua`, `lua/resonance/loader/spec.lua`, `lua/resonance/ui/render.lua`
-- **Status:** open — verified.
+- **Status:** DONE — `registry.lua` added, the cycle is broken, the loader's
+  autocmds are deferred, and the user's specs are no longer mutated.
+  Six behavioural tests in `test/behavior_arch_spec.lua`.
 - **Problem (a):** `scanner.lua:101` and `scanner.lua:120` do
   `require('resonance.loader')`, while `loader/init.lua` requires the
   scanner. Opening the read-only UI panel therefore drags in the whole
@@ -468,6 +470,35 @@ there is no plugin list at all.
   and the replay both depend on the loader's internals. Do this **after**
   Batch 1 and 2, with the suite green as the guard.
 
+**What was actually done:**
+
+- **(a)** `lua/resonance/registry.lua` is new: pure data, no require-time
+  side effects, no dependency on either the loader or the scanner. It
+  holds `specs`, `plugin_triggers`, `disabled_plugins`, `spec_urls`,
+  `load_times` and the plugin-directory cache. The loader and the scanner
+  both require it, so the cycle is gone. The scanner's plugin-directory
+  lookup moved there too, because a plugin disabled by a false `cond` is
+  in the registry but not in `vim.pack`.
+- **(b)** The loader's autocmds — two `PackChanged` handlers and the five
+  event-tracker autocmds — are no longer installed when the module is
+  required. They are installed by `loader.setup()`, which `resonance.setup()`
+  calls, and by the first `load()` as a backstop.
+  - The event tracker has to be in place before the first read event
+    fires, or the events that already fired are not recorded and the
+    replay fires them a second time. That is why `resonance.setup()`
+    installs it rather than leaving it to the first `load()`.
+- **(c)** `spec.parse_config()` now works on a copy, so the caller's table
+  is untouched. The nested `keys` list is copied as well: the shorthand
+  entries were rewritten in place.
+- The panel no longer loads the loader. `ui/init.lua` reads the disabled
+  plugins from the registry; `ui/state.lua`'s `refresh_dag_data()` still
+  requires the loader, but it is only called when the user toggles the
+  DAG view, which genuinely needs the control plane.
+- The DAG output is byte-identical before and after the change
+  (18 nodes, 18 edges against the user's own config).
+- The `config._replay_done` write was already safe: it writes to the
+  loader's retained copy, not the user's table.
+
 ### 15. `M.stats()` freezes forever; `M._reset()` does not exist
 
 - **File:** `lua/resonance/init.lua`
@@ -485,7 +516,8 @@ there is no plugin list at all.
 ### 16. `test/build_spec.lua` false positive; documentation drift
 
 - **Files:** `test/build_spec.lua`, `doc/resonance.txt`, `README.md`, `AGENTS.md`
-- **Status:** open — verified.
+- **Status:** DONE — `f5be742`. The false positive is fixed and the docs are
+  corrected; the details below describe what was found.
 - **Problem (a) — false positive:** `test/build_spec.lua:28-42`
   (`check_and_build: skips when hash matches`) asserts `built == false`
   **immediately**, with no `vim.wait()`. The async `git rev-parse` has not

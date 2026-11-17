@@ -68,7 +68,7 @@ lua-language-server --check=~/Projects/code/lua/resonance.nvim/lua/resonance/ui/
 | Before | After |
 |--------|-------|
 | Manual `fs_scandir` of `pack/*/{start,opt}/*` | `vim.pack.get({info=false, offline=true})` — 0.3ms |
-| Heuristic loaded detection (`path ∈ rtp`) | Exact `p.active` from `vim.pack` |
+| Heuristic loaded detection (`path ∈ rtp`) | Same heuristic, still `path ∈ rtp` |
 | No pending update info | `rev_to`, `manifest`, `branches`, `tags` available |
 | UI open: ~5000ms (blocking network) | UI open: ~12ms (offline cache + async) |
 
@@ -146,7 +146,7 @@ Applied LuaJIT optimization patterns across all modules:
 | `loader/dag.lua` | Added `local pairs = pairs` |
 | `ui/init.lua` | Added `vbo = vim.bo`, `vwo = vim.wo`; replaced `nvim_set_option_value()` with direct assignment |
 | `ui/render.lua` | Added `vbo = vim.bo`, `local pairs = pairs`; manual index tracking (`line_idx`); replaced `nvim_set_option_value()` |
-| All modules | Module-level localization patterns; pre-computed lookup tables; numeric loops |
+| All modules | Module-level localization patterns; numeric loops |
 
 ---
 
@@ -283,32 +283,34 @@ git commit -S -m "perf: LuaJIT low-level optimizations across all modules"
 
 1. **No wrapper functions** — call C APIs directly, avoid indirection
 2. **Localize EVERYTHING at module top** — all `vim.*`, `string.*`, `table.*`, `math.*`, `os.*`, `io.*`, `pcall`
-3. **Use numeric `for` loops** — `for i = 1, #t do` NOT `ipairs()` or `pairs()` or `vim.iter()`
+3. **Use numeric `for` loops** — `for i = 1, #data do` NOT `ipairs()` or `pairs()` or `vim.iter()`
 4. **Manual index tracking** — use `li = #lines + 1` / `lines[li] = ...; li = li + 1` instead of `#lines + 1`
-5. **Pre-compute lookup tables** — 256-char URL encode map, kana normalization table
-6. **Memoization** — cache expensive computations (`get_key()` with `_key_memo`)
-7. **Short variable names** — `sfmt`, `sbyte`, `sgsub`, `vnotif`, `vsched`, `vlog` (standard in this codebase)
-8. **Inline hot functions** — `spacer()` inlined in `response.lua`
-9. **Avoid table constructors in loops** — reuse tables, pre-allocate when possible
-10. **Early returns** — reduce nesting depth
-11. **Direct module requires** — `local c = require('resonance.loader.cache')` not lazy loading in hot paths
+5. **Memoization** — cache expensive computations
+6. **Short variable names** — `sfmt`, `sgsub`, `vnotif`, `vsched`, `vlog` (standard in this codebase)
+7. **Avoid table constructors in loops** — reuse tables, pre-allocate when possible
+8. **Early returns** — reduce nesting depth
+9. **Direct module requires** — `local c = require('resonance.loader.cache')` not lazy loading in hot paths
 
 ### Required Localization Pattern (at top of EVERY module)
+
+Localize only what the module actually uses. The list below is the full set
+the codebase needs today — adding unused aliases is noise.
 
 ```lua
 -- Standard library
 local sfmt = string.format
-local sbyte = string.byte
 local sgsub = string.gsub
 local slower = string.lower
 local ssub = string.sub
-local schar = string.char
+local smatch = string.match
+local srep = string.rep
 local sconcat = table.concat
+local tclear = table.clear
+local tinsert = table.insert
+local tsort = table.sort
 local math_min = math.min
 local mfloor = math.floor
-local otime = os.time
 local pcall = pcall
-local iopen = io.open
 
 -- Neovim C APIs (vim.*)
 local uv = vim.uv
@@ -316,14 +318,10 @@ local vfn = vim.fn
 local vfsn = vim.fs.normalize
 local vnotif = vim.notify
 local vsched = vim.schedule
+local vdefer = vim.defer_fn
 local vlog = vim.log.levels
-local vjson_dec = vim.json.decode
-local vjson_enc = vim.json.encode
-local vnet_req = vim.net and vim.net.request
 local vsys = vim.system
-local vexpand = vim.fn.expand
 local strim = vim.trim
-local sfind = string.find
 local srequire = require
 
 -- vim.api (localize individually)
@@ -397,36 +395,15 @@ local function clear_memo()
 end
 ```
 
-### Pre-computed Lookup Tables
-
-```lua
-local _url_map = {}
-for i = 0, 255 do
-  local c = schar(i)
-  if c:match('[%w%-_%.~]') then
-    _url_map[i] = c
-  elseif c == ' ' then
-    _url_map[i] = '+'
-  elseif c == '\n' then
-    _url_map[i] = '%0D%0A'
-  else
-    _url_map[i] = sfmt('%%%02X', i)
-  end
-end
-
-local function urlencode(str)
-  if not str then return '' end
-  return sgsub(str, '.', function(c)
-    return _url_map[sbyte(c)]
-  end)
-end
-```
-
 ### Spinner Timer (LuaJIT-friendly)
 
+The spinner frames live in `ui/render.lua` as `SPINNER_FRAMES` (10 entries).
+Advance the index with a hardcoded modulus so the length is not recomputed
+per tick:
+
 ```lua
-spin_idx = (spin_idx % 10) + 1  -- hardcoded #spin_frames = 10
-local frame = spin_frames[spin_idx]
+spin_idx = (spin_idx % 10) + 1  -- hardcoded #SPINNER_FRAMES == 10
+local frame = SPINNER_FRAMES[spin_idx]
 ```
 
 ### Modern Neovim APIs (Neovim 0.13+)
@@ -445,10 +422,13 @@ vim.api.nvim_win_set_option(win, 'wrap', true)
 
 ### Async Notifications (Avoid Fast-Event-Context Errors)
 
+`vim.notify` cannot be called from a fast-event context (an `async` task
+body, a libuv callback). Defer it onto the main loop:
+
 ```lua
 -- ✅ ALWAYS wrap vim.notify in vim_schedule
 vsched(function()
-  vnotif('✓ Query successful: ' .. w, vlog.INFO, { title = 'Jisho.org', id = 'jisho_req', timeout = 10 })
+  vnotif('Plugin loaded: ' .. name, vlog.INFO, { title = 'Resonance', timeout = 10 })
 end)
 ```
 

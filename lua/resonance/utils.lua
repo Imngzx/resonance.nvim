@@ -209,7 +209,16 @@ function M.parse_trigger(config)
   end
   if config.cmd then
     local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd
-    return '󰘳 ' .. table_concat(cmds, ', ')
+    local parts = {}
+    for i = 1, #cmds do
+      local c = cmds[i]
+      if type(c) == 'table' then
+        parts[#parts + 1] = c.name or c[1] or '?'
+      else
+        parts[#parts + 1] = c
+      end
+    end
+    return '󰘳 ' .. table_concat(parts, ', ')
   end
   if config.keys then
     return '󰌌 keys'

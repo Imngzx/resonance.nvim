@@ -93,6 +93,19 @@ function M.parse_config(config)
     end
   end
 
+  -- Normalize cmd: a string becomes a one-element list, and a command spec
+  -- table (with its own nargs/range/complete) becomes a one-element list
+  -- too. Without this, a spec table has no [1] and no command is ever
+  -- registered.
+  if config.cmd then
+    local cmds = config.cmd
+    if type(cmds) == 'string' then
+      config.cmd = { cmds }
+    elseif type(cmds) == 'table' and cmds[1] == nil then
+      config.cmd = { cmds }
+    end
+  end
+
   local plugins = config.plugin
   if type(plugins) == 'string' then
     plugins = { plugins }

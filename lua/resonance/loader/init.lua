@@ -449,6 +449,20 @@ function M.load(config)
   -- This ensures force_load_fns works for dependency resolution for any plugin in the group
   local current_name = parsed_names[1]
 
+  -- The teardown callbacks for this spec's triggers. They are filled in by
+  -- register_all below, which runs after load_now is defined. Once the
+  -- plugin is loaded, every trigger of this spec is removed -- not just the
+  -- one that fired. The others are stubs that have done their job, and
+  -- leaving them in place means they keep firing.
+  local trigger_teardown = {}
+
+  local function teardown_triggers()
+    for i = 1, #trigger_teardown do
+      pcall(trigger_teardown[i])
+    end
+    trigger_teardown = {}
+  end
+
   --- Load this spec's plugins now.
   ---
   --- Returns true when the plugins are loaded (or were already loaded), and
@@ -601,6 +615,11 @@ function M.load(config)
       member_state.loaded = true
     end
 
+    -- The plugin is loaded, so every trigger of this spec is done. Remove
+    -- the ones that did not fire too: they are stubs that would otherwise
+    -- keep firing against a plugin that is already loaded.
+    teardown_triggers()
+
     if current_name then
       visiting_path[current_name] = nil
       if path_order[#path_order] == current_name then
@@ -682,7 +701,7 @@ function M.load(config)
 
   -- Register the triggers in a group named after the plugin, so the replay
   -- can address them individually and exclude the ones that already ran.
-  triggers.register_all(config, load_now, triggers.trigger_group(group_name))
+  trigger_teardown = triggers.register_all(config, load_now, triggers.trigger_group(group_name))
 end
 
 ---@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, table<string, string[]>

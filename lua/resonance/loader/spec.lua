@@ -55,6 +55,16 @@ function M.parse_config(config)
         config.event = { { event = 'User', pattern = 'VeryLazy', user = true } }
       end
     end
+  elseif not (config.event or config.cmd or config.keys or config.ft) then
+    -- A spec with no trigger and no lazy field registered nothing at all:
+    -- no autocmd, no keymap, no command. The plugin was never installed
+    -- and never loaded, with no error to explain why.
+    --
+    -- The README documents this shape for version pinning --
+    -- { src = ..., version = 'v1.0.0' } -- where the user wants the
+    -- plugin, just pinned. So a triggerless spec loads eagerly on
+    -- VimEnter, the same as lazy = false.
+    config.event = 'VimEnter'
   end
 
   -- cond field: boolean or function() -> boolean (lazy.nvim parity)

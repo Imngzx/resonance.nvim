@@ -282,6 +282,39 @@ test.run_suite('resonance.loader.spec', {
     end,
   },
 
+  {
+    name = 'parse_config: a spec with no trigger and no lazy loads on VimEnter',
+    fn = function()
+      -- Without this, the spec registered no trigger at all: the plugin was
+      -- never installed and never loaded, with no error to explain why.
+      local config = {src = 'test/repo', version = 'v1.0.0'}
+      local result = spec.parse_config(config)
+      test.assert_not_nil(result)
+      test.assert_eq(result.event, 'VimEnter')
+    end,
+  },
+
+  {
+    name = 'parse_config: a spec with a trigger keeps it',
+    fn = function()
+      local config = {src = 'test/repo', event = 'LspAttach'}
+      local result = spec.parse_config(config)
+      test.assert_not_nil(result)
+      test.assert_eq(result.event, 'LspAttach')
+    end,
+  },
+
+  {
+    name = 'parse_config: a spec with only keys keeps the triggerless default away',
+    fn = function()
+      local config = {src = 'test/repo', keys = {'<leader>x'}}
+      local result = spec.parse_config(config)
+      test.assert_not_nil(result)
+      -- keys is a trigger, so no VimEnter event is added.
+      test.assert_nil(result.event)
+    end,
+  },
+
   -- normalize_events tests
   {
     name = 'normalize_events: a string becomes one descriptor',

@@ -572,6 +572,29 @@ test.run_suite('resonance.loader.deep', {
   },
 
   {
+    name = 'triggerless spec: loads on VimEnter',
+    fn = function()
+      -- A spec with no trigger and no lazy field registered nothing at all:
+      -- no autocmd, no keymap, no command. The plugin was never installed
+      -- and never loaded. The README documents this shape for version
+      -- pinning -- { src = ..., version = 'v1.0.0' } -- where the user
+      -- wants the plugin, just pinned.
+      test.stub_pack()
+      local setup_ran = false
+      _G.resonance.load({
+        src = 'https://github.com/test/triggerless-plugin',
+        version = 'v1.0.0',
+        setup = function() setup_ran = true end,
+      })
+
+      vim.api.nvim_exec_autocmds('VimEnter', { modeline = false })
+      vim.wait(200)
+
+      test.assert_true(setup_ran, 'the triggerless plugin never loaded')
+    end,
+  },
+
+  {
     name = 'fallback mode: works when vim.pack is unavailable',
     fn = function()
       -- vim.pack is lazily rehydrated by the vim metatable, so nil it out via

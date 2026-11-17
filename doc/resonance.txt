@@ -169,6 +169,13 @@ Multiple plugins can be passed as separate arguments or as a list:
 
 Triggers can be combined. Plugin loads on FIRST matching trigger.
 
+A spec with no trigger and no |lazy| field loads eagerly on VimEnter, the
+same as lazy = false. Useful for a plugin you just want installed and
+pinned, with no trigger of its own.
+
+|event| accepts a User event with its own pattern:
+    event = {'User', pattern = 'VeryLazy'}
+
 4.2 Dependencies                                   *resonance-dependencies*
 
     dependencies = {'https://github.com/neovim/nvim-lua/plenary.nvim'}

@@ -158,7 +158,10 @@ event = { "User", pattern = "MasonLoaded" }
 
 Resonance accepts native `vim.pack` fields: `src`, `name`, `version`, and `data`. A source can also be supplied as the first positional value or through the `url` compatibility alias; Resonance normalizes both to `src` before calling `vim.pack.add()`.
 
-Each entry needs at least one lazy trigger: `event`, `cmd`, `keys`, or `ft`.
+Each entry needs at least one lazy trigger: `event`, `cmd`, `keys`, or `ft`. An
+entry with no trigger loads eagerly on `VimEnter`, the same as `lazy = false` —
+useful for a plugin you just want installed and pinned, with no trigger of its
+own.
 
 ### 📝 Complete Example
 

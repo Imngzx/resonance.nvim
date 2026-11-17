@@ -119,6 +119,7 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 | **触发器不回收**                          | `triggers.lua`                                | 一个 spec 同时有 event+cmd+keys 时，只有先触发的那个被删；`once` autocmd 之后会空转一次，keymap 残留成"删除→重放"闭包。卸载插件后 specs/triggers 也永不清除。                                                      |
 | **`_plugin_dir_cache` 永不失效**          | `loader/init.lua:129`                         | 首次 `pack.add` 新装的插件不在缓存里，`get_plugin_dir` 返回 nil（`PackChanged` 因带 `data.path` 侥幸绕过）。缓存只在 `M._reset()` 里清空，从不在 `PackChanged` 时失效。                                                    |
 | **UI 状态陈旧**                           | `actions.lua` / `ui/init.lua`                 | **部分已修复**：`check_updates_network` 现在会清空 `updates`（`actions.lua:64`），`pending_count` 也会重置了；但 `pack_details` / `expanded` 在 `open()` 里仍不复位。                                                   |
+| **`BufEnter` 对已存在的文件从不被重放**（2026-11-17 用户发现） | `loader/init.lua:298-306` | `replay_for_buffer()` 的 `is_file` 分支把 `BufEnter` 放进了 `else`，于是只有"非磁盘文件"的 buffer 才会重放它。但 `BufEnter` 对**每个** buffer 都会触发（实测 `nvim <file>` 的事件顺序为 `BufReadPre,BufReadPost,FileType,BufEnter`）。只监听 `BufEnter` 的 trigger group 因此永远不会被重放，插件静默不加载。**当前用户配置未受影响**（没有插件用 `BufEnter` 作 trigger），但缺陷本身成立。 |
 
 ### P1 —— 已修复 (2026-11-17, 续)
 
@@ -149,7 +150,8 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 - **循环依赖 + 反向依赖**：`scanner → loader`（只为取 `plugin_triggers`）与 `loader → scanner`（只为写 `load_times`）；`ui/render → resonance`（`stats`）→ `scanner → loader`。缺一个中立的 `registry` 层，导致"打开一个只读面板"会把整个控制面（含 build autocmd）拖进来。
 - **require 期副作用**：`loader/init.lua:30,89` 在模块加载时计算 `pack_dir_base`、注册 `PackChanged` augroup；`build.lua:16` 更是在 require 期就崩。模块应保持纯加载。
-- **"不修改用户 spec"的注释已失效**：`config._force_load = ...`、`config._replay_done = true` 仍写回用户表；`spec.parse_config` 也就地改 `config`（`spec.lua:18-40`）。`note/knowledge` 里写的 "fixed" 已不成立。
+- **"不修改用户 spec"的注释已失效**：`config._replay_done = true` 仍写回用户表；`spec.parse_config` 也就地改 `config`（`spec.lua:18-40`）。`note/knowledge` 里写的 "fixed" 已不成立。
+  - **2026-11-17 复核：** 原文还提到 `config._force_load`，但**该字段在当前源码里已不存在**（`rg '_force_load' lua/` 零匹配）。这一条是从旧版本抄过来的，没有重新核对。剩下的用户表改写只有 `_replay_done` 一处。
 - **`load_now` 是上帝函数**：循环检测、依赖、安装、`packadd`、setup 调用、计时、重放全在 ~100 行闭包里；`current_name = parsed_names[1]` 让多插件 spec 的依赖/环检测语义含糊；几乎无法单测。
 - **重复与死代码**：`is_plugin_list` 判断写了两份（`init.lua:96` / `spec.lua:8`）；scanner 排序逻辑复制两遍；`utils.is_windows`、`scanner.get_detailed_info`、`rev_to` / `manifest` 均无消费者；`loader._get_event_chain_internal(event)` 包装丢掉 buf/data。
 - **测试已有，但 CI / 格式化 / 静态检查仍缺**：2026-11-17 复核——仓库现有 13 个测试文件、197 个用例全部通过，"零测试"的说法已过时。仍缺 CI、`stylua` / `luacheck` 配置，以及 `:checkhealth`。

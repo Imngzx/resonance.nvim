@@ -111,6 +111,92 @@ nothing to fetch — the spinner was raised and the check completes on the
 next tick. It returns `false` only when a check was already running or
 there is no plugin list at all.
 
+### N2. `replay_for_buffer()` never replays `BufEnter` for an existing file
+
+- **Severity:** high — a trigger group whose only event is `BufEnter` never
+  fires on the `nvim <file>` path, so the plugin silently never loads.
+  Found by the user on 2026-11-17 while reviewing the item 0 fix.
+- **File:** `lua/resonance/loader/init.lua:298-306` (`replay_for_buffer`)
+- **Problem:** the replay picks its events from whether the buffer is a file
+  on disk:
+
+  ```lua
+  if is_file then
+    fire_groups('BufReadPre')
+    fire_groups('BufReadPost')
+  else
+    fire_groups('BufNewFile')
+    fire_groups('BufEnter')
+  end
+  ```
+
+  `BufEnter` is in the `else` branch, so it is replayed **only for a buffer
+  that is not a file on disk**. But `BufEnter` fires for *every* buffer —
+  Neovim fires it on entering a buffer, whether or not the file exists.
+
+  Verified event order on `nvim <file>`:
+
+  ```text
+  EVENTS_ON_OPEN=BufReadPre,BufReadPost,FileType,BufEnter
+  ```
+
+  `BufEnter` is in the list, and the replay skips it.
+- **Reproduction (verified, headless):** a plugin whose only trigger is
+  `event = 'BufEnter'`, registered late (after the events already fired):
+
+  ```text
+  REPLAY_FIRED=[BufReadPre,BufReadPost]
+  AFTER_REPLAY ran=false      ← the plugin never loaded
+  ```
+
+  With `fire_groups('BufEnter')` moved out of the `else`:
+
+  ```text
+  REPLAY_FIRED=[BufReadPre,BufReadPost,BufEnter]
+  AFTER_REPLAY ran=true       ← the plugin loads
+  ```
+
+- **The same flaw silently affects `BufNewFile`.** A plugin whose only
+  trigger is `event = 'BufNewFile'` is also never replayed for an existing
+  file:
+
+  | Buffer | `BufNewFile`-only trigger | Replayed |
+  |---|---|---|
+  | existing file (`is_file = true`) | `ran=false` | `BufReadPre,BufReadPost` |
+  | new file (`is_file = false`) | `ran=true` | `BufNewFile,BufEnter` |
+
+  `BufNewFile` genuinely only fires for a *new* file, so not replaying it
+  for an existing file is arguably correct. `BufEnter` is different — it
+  fires for every buffer, so it must always be replayed.
+- **Impact on the user's actual config:** **none today.** No plugin in
+  `~/.config/nvim/lua/plugins/` uses `BufEnter` as a trigger, and the
+  common shape `event = { 'BufReadPost', 'BufNewFile' }` (`ufo`,
+  `mini-hipatterns`, `tool`, `treesitter-context`, `ui`) still loads,
+  because `BufReadPost` alone satisfies the group. The bug only bites a
+  `BufEnter`-only trigger, or a group whose events are all in the `else`
+  branch.
+- **Fix:** move `fire_groups('BufEnter')` out of the `else` so it runs for
+  every buffer:
+
+  ```lua
+  if is_file then
+    fire_groups('BufReadPre')
+    fire_groups('BufReadPost')
+  else
+    fire_groups('BufNewFile')
+  end
+
+  fire_groups('BufEnter')
+  fire_groups('FileType')
+  ```
+
+  The `is_file` split should decide between `BufReadPre`/`BufReadPost` and
+  `BufNewFile` — the events that genuinely differ — and not decide whether
+  `BufEnter` happens at all.
+- **Verification:** a behavioural test that registers a `BufEnter`-only
+  trigger late, calls `replay_for_buffer()`, and asserts the plugin loaded.
+  Must fail before the fix.
+
 ---
 
 ## Batch 1 — P0 correctness (from `fix.md`)
@@ -367,7 +453,12 @@ there is no plugin list at all.
 - **Problem (c):** caller-owned tables are mutated: `spec.parse_config()`
   rewrites `config` in place (`spec.lua:18-27`), and `load_now()` writes
   `config._replay_done = true` (`loader/init.lua:600`) back into the user's
-  spec. `config._force_load` is set the same way.
+  spec. `loader/dag.lua:176,198` then reads that field back out of the
+  user-owned table.
+  - **Correction (2026-11-17):** `config._force_load` is **not** set anywhere
+    in the current source — `rg '_force_load' lua/` returns nothing. That
+    claim was carried forward from `fix-notes.md` without re-checking. The
+    only user-table mutation left is `config._replay_done`.
 - **Fix:** extract a pure-data `lua/resonance/registry.lua` holding `specs`,
   `plugin_triggers`, `disabled_plugins`, `load_times`; move the
   `setup_event_tracker()` / `setup_packchanged_autocmd()` calls into
@@ -462,10 +553,11 @@ These rows are **no longer accurate** and should be corrected when
 
 ```text
 0. N1  r-key notification spam        ← DONE (with item 5)
-1. Batch 1  items 2, 3, 4, 7           ← P0 correctness
-2. Batch 2  items 8, 9, 11, 12         ← triggers, UX, memory
-3. Batch 3  items 10, 13, 15, 16       ← build state, stats, docs
-4.          item 14                    ← architecture; largest blast radius, last
+1. N2  BufEnter never replayed        ← user-reported, one-line fix, one test
+2. Batch 1  items 2, 3, 4, 7           ← P0 correctness
+3. Batch 2  items 8, 9, 11, 12         ← triggers, UX, memory
+4. Batch 3  items 10, 13, 15, 16       ← build state, stats, docs
+5.          item 14                    ← architecture; largest blast radius, last
 ```
 
 Rationale for the order:
@@ -473,6 +565,10 @@ Rationale for the order:
 - **N1 first.** The user reported it, it is one file, and it touches the
   same `actions.check_updates_network()` that item 5 also modifies. Land
   them together so the guard and the counter reset are consistent. **Done.**
+- **N2 second.** Also user-reported, and it is a one-line change with a
+  one-test guard. It belongs to the same failure class as item 0 — a
+  plugin that silently never loads — so it should not sit behind a
+  multi-file refactor.
 - **Batch 1 before Batch 2.** Items 2, 3 and 4 are correctness bugs that
   can silently produce a plugin that never loads — the same failure class
   the previous session just fixed. They also define the trigger semantics

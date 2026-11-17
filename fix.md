@@ -109,6 +109,71 @@ directions:
 **End-to-end:** with the user's real config, `nvim <file>` and open-from-yazi
 both load heirline (`HL_RAN=true` / `PATH2_HL=true`).
 
+#### Follow-up (found 2026-11-17) — `BufEnter` is never replayed for an existing file
+
+The item 0 fix moved the replay onto a per-trigger-group basis, but left
+the event selection unchanged:
+
+```lua
+if is_file then
+  fire_groups('BufReadPre')
+  fire_groups('BufReadPost')
+else
+  fire_groups('BufNewFile')
+  fire_groups('BufEnter')     -- ← only for a buffer that is not a file
+end
+```
+
+`BufEnter` fires for **every** buffer, not only new ones. Verified event
+order on `nvim <file>`:
+
+```text
+EVENTS_ON_OPEN=BufReadPre,BufReadPost,FileType,BufEnter
+```
+
+So a trigger group whose only event is `BufEnter` never fires on the
+`nvim <file>` path, and the plugin silently never loads.
+
+Reproduction (late-registered `event = 'BufEnter'` trigger):
+
+```text
+REPLAY_FIRED=[BufReadPre,BufReadPost]
+AFTER_REPLAY ran=false      ← the plugin never loaded
+```
+
+With `fire_groups('BufEnter')` moved out of the `else`:
+
+```text
+REPLAY_FIRED=[BufReadPre,BufReadPost,BufEnter]
+AFTER_REPLAY ran=true       ← the plugin loads
+```
+
+**Impact on the user's actual config: none today.** No plugin in
+`~/.config/nvim/lua/plugins/` uses `BufEnter` as a trigger, and the common
+shape `event = { 'BufReadPost', 'BufNewFile' }` still loads, because
+`BufReadPost` alone satisfies the group. The bug only bites a
+`BufEnter`-only trigger.
+
+**Fix:** the `is_file` split should decide between `BufReadPre`/`BufReadPost`
+and `BufNewFile` — the events that genuinely differ — and not decide
+whether `BufEnter` happens at all:
+
+```lua
+if is_file then
+  fire_groups('BufReadPre')
+  fire_groups('BufReadPost')
+else
+  fire_groups('BufNewFile')
+end
+
+fire_groups('BufEnter')
+fire_groups('FileType')
+```
+
+**Verification:** a behavioural test that registers a `BufEnter`-only trigger
+late, calls `replay_for_buffer()`, and asserts the plugin loaded. Must fail
+before the fix.
+
 ### 1. Restore coverage on 9 silent-false-pass replay tests — FIXED
 
 - **Files:** `test/behavior_spec.lua`, `test/integration_deep_spec.lua`

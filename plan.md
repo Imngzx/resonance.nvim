@@ -27,7 +27,7 @@ Items already resolved are listed under "Already resolved" in `fix.md` and are
 
 ## New issues reported by the user
 
-### N1. The `r` key spams "Resonating in background..." notifications
+### N1. **RESOLVED** — The `r` key spams "Resonating in background..." notifications
 
 - **Severity:** UX — the user can hold `r` and stack unlimited notifications.
 - **File:** `lua/resonance/ui/init.lua:46-50` (the keymap), `lua/resonance/ui/actions.lua:55-57` (the guard).
@@ -75,6 +75,41 @@ Items already resolved are listed under "Already resolved" in `fix.md` and are
 - **Verification:** a behavioural test that presses `r` twice and asserts
   exactly **one** notification and that `check_updates_network()` is not
   re-entered. Must fail before the fix.
+
+#### Resolution
+
+**Option 1** was taken. `check_updates_network()` returns `true` when it
+initiated a check and `false` when one was already running; the `r` keymap
+notifies only on `true`.
+
+The key is **inert**, not merely silent — the second press neither notifies
+nor queues a second check, because the guard short-circuits before any work
+is scheduled.
+
+Option 3 was rejected: unmap/remap would need the buffer-local keymap
+restored on every exit path, including errors and UI close.
+
+**Tests** (`test/ui_spec.lua`):
+
+- `actions: check_updates_network reports whether it started a check`
+- `ui: the r key notifies once and stays inert while checking` — drives the
+  real buffer-local keymap through `nvim_feedkeys`, with the spawner stubbed
+  so the check stays in flight.
+
+**Mutation-verified** in both directions:
+
+| Mutation | Test that fails |
+|---|---|
+| keymap reverted to unconditional notify | `ui: the r key notifies once and stays inert while checking` (`Actual: 2`) |
+| guard weakened to return `true` while already checking | both N1 tests |
+
+**End-to-end:** 5 presses against a held-open fetch → **1** notification.
+
+**Note on the return contract.** `check_updates_network()` returns `true`
+when it started a check, including the degenerate case where there is
+nothing to fetch — the spinner was raised and the check completes on the
+next tick. It returns `false` only when a check was already running or
+there is no plugin list at all.
 
 ---
 
@@ -138,7 +173,7 @@ Items already resolved are listed under "Already resolved" in `fix.md` and are
 - **Verification:** behavioural test — a dependency whose install fails must
   prevent the parent's `setup()` from running.
 
-### 5. `check_updates_network()` leaks `pending_count` and fetches empty paths
+### 5. **RESOLVED** — `check_updates_network()` leaks `pending_count` and fetches empty paths
 
 - **Files:** `lua/resonance/ui/actions.lua`, `lua/resonance/ui/init.lua`
 - **Status:** open — verified.
@@ -154,6 +189,29 @@ Items already resolved are listed under "Already resolved" in `fix.md` and are
   or missing path before counting and spawning, and call `finish_check()` if
   no valid paths remain.
 - **Verification:** behavioural tests for both.
+
+#### Resolution
+
+- `st.state.pending_count = 0` is reset at the start of
+  `check_updates_network()` and in `ui.open()`.
+- The fetch loop counts only the plugins with a non-empty path
+  (`valid_total`) and spawns `git fetch` only for those. A plugin disabled
+  via `cond = false` no longer produces a `git fetch` with `{ cwd = '' }`.
+- When `valid_total == 0` the check completes on the next tick instead of
+  spawning any process.
+
+**Tests** (`test/ui_spec.lua`):
+
+- `actions: check_updates_network resets the pending count`
+- `actions: check_updates_network skips plugins without a path` — stubs the
+  spawner and asserts exactly one fetch, for the plugin with a path.
+
+**Mutation-verified:**
+
+| Mutation | Test that fails |
+|---|---|
+| `pending_count` reset removed | `actions: check_updates_network resets the pending count` (`Expected: 0, Actual: 7`) |
+| path filter removed | `actions: check_updates_network skips plugins without a path` (`Expected: 1, Actual: 2`) |
 
 ### 7. `details_task` survives `:q` / `<C-w>c`; UI state is not cleaned up
 
@@ -378,10 +436,10 @@ These rows are **no longer accurate** and should be corrected when
 | Row in `fix-notes.md` | Actual status |
 |---|---|
 | P1 "触发器不回收" — only the fired trigger is deleted | **Still true**, now item 8. The `cmd` path deletes its command and the `keys` path deletes its keymap, but siblings survive. |
-| P1 "UI 状态陈旧" — `check_updates_network` does not clear `updates` | **Partly fixed.** `updates = {}` is now cleared (`actions.lua:57`), but `pending_count` is not — item 5. |
-| P1 "UI 状态陈旧" — `pack_details` / `expanded` not reset in `open()` | **Still true.** `ui.open()` resets `updates` and `commits` (`ui/init.lua:132`) but not `pack_details` or `expanded`. |
+| P1 "UI 状态陈旧" — `check_updates_network` does not clear `updates` | **Fixed.** `updates = {}` is cleared (`actions.lua:64`), and `pending_count` is now reset too (item 5). |
+| P1 "UI 状态陈旧" — `pack_details` / `expanded` not reset in `open()` | **Still true.** `ui.open()` resets `updates` and `commits` (`ui/init.lua:135`) but not `pack_details` or `expanded`. |
 | P1 "`_plugin_dir_cache` 永不失效" | **Still true** — item 13. |
-| P2 "零测试、零 CI、无格式化/静态检查配置" | **Partly stale.** There are now 13 test files and 197 passing tests. Still no CI, no `stylua`/`luacheck` config, and no `:checkhealth`. |
+| P2 "零测试、零 CI、无格式化/静态检查配置" | **Partly stale.** There are now 13 test files and 201 passing tests. Still no CI, no `stylua`/`luacheck` config, and no `:checkhealth`. |
 | P2 "文档漂移" — README uses `Vim.fn` / `Vim.uv` / `Vim.notify` / `Vim.system` | **Stale.** Verified: zero matches in the current README. |
 | P2 "文档漂移" — doc says the DAG key is `g`, code uses `A` | **Stale.** `doc/resonance.txt:224` already says `A`. |
 | P3 "`r` 键阻塞主线程" | **Stale.** `check_updates_network()` uses `vim.async` + a semaphore; the git fetches are non-blocking. The *notification* spam is a separate, new issue — N1. |
@@ -403,8 +461,8 @@ These rows are **no longer accurate** and should be corrected when
 ## Sequencing
 
 ```text
-0. N1  r-key notification spam        ← user-reported, smallest, highest visibility
-1. Batch 1  items 2, 3, 4, 5, 7        ← P0 correctness
+0. N1  r-key notification spam        ← DONE (with item 5)
+1. Batch 1  items 2, 3, 4, 7           ← P0 correctness
 2. Batch 2  items 8, 9, 11, 12         ← triggers, UX, memory
 3. Batch 3  items 10, 13, 15, 16       ← build state, stats, docs
 4.          item 14                    ← architecture; largest blast radius, last
@@ -414,7 +472,7 @@ Rationale for the order:
 
 - **N1 first.** The user reported it, it is one file, and it touches the
   same `actions.check_updates_network()` that item 5 also modifies. Land
-  them together so the guard and the counter reset are consistent.
+  them together so the guard and the counter reset are consistent. **Done.**
 - **Batch 1 before Batch 2.** Items 2, 3 and 4 are correctness bugs that
   can silently produce a plugin that never loads — the same failure class
   the previous session just fixed. They also define the trigger semantics

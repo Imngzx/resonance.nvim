@@ -396,6 +396,12 @@ actually has.
 
     actions.check_updates_network()
         Fetch remote updates for all plugins (async).
+        Returns: boolean -- true when this call started a check, false when
+        a check was already running.
+
+        The `r` key uses the return value to notify only once. While a check
+        is in flight the key is inert, so holding it cannot stack
+        notifications.
 
     actions.update_plugins(names)
         Update specified plugins via vim.pack.update.

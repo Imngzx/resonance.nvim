@@ -44,8 +44,11 @@ local function bind_keys(win_close_fn)
   map('<Esc>', win_close_fn, 'Close')
   map('<CR>', actions.toggle_details, 'Toggle Details')
   map('r', function()
-    actions.check_updates_network()
-    utils.notify('Resonating in background...', vim_log_levels.INFO)
+    -- Notify only when a check actually started. While one is in flight the
+    -- key stays inert, so holding `r` cannot stack notifications.
+    if actions.check_updates_network() then
+      utils.notify('Resonating in background...', vim_log_levels.INFO)
+    end
   end, 'Fetch Updates')
   map('u', function()
     local name = st.plugin_at_cursor()
@@ -130,6 +133,7 @@ function M.open(ui_config)
 
   st.state.win_width = math_floor(vim_o.columns * ui_config.width)
   st.state.updates, st.state.commits = {}, {}
+  st.state.pending_count = 0
   st.state.view_mode = 'list'
   st.state.icons = resolve_icons(ui_config.icons)
   local function load_commits_async()

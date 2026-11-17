@@ -118,8 +118,14 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 | **无 trigger 的 spec 永远不加载也不安装** | `triggers.register_all`                       | `load()` 只注册触发器；没有 `event/cmd/keys/ft` 就没有任何路径走到 `pack_add`。缺 `lazy=false` / eager 入口，而 `doc/resonance.txt` 还说 "load 由 setup 内部调用"，与实现不符。                                    |
 | **触发器不回收**                          | `triggers.lua`                                | 一个 spec 同时有 event+cmd+keys 时，只有先触发的那个被删；`once` autocmd 之后会空转一次，keymap 残留成"删除→重放"闭包。卸载插件后 specs/triggers 也永不清除。                                                      |
 | **`_plugin_dir_cache` 永不失效**          | `loader/init.lua:129`                         | 首次 `pack.add` 新装的插件不在缓存里，`get_plugin_dir` 返回 nil（`PackChanged` 因带 `data.path` 侥幸绕过）。缓存只在 `M._reset()` 里清空，从不在 `PackChanged` 时失效。                                                    |
-| **UI 状态陈旧**                           | `actions.lua` / `ui/init.lua`                 | **部分已修复**：`check_updates_network` 现在会清空 `updates`（`actions.lua:57`），但 `pending_count` 没清（spinner 计数会累加）；`pack_details` / `expanded` 在 `open()` 里仍不复位。                                                   |
-| **`r` 键重复触发时通知刷屏**（2026-11-17 用户报告） | `ui/init.lua:46-50`                  | 重入保护在 `actions.check_updates_network()` 内部，而通知写在 keymap 里、位于保护之外；该函数无返回值，keymap 无从判断，于是每按一次都弹一条 "Resonating in background..."。实测按 3 次弹 3 条。期望：只通知一次，且检查期间 `r` 失效。 |
+| **UI 状态陈旧**                           | `actions.lua` / `ui/init.lua`                 | **部分已修复**：`check_updates_network` 现在会清空 `updates`（`actions.lua:64`），`pending_count` 也会重置了；但 `pack_details` / `expanded` 在 `open()` 里仍不复位。                                                   |
+
+### P1 —— 已修复 (2026-11-17, 续)
+
+| 问题                                      | 修复 Commit | 说明                                                                                                                     |
+| ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `r` 键重复触发时通知刷屏（用户报告）      | 7a8c3e1     | 重入保护原本在 `actions.check_updates_network()` 内部，而通知写在 keymap 里、位于保护之外；该函数无返回值，keymap 无从判断，于是每按一次都弹一条 "Resonating in background..."。现在该函数返回 `boolean`（本次调用是否发起了检查），keymap 只在返回 `true` 时通知——检查期间 `r` 完全失效，既不重复通知也不排队第二次检查 |
+| `check_updates_network` 泄漏 `pending_count`、对空路径执行 fetch | 7a8c3e1 | 每次检查前重置 `pending_count`（`ui.open()` 同步重置）；只对路径非空的插件执行 `git fetch`，不再以 `{ cwd = '' }` 启动进程 |
 
 ### P1 —— 已修复 (2026-10-19 至 2026-10-22)
 

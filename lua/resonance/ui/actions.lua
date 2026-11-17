@@ -51,94 +51,116 @@ local function start_spinner()
   end)
 end
 
+-- Check for updates over the network.
+--
+-- Returns true when this call initiated a check, false when a check was
+-- already running or there was nothing to check at all. The caller uses the
+-- return value to decide whether to notify: the `r` key must stay quiet
+-- while a check is in flight, otherwise holding the key stacks one
+-- notification per press.
+---@return boolean started
 function M.check_updates_network()
-  if st.state.checking then return end
+  if st.state.checking then return false end
   st.state.checking = true
   st.state.updates = {} -- Clear stale state
+  st.state.pending_count = 0 -- Clear the count left over from a previous check
   start_spinner()
   render_mod.render()
 
   local info = st.state.info
   if not info or not info.plugins then
     finish_check()
-    return
+    return false
   end
 
-  local total = info.total
   local names = info.plugins.name
   local paths = info.plugins.path
 
-  if total == 0 then
+  -- A plugin disabled via `cond = false` has no directory on disk. Fetching
+  -- it would spawn `git fetch` with an empty cwd, so only count the plugins
+  -- that actually have a path.
+  local valid_total = 0
+  for i = 1, info.total do
+    local path = paths[i]
+    if path and path ~= '' then valid_total = valid_total + 1 end
+  end
+
+  -- Nothing to fetch. The check still started (the spinner is up), so the
+  -- caller may report it, but it completes on the next tick.
+  if valid_total == 0 then
     vim.defer_fn(finish_check, 200)
-    return
+    return true
   end
 
   local completed_fetches = 0
 
-  for i = 1, total do
+  for i = 1, info.total do
     local path = paths[i]
-
-    local run = async.run('resonance_fetch:' .. names[i], function()
-      check_semaphore:with(function()
-        -- Fetch all branches and tags silently in the background
-        system_async({ 'git', 'fetch', '--tags', '--force' }, { cwd = path, text = true })
-        return true
-      end)
-    end)
-
-    run:on_complete(function(_)
-      completed_fetches = completed_fetches + 1
-      if completed_fetches >= total then
-        schedule(function()
-          -- Network fetches are done. Ask native vim.pack to calculate rev_to offline
-          local pack = utils.get_pack()
-          if not pack then
-            finish_check()
-            return
-          end
-
-          local ok, packs = pcall(pack.get, nil, { info = true, offline = true })
-          if not ok or type(packs) ~= 'table' then
-            finish_check()
-            return
-          end
-
-          local pending_logs = 0
-          local logs_completed = 0
-
-          for p = 1, #packs do
-            local pk = packs[p]
-            if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
-              pending_logs = pending_logs + 1
-              local p_name = pk.spec.name
-              -- The spinner shows how many updates are waiting.
-              st.state.pending_count = st.state.pending_count + 1
-
-              -- Local git log is fast enough for standard callbacks
-              system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
-                { cwd = pk.path, text = true }, function(out)
-                  if out.code == 0 and out.stdout and vim_trim(out.stdout) ~= '' then
-                    local lines = {}
-                    for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
-                    st.state.updates[p_name] = lines
-                    schedule(function() render_mod.schedule_render() end)
-                  end
-
-                  logs_completed = logs_completed + 1
-                  if logs_completed >= pending_logs then
-                    schedule(finish_check)
-                  end
-                end)
-            end
-          end
-
-          if pending_logs == 0 then
-            finish_check()
-          end
+    if path and path ~= '' then
+      local run = async.run('resonance_fetch:' .. names[i], function()
+        check_semaphore:with(function()
+          -- Fetch all branches and tags silently in the background
+          system_async({ 'git', 'fetch', '--tags', '--force' }, { cwd = path, text = true })
+          return true
         end)
-      end
-    end)
+      end)
+
+      run:on_complete(function(_)
+        completed_fetches = completed_fetches + 1
+        if completed_fetches >= valid_total then
+          schedule(function()
+            -- Network fetches are done. Ask native vim.pack to calculate rev_to offline
+            local pack = utils.get_pack()
+            if not pack then
+              finish_check()
+              return
+            end
+
+            local ok, packs = pcall(pack.get, nil, { info = true, offline = true })
+            if not ok or type(packs) ~= 'table' then
+              finish_check()
+              return
+            end
+
+            local pending_logs = 0
+            local logs_completed = 0
+
+            for p = 1, #packs do
+              local pk = packs[p]
+              if pk.rev and pk.rev_to and pk.rev ~= pk.rev_to then
+                pending_logs = pending_logs + 1
+                local p_name = pk.spec.name
+                -- The spinner shows how many updates are waiting.
+                st.state.pending_count = st.state.pending_count + 1
+
+                -- Local git log is fast enough for standard callbacks
+                system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
+                  { cwd = pk.path, text = true }, function(out)
+                    if out.code == 0 and out.stdout and vim_trim(out.stdout) ~= '' then
+                      local lines = {}
+                      for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
+                      st.state.updates[p_name] = lines
+                      schedule(function() render_mod.schedule_render() end)
+                    end
+
+                    logs_completed = logs_completed + 1
+                    if logs_completed >= pending_logs then
+                      schedule(finish_check)
+                    end
+                  end)
+              end
+            end
+
+            if pending_logs == 0 then
+              finish_check()
+            end
+          end)
+        end
+      end)
+    end
   end
+
+  return true
 end
 
 function M.toggle_details()

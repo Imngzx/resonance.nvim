@@ -398,6 +398,184 @@ test.run_suite('resonance.ui', {
   },
 
   {
+    name = 'actions: check_updates_network reports whether it started a check',
+    fn = function()
+      -- The `r` keymap needs to know whether the call actually started a
+      -- check, so it can notify once instead of on every press.
+      local l = live()
+      -- An empty plugin list keeps the check from issuing any real fetch.
+      l.state.state.info = { total = 0, loaded = 0, plugins = { name = {}, path = {} } }
+      l.state.state.checking = false
+
+      local first = l.actions.check_updates_network()
+      test.assert_true(first)
+
+      -- A second press while the first check is running must report that it
+      -- did NOT start a check, so the keymap stays quiet.
+      local second = l.actions.check_updates_network()
+      test.assert_false(second)
+
+      l.state.state.checking = false
+    end,
+  },
+
+  {
+    name = 'ui: the r key notifies once and stays inert while checking',
+    fn = function()
+      -- Hold the check open so the second press lands while the first is
+      -- still in flight. That is the real scenario: the network check takes
+      -- seconds, and the user can press `r` again in the meantime.
+      --
+      -- The spawner is stubbed to never call back, so the fetch never
+      -- completes and the check stays in flight.
+      local orig_system = vim.system
+      vim.system = function(cmd, opts, cb)
+        return { wait = function() return { code = 0 } end }
+      end
+      package.loaded['resonance.ui.actions'] = nil
+      package.loaded['resonance.ui'] = nil
+
+      local l = live()
+      local ui_mod = require('resonance.ui')
+      ui_mod.open({
+        border = 'rounded',
+        title = 'test',
+        width = 0.5,
+        height = 0.5,
+        backdrop = 0,
+      })
+      vim.wait(100)
+
+      -- One plugin with a path, so a fetch is actually started.
+      l.state.state.info = {
+        total = 1,
+        loaded = 0,
+        plugins = {
+          name = { 'some-plugin' },
+          type = { 'opt' },
+          path = { '/tmp' },
+          loaded = { true },
+          trigger = { 'event' },
+        },
+      }
+      l.state.state.checking = false
+
+      local notices = with_capture(function()
+        -- Drive the keymap the way the user does. The keymap is
+        -- buffer-local, so feed the key to the UI buffer.
+        local buf = l.state.state.buf
+        test.assert_not_nil(buf)
+        vim.api.nvim_buf_call(buf, function()
+          vim.api.nvim_feedkeys('r', 'x', false)
+        end)
+        vim.wait(200)
+        test.assert_true(l.state.state.checking, 'the check must still be running')
+        -- A second press while the check runs must not notify again.
+        vim.api.nvim_buf_call(buf, function()
+          vim.api.nvim_feedkeys('r', 'x', false)
+        end)
+        vim.wait(200)
+      end)
+
+      local resonating = 0
+      for i = 1, #notices do
+        if notices[i]:find('Resonating', 1, true) then resonating = resonating + 1 end
+      end
+      test.assert_eq(resonating, 1, 'the r key must notify exactly once per check')
+
+      vim.system = orig_system
+      if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
+        vim.api.nvim_win_close(l.state.state.win, true)
+      end
+      l.state.state.win = nil
+      l.state.state.buf = nil
+      l.state.state.checking = false
+    end,
+  },
+
+  {
+    name = 'actions: check_updates_network resets the pending count',
+    fn = function()
+      local l = live()
+      -- An empty plugin list keeps the check from issuing any real fetch.
+      l.state.state.info = { total = 0, loaded = 0, plugins = { name = {}, path = {} } }
+      l.state.state.checking = false
+      -- A leftover count from a previous check would be shown by the spinner.
+      l.state.state.pending_count = 7
+
+      l.actions.check_updates_network()
+
+      test.assert_eq(l.state.state.pending_count, 0)
+
+      l.state.state.checking = false
+    end,
+  },
+
+  {
+    name = 'actions: check_updates_network skips plugins without a path',
+    fn = function()
+      -- A plugin disabled via `cond = false` has no directory on disk. The
+      -- check must not spawn `git fetch` with an empty cwd for it.
+      local l = live()
+      l.state.state.info = {
+        total = 2,
+        loaded = 0,
+        plugins = {
+          name = { 'disabled-plugin', 'real-plugin' },
+          path = { '', '/tmp' },
+        },
+      }
+      l.state.state.checking = false
+      l.state.state.pending_count = 0
+
+      local fetch_cwds = {}
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return { get = function() return {} end }
+      end
+
+      -- Stub the process spawner so no real git runs. actions.lua captures
+      -- vim.system at module load, so the stub has to be installed before
+      -- the module is required.
+      local orig_system = vim.system
+      vim.system = function(cmd, opts, cb)
+        if cmd[1] == 'git' and cmd[2] == 'fetch' then
+          fetch_cwds[#fetch_cwds + 1] = opts.cwd
+        end
+        if cb then cb({ code = 0, stdout = '', stderr = '' }) end
+        return { wait = function() return { code = 0 } end }
+      end
+      package.loaded['resonance.ui.actions'] = nil
+      local l2 = live()
+
+      l2.state.state.info = {
+        total = 2,
+        loaded = 0,
+        plugins = {
+          name = { 'disabled-plugin', 'real-plugin' },
+          path = { '', '/tmp' },
+        },
+      }
+      l2.state.state.checking = false
+      l2.state.state.pending_count = 0
+
+      l2.actions.check_updates_network()
+      vim.wait(500)
+
+      vim.system = orig_system
+      l.utils.get_pack = orig_get_pack
+
+      -- Only the plugin with a real path may be fetched.
+      test.assert_eq(#fetch_cwds, 1)
+      if #fetch_cwds == 1 then
+        test.assert_eq(fetch_cwds[1], '/tmp')
+      end
+
+      l2.state.state.checking = false
+    end,
+  },
+
+  {
     name = 'render: DAG view marks loaded nodes with the filled icon',
     fn = function()
       local l = live()

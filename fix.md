@@ -170,7 +170,7 @@ replay logic — which is what made the item 0 fix verifiable.
 - **Problem:** In `load_now()`, inline dependencies (`else` branch) call `return fail_install(...)` when install fails, aborting the parent plugin. Dependencies registered via `resonance.load()` (`if spec_name and M.specs[spec_name]`) call `fn(nil, visiting_path)` (`force_load_fns[spec_name]`) and ignore the result—so if the dependency fails `pack_install`/`is_installed`, the parent still installs and executes `setup()` with a broken dependency.
 - **Fix:** Have `load_now()` return `boolean` (`true` on success or already-loaded, `false` on `fail_install` or cycle abort) and abort the parent with `fail_install()` if any dependency call returns `false`. Add a behavioral test in `test/behavior_spec.lua`.
 
-### 4b. The `r` key spams "Resonating in background..." notifications
+### 4b. **FIXED** — The `r` key spams "Resonating in background..." notifications
 
 - **Severity:** UX — the user can hold `r` and stack unlimited notifications. Reported by the user on 2026-11-17.
 - **Files:** `lua/resonance/ui/init.lua` (the `r` keymap), `lua/resonance/ui/actions.lua` (`check_updates_network`)
@@ -197,13 +197,59 @@ replay logic — which is what made the item 0 fix verifiable.
 - **Fix:** make `check_updates_network()` return a boolean (`true` if it started a check, `false` if one was already running) and notify only on `true`. Alternatively move the notification into `actions.check_updates_network()` and delete it from the keymap. Do **not** unmap/remap `r` — the key must stay inert without extra moving parts.
 - **Verification:** a behavioural test that presses `r` twice and asserts exactly **one** notification and that `check_updates_network()` is not re-entered. Must fail before the fix.
 
-### 5. Reset `pending_count` and skip empty paths in `check_updates_network()`
+#### Status: fixed
+
+`check_updates_network()` now returns `true` when it initiated a check and
+`false` when one was already running. The `r` keymap notifies only on `true`,
+so the key is **inert** while a check is in flight — it neither notifies
+again nor queues a second check.
+
+**Tests** (`test/ui_spec.lua`):
+
+- `actions: check_updates_network reports whether it started a check`
+- `ui: the r key notifies once and stays inert while checking` — drives the
+  real buffer-local keymap through `nvim_feedkeys`, with the spawner stubbed
+  so the check stays in flight.
+
+**Mutation-verified** in both directions:
+
+| Mutation | Test that fails |
+|---|---|
+| keymap reverted to unconditional notify | `ui: the r key notifies once and stays inert while checking` (`Actual: 2`) |
+| guard weakened to return `true` while already checking | both N1 tests |
+
+**End-to-end:** 5 presses against a held-open fetch → **1** notification.
+
+### 5. **FIXED** — Reset `pending_count` and skip empty paths in `check_updates_network()`
 
 - **Files:** `lua/resonance/ui/actions.lua`, `lua/resonance/ui/init.lua`
 - **Problem:**
   - `actions.check_updates_network()` clears `st.state.updates = {}` but never resets `st.state.pending_count = 0` (nor does `ui.open()`), so repeated `r` presses accumulate a bogus count in the spinner.
   - `check_updates_network()` loops `1..info.total` without skipping `path == ''` (plugins disabled via `cond = false` and not on disk), spawning `git fetch` with `{ cwd = '' }`.
 - **Fix:** Reset `st.state.pending_count = 0` at the start of `check_updates_network()` and in `ui.open()`. Filter out entries where `not path or path == ''` (or missing `/.git`) before counting `valid_total` and spawning `git fetch`; call `finish_check()` if `valid_total == 0`. Add behavioral tests in `test/behavior_spec.lua`.
+
+#### Status: fixed
+
+- `st.state.pending_count = 0` is now reset at the start of
+  `check_updates_network()` and in `ui.open()`.
+- The fetch loop counts only the plugins with a non-empty path
+  (`valid_total`) and spawns `git fetch` only for those. A plugin disabled
+  via `cond = false` no longer produces a `git fetch` with `{ cwd = '' }`.
+- When `valid_total == 0` the check completes on the next tick instead of
+  spawning any process.
+
+**Tests** (`test/ui_spec.lua`):
+
+- `actions: check_updates_network resets the pending count`
+- `actions: check_updates_network skips plugins without a path` — stubs the
+  spawner and asserts exactly one fetch, for the plugin with a path.
+
+**Mutation-verified:**
+
+| Mutation | Test that fails |
+|---|---|
+| `pending_count` reset removed | `actions: check_updates_network resets the pending count` (`Expected: 0, Actual: 7`) |
+| path filter removed | `actions: check_updates_network skips plugins without a path` (`Expected: 1, Actual: 2`) |
 
 ### 7. Cancel `details_task` and clean UI state on `BufWipeout` (e.g. `:q`)
 

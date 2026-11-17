@@ -230,7 +230,8 @@ there is no plugin list at all.
 ### 3. Specs with neither triggers nor `lazy` are silently never installed
 
 - **Files:** `lua/resonance/loader/spec.lua`, `lua/resonance/loader/init.lua`
-- **Status:** open — verified. `triggers.register_all()` registers nothing
+- **Status:** DONE. The false positive is fixed and the docs are corrected;
+  the details below describe what was found. `triggers.register_all()` registers nothing
   when `event`/`cmd`/`keys`/`ft` are all absent and `lazy` is `nil`, so the
   spec is never installed or loaded.
 - **Contradiction to resolve:** the README's `version = 'v1.0.0'` example has
@@ -470,11 +471,10 @@ there is no plugin list at all.
 ### 15. `M.stats()` freezes forever; `M._reset()` does not exist
 
 - **File:** `lua/resonance/init.lua`
-- **Status:** open — verified. `M.stats()` (`init.lua:116-133`) caches the
-  whole result table on first call, so `count` and `loaded` are frozen for
-  the session. `test/runner.lua` calls `resonance._reset()`, but
-  `resonance/init.lua` has no `_reset` — only `loader/init.lua` and
-  `ui/state.lua` do.
+- **Status:** DONE — `8ead18f`. `M.stats()` now latches only `startuptime`
+  and reads `count` / `loaded` / `times` live from `scanner.get_info()`.
+  `M._reset()` clears the latched end time and the cached loader module.
+  Four behavioural tests in `test/behavior_stats_spec.lua`.
 - **Fix:** freeze only `startuptime` (`_end_time`) at `UIEnter`/`VimEnter` or
   the first `stats()` call; read `count`, `loaded` and `times` live from
   `scanner.get_info()`. Implement `M._reset()` clearing `M._cached_stats`,
@@ -516,6 +516,31 @@ there is no plugin list at all.
 - **Fix:** as listed per sub-item. Keep the docs truthful — the AGENTS.md
   guardrail says not to trust stale claims over actual code, and these are
   exactly such claims.
+
+**What was actually done:**
+
+- **(a)** The test now uses a real git repository whose commit the marker
+  holds, and waits for the build to have had its chance to run. Reverting
+  the hash check in *both* `check_and_build()` and `run_build()` makes it
+  fail; reverting only one does not, because the other covers it.
+- **(b)** Corrected: the Quick Start, the "multiple plugins" example, and
+  the configuration intro now use `load()` for specs and `setup()` for the
+  UI options; `open_ui()` takes no argument; `lazy = true` is documented
+  as an extra trigger; the events section lists only `User VeryLazy`.
+  Added the missing `stats()` entry and the UI options table.
+- **Tags.** Seven section tags used the wrong closing character
+  (`*resonance-ui>`, `*resonance-events|`, …), so `:helptags` silently
+  dropped them — 15 tags were generated where 22 were expected. The field
+  names `|event|`, `|cmd|`, `|ft|`, `|keys|`, `|cond|`, `|lazy|` were also
+  rendered as links to nonexistent tags. All fixed; every `|tag|` in the
+  file now resolves.
+- **(c)** The bootstrap now distinguishes `vim.pack.add()` (installs
+  Resonance itself) from `resonance.load()` (every other plugin); the
+  version-pinning example says it loads eagerly on VimEnter.
+- **(d)** The AGENTS.md in the repo has already been rewritten since this
+  item was written — it has no `Jisho` section and no `p.active` claim.
+  The one stale line was the build-marker location, which item 13 had
+  already changed; it now names `stdpath('state') .. '/resonance/builds/'`.
 
 ---
 

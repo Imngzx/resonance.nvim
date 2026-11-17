@@ -161,9 +161,9 @@ address it.
 
 **Modify the build system** — `loader/build.lua`: `run_build()`,
 `check_and_build()`, `mark_build_success()`, `PackChanged` autocmd. The
-`.resonance_built` hash marker currently lives in the plugin's own
-directory, which dirties its git worktree — `plan.md` item 13 moves it to
-`stdpath('state')`. Update this line when that lands.
+build hash marker lives in `stdpath('state') .. '/resonance/builds/'`,
+keyed by plugin name — never in the plugin's own directory, which
+dirties its git worktree.
 
 ---
 

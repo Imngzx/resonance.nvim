@@ -65,7 +65,9 @@ Then add to your init.lua:
 Basic setup in your init.lua:
 
     local resonance = require('resonance')
-    resonance.setup({
+    resonance.setup()
+
+    resonance.load({
       -- List of plugin specifications
       {
         src = 'https://github.com/neovim/nvim-lspconfig',
@@ -102,10 +104,13 @@ Basic setup in your init.lua:
       resonance.open_ui()
     end)
 
+`setup()` takes only the UI options (see |resonance-api-main|). Plugin
+specifications go to `load()`.
+
 ==============================================================================
 4. Configuration                                   *resonance-configuration*
 
-The |resonance.setup()| function accepts a list of plugin specifications.
+The |resonance.load()| function accepts a list of plugin specifications.
 Each spec is a table with the following fields:
 
 Common fields:
@@ -124,56 +129,60 @@ Common fields:
     lazy (boolean)      false = eager (VimEnter), true = VeryLazy default
     cond (boolean|function) Conditional loading: false/nil skips plugin
 
-Multiple plugins can be passed as separate arguments or as a list:
+Multiple plugins are registered with one `resonance.load()` call, as a
+list:
 
-    -- As separate arguments
-    resonance.setup(
-      {src = '...', event = '...'},
-      {src = '...', cmd = '...'}
-    )
-
-    -- As a list
-    resonance.setup({
+    resonance.load({
       {src = '...', event = '...'},
       {src = '...', cmd = '...'},
     })
 
+    -- A single plugin can be passed on its own
+    resonance.load({src = '...', event = '...'})
+
 4.1 Lazy Loading Triggers                          *resonance-triggers*
 
-|event| - Load when autocmd fires:
+event - Load when autocmd fires:
     event = 'LspAttach'
     event = {'BufReadPost', 'BufNewFile'}
 
-|cmd| - Load when command is invoked:
+cmd - Load when command is invoked:
     cmd = 'Neogit'
     cmd = {'Neogit', 'Git'}
 
-|ft| - Load when filetype is set:
+ft - Load when filetype is set:
     ft = 'lua'
     ft = {'lua', 'python'}
 
-|keys| - Load when keymap is pressed:
+keys - Load when keymap is pressed:
     keys = {'<leader>g', '<leader>gg'}
     keys = {{'n', '<leader>g', func, {desc = 'Git'}}}  -- Full keymap spec
     keys = function() return {{'n', '<leader>g', func}} end  -- Function returning keymaps
 
-|cond| - Conditionally load plugin:
+cond - Conditionally load plugin:
     cond = true          -- Load (default)
     cond = false         -- Skip plugin entirely
     cond = function() return vim.fn.has('nvim-0.10') == 1 end  -- Conditional
 
-|lazy| - Shorthand for common lazy-loading patterns:
-    lazy = false         -- Eager load on VimEnter (no triggers allowed)
+lazy - Shorthand for common lazy-loading patterns:
+    lazy = false         -- Eager load on VimEnter (no event/cmd/ft allowed)
     lazy = true          -- Lazy load on VeryLazy (User VeryLazy event)
-    -- Cannot combine with explicit event/cmd/keys/ft
+
+`lazy = true` adds VeryLazy as an extra trigger: an explicit
+event/cmd/keys/ft keeps working, and the plugin also loads on VeryLazy
+if none of them fired first. It does not replace them.
+
+`lazy = false` cannot be combined with `event`, `cmd` or `ft` -- it
+means the plugin loads eagerly on VimEnter. `keys` is allowed, because a
+keymap works after an eager load.
 
 Triggers can be combined. Plugin loads on FIRST matching trigger.
 
-A spec with no trigger and no |lazy| field loads eagerly on VimEnter, the
+A spec with no trigger and no `lazy` field loads eagerly on VimEnter, the
 same as lazy = false. Useful for a plugin you just want installed and
 pinned, with no trigger of its own.
 
-|event| accepts a User event with its own pattern:
+`event` accepts a User event with its own pattern:
     event = {'User', pattern = 'VeryLazy'}
 
 4.2 Dependencies                                   *resonance-dependencies*
@@ -218,13 +227,25 @@ Pin to specific tag, branch, or commit:
     version = 'abc1234'     -- Commit hash
 
 ==============================================================================
-5. User Interface                                  *resonance-ui>
+5. User Interface                                  *resonance-ui*
 
 Open UI:
     :lua require('resonance').open_ui()
     :Resonance  (user command created by setup)
 
 The UI shows all installed plugins with status, triggers, and metadata.
+
+The UI options are set through `resonance.setup()`:
+
+    resonance.setup({
+      ui = {
+        border = 'rounded',      -- 'single', 'double', 'rounded', 'none'
+        title = ' Resonance ',
+        width = 0.65,            -- fraction of the editor width
+        height = 0.75,           -- fraction of the editor height
+        backdrop = 60,           -- 0-100, dim the editor behind the UI
+      },
+    })
 
 5.1 Key Mappings                                   *resonance-ui-keys*
 
@@ -243,7 +264,7 @@ In the Resonance UI buffer:
     A            Toggle DAG view (dependency graph)
     q / <Esc>    Close UI
 
-5.2 Plugin Details                                 *resonance-ui-details>
+5.2 Plugin Details                                 *resonance-ui-details*
 
 Press <CR> on a plugin to expand details showing:
 - Load status (active/inactive)
@@ -254,7 +275,7 @@ Press <CR> on a plugin to expand details showing:
 - Current commit hash
 - Load time (ms)
 
-5.3 Custom Icons                                  *resonance-ui-icons>
+5.3 Custom Icons                                  *resonance-ui-icons*
 
 The glyphs used for each plugin state can be changed via the `ui.icons`
 option. Each key is independent, so unspecified keys keep their defaults.
@@ -280,24 +301,38 @@ Note: The default `disabled` glyph is a Nerd Font private-use codepoint
 actually has.
 
 ==============================================================================
-6. API Reference                                   *resonance-api>
+6. API Reference                                   *resonance-api*
 
 6.1 Main Functions                                 *resonance-api-main*
 
-    resonance.setup(config)
-        Initialize plugin manager with configuration.
-        config: table (see |resonance-configuration|)
+    resonance.setup([config])
+        Initialize Resonance: creates the :Resonance command and merges the
+        UI options.
+        config: optional table with a `ui` field (see |resonance-ui|)
         Returns: nothing
 
-    resonance.open_ui([ui_config])
+    resonance.open_ui()
         Open the Terminal UI.
-        ui_config: optional table overriding default UI config
         Returns: nothing
 
     resonance.load(config)
-        Load a single plugin specification (called internally by setup).
+        Register one plugin specification, or a list of them.
         Supports all config fields including lazy, cond, keys as function.
         Returns: nothing
+
+    resonance.stats()
+        Plugin statistics.
+        Returns: {count, loaded, startuptime, times}
+
+        count         Total number of plugins managed
+        loaded        Plugins currently loaded
+        startuptime   Startup time in milliseconds
+        times         Table of plugin_name -> load_time_ms
+
+        `startuptime` is a one-shot measurement: it is latched at
+        UIEnter/VimEnter -- or at the first stats() call, whichever comes
+        first -- and never changes afterwards. The counts are read live on
+        every call, because a plugin can load at any point.
 
     resonance.has_fired(event, buf)
         Whether an event has already fired for a buffer.
@@ -439,18 +474,21 @@ actually has.
         Current UI state table (plugins, commits, updates, etc.)
 
 ==============================================================================
-7. Events                                          *resonance-events|
+7. Events                                          *resonance-events*
 
 Autocmd events emitted:
 
-    User  ResonanceLoad     {name = plugin_name}  After plugin loaded
-    User  ResonanceUpdate   {name = plugin_name}  After plugin updated
-    User  ForceLoad<Name>   Triggered by lazy load for plugin <Name>
+    User  VeryLazy          Fired when the UI has become usable, so that
+                           plugins which did not load yet can.
+
+`User VeryLazy` is fired by `resonance.trigger_verylazy()`, which you
+call at the end of your init.lua. A spec with `lazy = true` uses it as
+its trigger.
 
 Event replay ensures autocmds fire in correct order for nested triggers.
 
 ==============================================================================
-8. Fallback Mode                                   *resonance-fallback|
+8. Fallback Mode                                   *resonance-fallback*
 
 When |vim.pack| is unavailable (set `vim.pack = nil` before setup):
 - Filesystem scan of `pack/*/{start,opt}/*` used instead
@@ -460,7 +498,7 @@ When |vim.pack| is unavailable (set `vim.pack = nil` before setup):
 - Network operations (update, checkout) disabled
 
 ==============================================================================
-9. Performance                                     *resonance-performance|
+9. Performance                                     *resonance-performance*
 
 Benchmarks (Neovim 0.13+, 43 plugins):
 - Startup overhead: ~0.9ms average

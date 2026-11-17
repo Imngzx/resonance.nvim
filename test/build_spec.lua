@@ -4,6 +4,8 @@
 local build = require('resonance.loader.build')
 local uv = vim.uv
 local fs = vim.fs
+local h = dofile('test/helpers.lua')
+local make_git_repo = h.make_git_repo
 
 -- The build markers live in Resonance's state directory, keyed by plugin
 -- name.
@@ -57,16 +59,30 @@ test.run_suite('resonance.loader.build', {
   {
     name = 'check_and_build: skips when hash matches',
     fn = function()
-      local dir = '/tmp/test_build_' .. os.time()
-      uv.fs_mkdir(dir, 493)
+      -- This test used to assert that the build did not run immediately
+      -- after check_and_build() returned, with no wait. The build runs
+      -- asynchronously, so that assertion passed whether or not the hash
+      -- check worked -- and the build did run: the directory was not a
+      -- git working tree, so the hash did not match the marker.
+      --
+      -- The directory has to be a real git repository whose commit the
+      -- marker holds, and the assertion has to wait for the build to
+      -- have had its chance to run.
+      local dir = make_git_repo()
       local name = 'skip-test-' .. os.time()
-      build.mark_build_success(name, 'abc123')
+
+      local hash = require('resonance.utils').get_local_hash(dir)
+      test.assert_not_nil(hash, 'the test repository has no readable commit')
+      build.mark_build_success(name, hash)
+
       local built = false
       local function fake_build() built = true end
       build.check_and_build(name, dir, fake_build)
-      test.assert_false(built)
+      vim.wait(1500)
+
+      test.assert_false(built, 'the build ran even though the hash matched')
       clear_marker(name)
-      uv.fs_rmdir(dir)
+      vim.fn.delete(dir, 'rf')
     end,
   },
 

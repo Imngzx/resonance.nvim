@@ -35,6 +35,11 @@
 
 Add this bootstrap snippet to your `init.lua`. It ensures `resonance.nvim` is downloaded and prepended to your runtime path on the first run.
 
+`vim.pack.add()` installs Resonance itself -- it is the one plugin you
+install directly, because the plugin manager cannot manage itself. Every
+other plugin goes through `resonance.load()`, which is what gives it
+triggers.
+
 ```lua
 -- =====================================================================
 -- 🎵 Install Resonance.nvim
@@ -63,22 +68,21 @@ vim.opt.rtp:prepend(pack_path)
 -- 🚀 Configuration
 -- =====================================================================
 local resonance = require('resonance')
+
+resonance.setup({
+  ui = {
+    border = 'rounded',
+    width = 0.65,
+    height = 0.75,
+  }
+})
+
 resonance.load({
-  'https://github.com/Imngzx/resonance.nvim',
-  version = 'main',
-  lazy = false,
-  keys = {
-    { 'n', '<leader>pL', '<cmd>Resonance<cr>', { desc = '[Float] Resonance UI' } },
+  -- Every other plugin goes here, with its triggers.
+  {
+    'https://github.com/<author>/<plugin_name>',
+    event = { 'User', pattern = 'VeryLazy' },
   },
-  config = function()
-    resonance.setup({
-      ui = {
-        border = 'rounded',
-        width = 0.65,
-        height = 0.75,
-      }
-    })
-  end
 })
 
 -- NOTE: must put this at the end of your init.lua!
@@ -210,9 +214,11 @@ resonance.load({
     version = 'v1.0.0',  -- Tag
     -- version = 'main',     -- Branch
     -- version = 'abc1234',  -- Commit hash
+    -- No trigger: loads eagerly on VimEnter. Use a trigger if you want
+    -- the plugin to stay unloaded until you need it.
   },
 
-  { -- lazy = false: eager load on VimEnter (no other triggers allowed)
+  { -- lazy = false: eager load on VimEnter (no event/cmd/ft allowed)
     "https://github.com/<author>/<eager_plugin>",
     lazy = false,
   },

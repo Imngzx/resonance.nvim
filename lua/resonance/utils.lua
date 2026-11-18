@@ -8,7 +8,6 @@ local string_gsub = string.gsub
 local table_concat = table.concat
 local table_sort = table.sort
 local string_lower = string.lower
-local vim_notify = vim.notify
 local uv = vim.uv
 local uv_fs_open = uv.fs_open
 local uv_fs_fstat = uv.fs_fstat
@@ -164,7 +163,10 @@ function M.notify(msg, level, opts)
     if _snacks_notifier then
       _snacks_notifier.notify(msg, level, opts or { title = 'Resonance' })
     else
-      vim_notify('[Resonance] ' .. msg, level, opts)
+      -- vim.notify is looked up here rather than held in a local: a user
+      -- may install their own notifier after Resonance has loaded, and
+      -- the notification has to go to that one.
+      vim.notify('[Resonance] ' .. msg, level, opts)
     end
   end)
 end

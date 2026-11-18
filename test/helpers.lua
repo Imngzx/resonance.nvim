@@ -30,24 +30,44 @@ end
 
 -- Capture notifications emitted by the module under test.
 --
+-- The capture is installed on two levels:
+--
+--   - resonance.utils.notify, which is the module's own entry point. The
+--     message is recorded the moment the caller reports it, before the
+--     deferral, so a test that asserts right after the call sees it.
+--
+--   - vim.notify, which is the last step of the notification. A module
+--     that was loaded in an earlier test holds the utils table of that
+--     generation, so patching only the current generation's utils would
+--     miss its notifications.
+--
 -- utils.notify defers through vim.schedule, so a capture that restores the
 -- stub immediately would miss anything reported asynchronously. The stub
 -- stays installed until the caller is done with it.
 function M.with_capture(fn)
-  local u = M.live().utils
   local notices = {}
-  local orig_notify = u.notify
+  local u = M.live().utils
+  local orig_utils_notify = u.notify
+  local orig_vim_notify = vim.notify
+
   u.notify = function(msg, ...)
     notices[#notices + 1] = msg
   end
+  vim.notify = function(msg, ...)
+    notices[#notices + 1] = msg
+  end
+
+  local function restore()
+    u.notify = orig_utils_notify
+    vim.notify = orig_vim_notify
+  end
+
   local ok, err = pcall(fn)
   if not ok then
-    u.notify = orig_notify
+    restore()
     error(err)
   end
-  return notices, function()
-    u.notify = orig_notify
-  end
+  return notices, restore
 end
 
 -- Wait for scheduled notifications to arrive, then release the capture.

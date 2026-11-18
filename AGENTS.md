@@ -15,7 +15,7 @@
 | `lua/resonance/registry.lua` | Shared pure data: specs, triggers, disabled plugins, load times, plugin dirs. No side effects. |
 | `lua/resonance/loader/` | Control plane: `init` (load/force-load), `spec` (normalize), `triggers` (autocmd/cmd/keymap/ft), `build` (build hooks), `dag` (dependency + event-chain data) |
 | `lua/resonance/builds.lua` | Per-plugin build state: status, wait, `on_complete`, output tail, hard timeout, cross-session PID lock. Requires nothing from the loader. |
-| `lua/resonance/scanner.lua` | Read-only discovery of installed plugins (SOA parallel arrays) |
+| `lua/resonance/scanner.lua` | Read-only discovery of installed plugins (SoA: parallel arrays indexed `1..total`) |
 | `lua/resonance/ui/` | Panel: `init` (window + keymaps), `state` (singleton), `render`, `actions` |
 | `lua/resonance/utils.lua` | Shared helpers — **`utils.get_pack()` lives here** |
 
@@ -80,19 +80,22 @@ working plan in a local, untracked file (for example via
   `ipairs()` is not used anywhere in this codebase.
 - **`ui/render.lua` reuses buffers** via `table.clear` — do not reassign
   `lines` / `hls` / `line_parts` to `{}` mid-render.
-- **New lists use AoS** — one table per entry, fields as keys:
-  `local p = plugins[i]` then `p.name`, `p.path`. Do **not** create parallel
-  arrays. The scanner's existing SoA shape is legacy; leave it alone and
-  do not extend it, but do not copy it into new code.
-  - Why: Lua arrays hold `TValue` pointers, so parallel arrays scatter
-    every field across separate allocations — the cache-locality win SoA
-    gives in C does not exist here.
-  - Sorting an AoS list is `table.sort(plugins, cmp)` in place; sorting SoA
-    means rebuilding every parallel array (`utils.apply_sort` copies each
-    field into a fresh table).
-  - A missing field in AoS is just `p.rev_to == nil`. In SoA it punches a
-    hole: `#t` becomes unreliable (measured: a nil at index 2 of a 3-element
-    array reports length 1 while index 3 still holds a value).
+- **Use SoA where it already exists.** The scanner returns the plugins as
+  parallel arrays (`info.plugins.name[i]`, `.path[i]`, `.loaded[i]`, …), and
+  the UI and the DAG read them that way. Work on that data directly, and
+  add a new per-plugin field as one more parallel array. Do not convert it
+  into a list of tables. Use AoS (one table per entry, `p.name`, `p.path`)
+  only for a new list that does not come from an existing SoA structure.
+  SoA rules:
+  - Iterate `for i = 1, info.total`, never `#t`. A nil in a parallel array
+    makes `#` unreliable (measured: a nil at index 2 of a 3-element array
+    reports length 1 while index 3 still holds a value), and `rev` /
+    `rev_to` / `manifest` have holes on purpose.
+  - Write every array at every index when adding an entry (see
+    `append_disabled()` in the scanner), so the arrays stay aligned.
+  - Sort with `utils.sort_plugins()` + `utils.apply_sort()`, and list
+    every field in `apply_sort`. A field left out stays in the old order
+    and no longer lines up with the others.
 - Early returns, flat conditionals, comments only for *why*.
 - No filesystem walks in hot paths — use the `vim.pack.get()` cache.
 - Localize globals; avoid `vim.fn` in hot paths — prefer `vim.uv` /

@@ -118,8 +118,8 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
 
 ## Flow 5: the panel
 
-- **Open:** `scanner.get_info()` returns parallel arrays (the legacy
-  layout), built from `pack.get(nil, { info = false })` plus the plugins
+- **Open:** `scanner.get_info()` returns the plugins as parallel arrays
+  (SoA, indexed `1..total`), built from `pack.get(nil, { info = false })` plus the plugins
   disabled by `cond`.
 - **Commit and URL columns:** a first pass takes them from the same cheap
   `pack.get`. The rest are filled in chunks of 11 on `vim.defer_fn`.

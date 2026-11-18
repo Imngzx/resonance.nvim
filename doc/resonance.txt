@@ -72,17 +72,20 @@ Basic setup in your init.lua:
       -- List of plugin specifications
       {
         src = 'https://github.com/neovim/nvim-lspconfig',
-        event = 'LspAttach',           -- Lazy load on LspAttach event
-        dependencies = {'https://github.com/neovim/nvim-lua/plenary.nvim'},
+        event = {'BufReadPre', 'BufNewFile'},  -- Lazy load on opening a file
+        dependencies = {'https://github.com/nvim-lua/plenary.nvim'},
         build = 'echo "building"',     -- Optional build command
       },
       {
         src = 'https://github.com/folke/which-key.nvim',
-        event = 'VeryLazy',
+        event = {'User', pattern = 'VeryLazy'},  -- VeryLazy is a User pattern
       },
       {
         src = 'https://github.com/nvim-treesitter/nvim-treesitter',
         build = function(dir)          -- Function build hook
+          -- The build can run before the plugin is loaded, so load it
+          -- first or :TSUpdate does not exist yet.
+          vim.cmd.packadd('nvim-treesitter')
           vim.cmd('TSUpdate')
         end,
       },
@@ -105,13 +108,16 @@ Basic setup in your init.lua:
       resonance.open_ui()
     end)
 
+    -- Fires `User VeryLazy`. Must be the last line of init.lua.
+    resonance.trigger_verylazy()
+
 `setup()` takes only the UI options (see |resonance-api-main|). Plugin
 specifications go to `load()`.
 
 ==============================================================================
 4. Configuration                                   *resonance-configuration*
 
-The |resonance.load()| function accepts a list of plugin specifications.
+The `resonance.load()` function accepts a list of plugin specifications.
 Each spec is a table with the following fields:
 
 Common fields:
@@ -128,7 +134,8 @@ Common fields:
     setup (function)    Called after plugin loads
     plugin (table)      Alternative spec format (lazy.nvim compatible)
     lazy (boolean)      false = eager (VimEnter), true = VeryLazy default
-    cond (boolean|function) Conditional loading: false/nil skips plugin
+    cond (boolean|function) Conditional loading: a false result skips the
+                        plugin (a function returning nil too)
 
 Multiple plugins are registered with one `resonance.load()` call, as a
 list:
@@ -176,6 +183,9 @@ cond - Conditionally load plugin:
     cond = false         -- Skip plugin entirely
     cond = function() return vim.fn.has('nvim-0.10') == 1 end  -- Conditional
 
+`event = 'VeryLazy'` is an error: VeryLazy is not a Neovim event but the
+pattern of a User event. Write `{'User', pattern = 'VeryLazy'}`.
+
 lazy - Shorthand for common lazy-loading patterns:
     lazy = false         -- Eager load on VimEnter (no event/cmd/ft allowed)
     lazy = true          -- Lazy load on VeryLazy (User VeryLazy event)
@@ -199,7 +209,7 @@ pinned, with no trigger of its own.
 
 4.2 Dependencies                                   *resonance-dependencies*
 
-    dependencies = {'https://github.com/neovim/nvim-lua/plenary.nvim'}
+    dependencies = {'https://github.com/nvim-lua/plenary.nvim'}
 
 Dependencies are loaded BEFORE the plugin. They support all trigger types.
 Circular dependencies are detected and reported.
@@ -222,8 +232,11 @@ runs `vim.system()` or returns a promise is waited for:
     end
 
 Build runs automatically:
-- On install (via PackChanged event)
+- On install (via PackChanged event). An install always builds, even if a
+  marker from an earlier install is left over.
 - On update (when git hash changes)
+- Deleting a plugin (the UI's `dd`, |vim.pack.del()| or :packdel) removes
+  its marker, so a reinstall builds again.
 - Hash cached in the build marker to avoid rebuilds. The markers live in
   `stdpath('state') .. '/resonance/builds/'`, not in the plugin's own
   directory, so they never show up in its git working tree.
@@ -248,6 +261,11 @@ node_modules directory, a compiled native module) would otherwise fail.
 - A plugin loaded by an event, a filetype or an eager load does not wait.
   The editor is never blocked by a build it did not ask for, and the
   setup runs when the build finishes.
+
+Only one build of a plugin runs at a time, across Neovim sessions too. A
+session that finds another session building the plugin waits for it, and
+skips the build if the other session already built that commit. A build
+that runs longer than 10 minutes is killed and reported as failed.
 
 A build that fails does not stop the plugin from being set up. The failure
 is reported, and the setup runs anyway -- the plugin may still work without
@@ -292,8 +310,8 @@ In the Resonance UI buffer:
     s            Skip update for plugin under cursor
     c            Checkout branch/tag/commit (prompts for target)
     dd           Uninstall plugin under cursor
-    S            Search plugin source (grep)
-    D            Open plugin directory in explorer
+    S            Search the source of all plugins (grep in the pack dir)
+    D            Open the pack directory in an explorer
     C            Run native vim.pack.update (offline)
     A            Toggle DAG view (dependency graph)
     q / <Esc>    Close UI
@@ -302,12 +320,13 @@ In the Resonance UI buffer:
 
 Press <CR> on a plugin to expand details showing:
 - Load status (active/inactive)
-- Git branches (local + remote)
+- Git branches (the remote branches, default branch first)
 - Git tags (latest 5)
 - Installation path
 - Source URL
 - Current commit hash
-- Load time (ms)
+
+The load time is shown on the plugin's own row, not in the details.
 
 5.3 Custom Icons                                  *resonance-ui-icons*
 
@@ -363,10 +382,19 @@ actually has.
         startuptime   Startup time in milliseconds
         times         Table of plugin_name -> load_time_ms
 
-        `startuptime` is a one-shot measurement: it is latched at
-        UIEnter/VimEnter -- or at the first stats() call, whichever comes
-        first -- and never changes afterwards. The counts are read live on
+        `startuptime` is a one-shot measurement, latched once and never
+        changed afterwards. It is latched at UIEnter (VimEnter when there
+        is no UI) only if you call `resonance.trigger_verylazy()`; it is
+        also latched by the first stats() call, whichever comes first.
+        Without trigger_verylazy() it measures up to the first stats()
+        call -- usually the first time the UI is opened. The counts are read live on
         every call, because a plugin can load at any point.
+
+    resonance.trigger_verylazy()
+        Fire `User VeryLazy` once the UI is up (UIEnter, or VimEnter when
+        there is no UI), and latch the startup time. Call it at the end of
+        init.lua.
+        Returns: nothing
 
     resonance.has_fired(event, buf)
         Whether an event has already fired for a buffer.
@@ -456,7 +484,8 @@ actually has.
         Table of plugin_name -> trigger string
 
     loader.specs
-        Table of plugin_name -> raw spec config
+        Table of plugin_name -> a copy of the spec (the user's table is
+        not modified)
 
 6.3 Builds Module                                  *resonance-api-builds*
 
@@ -468,7 +497,7 @@ actually has.
 
     builds.status(name)
         The state of one build.
-        Returns: {state = 'pending'|'running'|'ok'|'failed',
+        Returns: {state = 'pending' or 'running' or 'ok' or 'failed',
                   started_at = hrtime, elapsed = ms,
                   error = string|nil, output_tail = string|nil,
                   pid = number|nil} or nil when there is no such build
@@ -477,17 +506,28 @@ actually has.
         Pump the event loop until the build settles. The default timeout
         is 30 seconds.
         Returns: boolean ok, string|nil err
-        Note: a failure and a timeout both report ok=false. Ask
-        builds.status() which it was -- a failed build is over, a timeout
-        means the build is still running.
+        Note: a failure, a timeout and an interrupt (CTRL-C) all report
+        ok=false. Ask builds.status() which it was -- a failed build is
+        over; after a timeout or an interrupt the build is still running.
 
     builds.is_building(name)
         Whether a build for this plugin is pending or running.
         Returns: boolean
 
-    builds.is_busy()
-        Whether any build is pending or running.
+    builds.is_running(name)
+        Whether the build for this plugin is running (not just pending).
         Returns: boolean
+
+    builds.running()
+        The names of the plugins whose build is running.
+        Returns: table of plugin names
+
+    builds.is_busy()
+        Whether any build is running.
+        Returns: boolean
+
+    builds.HARD_TIMEOUT_MS
+        How long a build may run before it is killed (10 minutes).
 
     builds.on_complete(name, fn)
         Call fn(ok, err) once when the build settles. The callback runs
@@ -524,7 +564,10 @@ actually has.
         info=false (default): fast, no branches/tags
         info=true: includes branches, tags, rev_to
         offline=true (default): use cached data
-        Returns: {plugins = {name[], type[], path[], loaded[], trigger[]}, total, loaded, pack_dir, load_times}
+        Returns: {plugins = {name[], type[], path[], loaded[], disabled[],
+                  trigger[], ...}, total, loaded, pack_dir, load_times}
+        The plugins are parallel arrays indexed 1..total. Use `total`, not
+        `#`, to iterate: some arrays (rev, rev_to) have holes.
 
     scanner.get_detailed_info()
         Alias for get_info({info=true, offline=false})
@@ -580,12 +623,15 @@ Event replay ensures autocmds fire in correct order for nested triggers.
 ==============================================================================
 8. Fallback Mode                                   *resonance-fallback*
 
-When |vim.pack| is unavailable (set `vim.pack = nil` before setup):
+When |vim.pack| is unavailable, or disabled with `vim.pack = false` before
+setup (`vim.pack = nil` does not work: the lazy loader brings the module
+back on the next read):
 - Filesystem scan of `pack/*/{start,opt}/*` used instead
 - All lazy-loading triggers work
 - UI shows plugins from filesystem
 - Build hooks work
-- Network operations (update, checkout) disabled
+- Update, uninstall and the native review (`u`, `U`, `dd`, `C`) are
+  unavailable; checkout (`c`) still works, it runs git directly
 
 ==============================================================================
 9. Performance                                     *resonance-performance*

@@ -155,7 +155,14 @@ end
 
 local function populate_plugin_dir_cache()
   if registry.plugin_dirs then return end
-  registry.plugin_dirs = {}
+
+  -- The table is built in a local and published at the end.
+  --
+  -- pack.get() can fire PackChanged, which invalidates the cache and
+  -- sets registry.plugin_dirs back to nil. Writing into the registry
+  -- table directly would then write into a table nobody holds any more,
+  -- and the cache would stay empty.
+  local dirs = {}
 
   local pack = utils.get_pack()
   if pack then
@@ -163,9 +170,10 @@ local function populate_plugin_dir_cache()
     for i = 1, #packs do
       local p = packs[i]
       if p.path and p.spec and p.spec.name then
-        registry.plugin_dirs[p.spec.name] = p.path
+        dirs[p.spec.name] = p.path
       end
     end
+    registry.plugin_dirs = dirs
     return
   end
 
@@ -184,7 +192,7 @@ local function populate_plugin_dir_cache()
               local pname, ptyp = fs_scandir_next(sub)
               if not pname then break end
               if ptyp == 'directory' or ptyp == 'link' then
-                registry.plugin_dirs[pname] = target_dir .. '/' .. pname
+                dirs[pname] = target_dir .. '/' .. pname
               end
             end
           end
@@ -192,6 +200,7 @@ local function populate_plugin_dir_cache()
       end
     end
   end
+  registry.plugin_dirs = dirs
 end
 
 local function get_plugin_dir(name)

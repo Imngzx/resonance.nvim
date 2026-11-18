@@ -190,8 +190,11 @@ resonance.load({
 
     -- Keys: shorthand strings normalized to {'n', 'key'}
     keys = {
-      '<leader>Tg',  -- shorthand for {'n', '<leader>Tg'}
-      '<leader>TL',  -- shorthand for {'n', '<leader>TL'}
+      -- A key with no rhs means the plugin defines the mapping itself.
+      -- The stub is removed once the plugin loads, and the plugin's own
+      -- mapping is left in place.
+      '<leader>Tg',
+      '<leader>TL',
       -- Or full spec:
       { 'n', '<leader>Tc', '<cmd>cmd3<CR>', { desc = 'Open something' } },
     },

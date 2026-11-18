@@ -159,6 +159,11 @@ keys - Load when keymap is pressed:
     keys = {{'n', '<leader>g', func, {desc = 'Git'}}}  -- Full keymap spec
     keys = function() return {{'n', '<leader>g', func}} end  -- Function returning keymaps
 
+    A key without an rhs means the plugin defines the mapping itself. The
+    stub is removed once the plugin has loaded, and the plugin's own
+    mapping is left in place. A key with an rhs keeps that rhs: the stub
+    is replaced by the real mapping after the load.
+
 cond - Conditionally load plugin:
     cond = true          -- Load (default)
     cond = false         -- Skip plugin entirely

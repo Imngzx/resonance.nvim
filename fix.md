@@ -442,6 +442,49 @@ Every item below was checked against the installed copy, not inferred.
   - The mapping is set twice when the key fires: `restore_keymap()` sets it, then the
     stub callback sets it again. Same mapping, same options — harmless, but redundant.
 
+#### Status: fixed
+
+The teardown now compares the installed mapping's callback against the stub's. The
+delete only happens while the stub is still installed, so a mapping the plugin took
+over is left alone.
+
+The comparison is on the callback rather than the lhs, because the keymap API
+reports an lhs in its own notation: `<C-x>` comes back as `<C-X>` and `<Space>` as
+a plain space. A string comparison would miss those.
+
+Three buffer-handling defects surfaced while fixing this:
+
+- `opts.buffer = false` means the mapping is **global**, but the old `is_buffer`
+  check treated any non-nil buffer option as buffer-local. The lookup then asked
+  for the keymap of a buffer that does not exist (`Invalid 'buf': Expected Lua
+  number`).
+- `opts.buf = 0` means the current buffer when the mapping is **set**, but the
+  teardown deleted from whatever was current **later**. The buffer is now resolved
+  to an id at registration time, so both the set and the delete target the same
+  buffer.
+- The double `set_keymap` is gone: the stub removes itself on the way in, so the
+  teardown finds no stub and does nothing.
+
+**Tests** (`test/behavior_triggers_spec.lua`, `test/triggers_spec.lua`):
+
+| Test | Covers |
+|---|---|
+| `a key shorthand without an rhs keeps the plugin own mapping` | the sibling-trigger path |
+| `a key shorthand without an rhs keeps its mapping when the key fires` | the key-fired path |
+| `a keymap with an rhs is still restored after the load` | the normal case did not regress |
+| `a keymap with buffer=false is treated as a global mapping` | the global-mapping case |
+| `a keymap with buf=0 is deleted from the buffer it was set on` | the buffer-id resolution |
+| `a string rhs is fed without remapping by default` | the inverted feed mode |
+| `remap = true feeds the rhs with remapping` | the inverse of the default |
+
+**Mutation-verified:**
+
+| Mutation | Test that fails |
+|---|---|
+| the conditional delete removed | both `a key shorthand without an rhs` tests |
+| `feed_mode` reverted to the inverted form | `a string rhs is fed without remapping by default` |
+| `buf = 0` not resolved, `is_buffer` reverted | `buffer=false` and `buf=0` tests |
+
 ### 18. **`register_cmd` raises `E1208` when the command takes no arguments** — MEDIUM
 
 - **File:** `lua/resonance/loader/triggers.lua`
@@ -534,6 +577,6 @@ Every item below was checked against the installed copy, not inferred.
 1. **Batch 1 (Tests & P0 bugs) — DONE:** Items `2, 3, 4, 4b, 5, 7`. Item 4b is the user-reported `r`-key notification spam.
 2. **Batch 2 (Performance, Triggers & GC) — DONE:** Items `8, 9, 11, 12`
 3. **Batch 3 (Architecture, Build State & Docs) — DONE:** Items `10, 13, 14, 15, 16`
-4. **Batch 4 (Newly verified) — OPEN:** Items `17`–`23`. Item 17 is the only one that breaks a
-   user's shortcut; the rest are a crash on a valid config, a retained closure, a vacuous
-   assertion, and three small losses.
+4. **Batch 4 (Newly verified) — OPEN:** Items `18`–`23`. Item 17 (the one that broke a user's
+   shortcut) is **fixed**. The rest are a crash on a valid config, a retained closure, a
+   vacuous assertion, and three small losses.

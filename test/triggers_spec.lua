@@ -91,6 +91,81 @@ test.run_suite('resonance.loader.triggers', {
   },
 
   {
+    name = 'register_keys: a string rhs is fed without remapping by default',
+    fn = function()
+      -- vim.keymap.set defaults to noremap, so the replayed keys must not
+      -- be remapped either. The feed mode used to be inverted, which fed
+      -- every string rhs with 'm' and forced the remapping.
+      local feeds = {}
+      local real_feedkeys = api.nvim_feedkeys
+      local real_module = package.loaded['resonance.loader.triggers']
+      api.nvim_feedkeys = function(keys, mode, escape)
+        feeds[#feeds + 1] = { keys = keys, mode = mode }
+        return 0
+      end
+      -- The module captures feedkeys when it loads, so it has to be
+      -- re-required after the stub is in place.
+      package.loaded['resonance.loader.triggers'] = nil
+      local fresh = require('resonance.loader.triggers')
+
+      local config = { keys = { { 'n', '<leader>Fn', ':echo "x"<CR>' } } }
+      fresh.register_keys(config, function() end)
+
+      local maps = api.nvim_get_keymap('n')
+      local stub = nil
+      for i = 1, #maps do
+        if maps[i].lhs:find('Fn') then stub = maps[i] end
+      end
+      test.assert_not_nil(stub, 'the keymap stub was not registered')
+      stub.callback()
+
+      api.nvim_feedkeys = real_feedkeys
+      package.loaded['resonance.loader.triggers'] = real_module
+
+      test.assert_eq(#feeds, 1, 'the rhs was not fed')
+      test.assert_eq(feeds[1].mode, 'n',
+        'the rhs was fed with remapping forced on')
+    end,
+  },
+
+  {
+    name = 'register_keys: remap = true feeds the rhs with remapping',
+    fn = function()
+      -- The inverse of the default: a mapping set up for remapping has to
+      -- be replayed with remapping.
+      local feeds = {}
+      local real_feedkeys = api.nvim_feedkeys
+      local real_module = package.loaded['resonance.loader.triggers']
+      api.nvim_feedkeys = function(keys, mode, escape)
+        feeds[#feeds + 1] = { keys = keys, mode = mode }
+        return 0
+      end
+      package.loaded['resonance.loader.triggers'] = nil
+      local fresh = require('resonance.loader.triggers')
+
+      local config = {
+        keys = { { 'n', '<leader>Fm', ':echo "x"<CR>', { remap = true } } },
+      }
+      fresh.register_keys(config, function() end)
+
+      local maps = api.nvim_get_keymap('n')
+      local stub = nil
+      for i = 1, #maps do
+        if maps[i].lhs:find('Fm') then stub = maps[i] end
+      end
+      test.assert_not_nil(stub, 'the keymap stub was not registered')
+      stub.callback()
+
+      api.nvim_feedkeys = real_feedkeys
+      package.loaded['resonance.loader.triggers'] = real_module
+
+      test.assert_eq(#feeds, 1, 'the rhs was not fed')
+      test.assert_eq(feeds[1].mode, 'm',
+        'the rhs was fed without remapping')
+    end,
+  },
+
+  {
     name = 'register_ft: registers filetype autocmd',
     fn = function()
       local config = {ft = 'lua'}

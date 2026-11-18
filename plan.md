@@ -7,7 +7,7 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–16 are **resolved**. Batch 4 (items 17–23) is **open**.
+> **Status:** items 0–17 are **resolved**. Batch 4 items 18–23 are **open**.
 
 ---
 
@@ -585,7 +585,7 @@ there is no plugin list at all.
 Every item below was checked against the **installed copy**, not inferred from
 reading the source. Each one names the command output that proves it.
 
-### 17. **`register_keys` deletes the plugin's real mapping when the shorthand has no `rhs`** — HIGH
+### 17. **RESOLVED** — **`register_keys` deletes the plugin's real mapping when the shorthand has no `rhs`** — HIGH
 
 - **File:** `lua/resonance/loader/triggers.lua`
 - **Problem:** `keys = { '<leader>Tg' }` — the shorthand with no `rhs` — means "the
@@ -622,6 +622,36 @@ reading the source. Each one names the command output that proves it.
     `(opts.remap == true or opts.noremap == false) and 'm' or 'n'`.
   - The mapping is set twice when the key fires: `restore_keymap()` sets it, then the
     stub callback sets it again. Same mapping, same options — harmless, but redundant.
+
+#### Resolution
+
+The teardown compares the installed mapping's callback against the stub's. The delete
+only happens while the stub is still installed, so a mapping the plugin took over is
+left alone. The comparison is on the callback rather than the lhs, because the
+keymap API reports an lhs in its own notation (`<C-x>` comes back as `<C-X>`).
+
+Three buffer-handling defects surfaced while fixing this:
+
+- `opts.buffer = false` means the mapping is **global**, but the old `is_buffer`
+  check treated any non-nil buffer option as buffer-local. The lookup asked for the
+  keymap of a buffer that does not exist.
+- `opts.buf = 0` means the current buffer when the mapping is **set**, but the
+  teardown deleted from whatever was current **later**. The buffer is now resolved
+  to an id at registration time.
+- The double `set_keymap` is gone: the stub removes itself on the way in, so the
+  teardown finds no stub and does nothing.
+
+**Tests** (`test/behavior_triggers_spec.lua`, `test/triggers_spec.lua`) — seven new
+cases covering the sibling-trigger path, the key-fired path, the unchanged normal
+case, `buffer = false`, `buf = 0`, and both feed modes.
+
+**Mutation-verified:**
+
+| Mutation | Test that fails |
+|---|---|
+| the conditional delete removed | both `a key shorthand without an rhs` tests |
+| `feed_mode` reverted to the inverted form | `a string rhs is fed without remapping by default` |
+| `buf = 0` not resolved, `is_buffer` reverted | the `buffer=false` and `buf=0` tests |
 
 ### 18. **`register_cmd` raises `E1208` when the command takes no arguments** — MEDIUM
 
@@ -736,8 +766,9 @@ These rows are **no longer accurate** and should be corrected when
 2. Batch 1  items 2, 3, 4, 7           ← DONE
 3. Batch 2  items 8, 9, 11, 12         ← DONE
 4. Batch 3  items 10, 13, 14, 15, 16   ← DONE
-5. Batch 4  items 17, 18, 19, 20       ← OPEN; item 17 breaks a user shortcut
-6.          items 21, 22, 23           ← OPEN; small losses
+5. Batch 4  item 17                    ← DONE; it broke a user shortcut
+6.          items 18, 19, 20           ← OPEN
+7.          items 21, 22, 23           ← OPEN; small losses
 ```
 
 Rationale for the order:

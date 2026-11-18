@@ -12,6 +12,8 @@ local del_keymap = vim.keymap.del
 local replace_termcodes = api.nvim_replace_termcodes
 local feedkeys = api.nvim_feedkeys
 local parse_cmd = api.nvim_parse_cmd
+local get_keymap = api.nvim_get_keymap
+local buf_get_keymap = api.nvim_buf_get_keymap
 
 local type = type
 local pcall = pcall
@@ -175,15 +177,28 @@ function M.register_keys(config, load_now)
       local restore_opts = vim.tbl_extend('keep', {}, opts)
       -- opts.buffer can be true, meaning "the current buffer". The delete
       -- API wants a buffer id, so true has to be resolved to one.
-      local is_buffer = opts.buffer ~= nil or opts.buf ~= nil
+      --
+      -- A buffer of false means the mapping is global, so it is not a
+      -- buffer-local mapping at all. Treating it as one would make the
+      -- lookup below ask for the keymap of a buffer that does not exist.
       local target_buf = opts.buf or opts.buffer
-      if target_buf == true then
+      if target_buf == true or target_buf == 0 then
+        -- A buffer of 0 means the current buffer as well. It has to be
+        -- resolved to an id here: the mapping is set against the buffer
+        -- that is current now, so the teardown has to delete from that
+        -- same buffer and not from whatever is current later.
         target_buf = api.nvim_get_current_buf()
         -- The resolved id has to go back into the options, so the keymap is
         -- set and deleted against the same buffer.
-        opts = vim.tbl_extend('force', {}, opts, { buffer = target_buf })
-        restore_opts = vim.tbl_extend('force', {}, restore_opts, { buffer = target_buf })
+        if opts.buffer ~= nil then
+          opts = vim.tbl_extend('force', {}, opts, { buffer = target_buf })
+          restore_opts = vim.tbl_extend('force', {}, restore_opts, { buffer = target_buf })
+        else
+          opts = vim.tbl_extend('force', {}, opts, { buf = target_buf })
+          restore_opts = vim.tbl_extend('force', {}, restore_opts, { buf = target_buf })
+        end
       end
+      local is_buffer = type(target_buf) == 'number'
 
       -- Put the real mapping back in place, and drop the loading stub.
       --
@@ -192,7 +207,42 @@ function M.register_keys(config, load_now)
       -- the plugin was temporary. So the stub is replaced by the real
       -- mapping, whether the keymap itself fired or some other trigger
       -- loaded the plugin first.
+      --
+      -- The delete has to be conditional. A key shorthand without an rhs
+      -- means "the plugin defines this mapping itself", so by the time the
+      -- teardown runs the plugin has already installed its own mapping and
+      -- an unconditional delete would take the user's shortcut with it.
+      -- The stub is only removed while it is still the stub: the installed
+      -- mapping is looked up and its callback compared against the stub.
+      local stub_callback
+
+      -- The modes the mapping was installed for. A mode list is expanded
+      -- here because the lookup below has to walk the modes one by one.
+      local modes = type(mode) == 'table' and mode or { mode }
+
+      -- True while the installed mapping is still the loading stub.
+      --
+      -- The callback is the identity of the stub, so the comparison does
+      -- not depend on how the lhs is spelled. That matters: the keymap
+      -- API reports an lhs in its own notation, so '<C-x>' comes back as
+      -- '<C-X>' and '<Space>' as a plain space. Comparing the callback
+      -- sidesteps the notation entirely.
+      local function stub_is_installed()
+        if not stub_callback then return false end
+        for i = 1, #modes do
+          local maps = is_buffer and buf_get_keymap(target_buf, modes[i]) or get_keymap(modes[i])
+          for m = 1, #maps do
+            if maps[m].callback == stub_callback then return true end
+          end
+        end
+        return false
+      end
+
       local function restore_keymap()
+        -- Only the stub may be deleted. If the plugin already took the
+        -- mapping over, it owns it now and has to be left alone.
+        if not stub_is_installed() then return end
+
         local del_opts = is_buffer and { buf = target_buf } or {}
         pcall(del_keymap, mode, lhs, del_opts)
         if rhs and config.restore_keys ~= false then
@@ -200,7 +250,7 @@ function M.register_keys(config, load_now)
         end
       end
 
-      set_keymap(mode, lhs, function()
+      stub_callback = function()
         pcall(del_keymap, mode, lhs, is_buffer and { buf = target_buf } or {})
 
         -- The plugin may already be loaded -- another trigger of the same
@@ -213,9 +263,11 @@ function M.register_keys(config, load_now)
             rhs()
           elseif type(rhs) == 'string' then
             local term_key = replace_termcodes(rhs, true, false, true)
-            -- 'noremap' means the keys must not be remapped. The mode
-            -- string is the first flag: 'n' for noremap, 'm' for remap.
-            local feed_mode = opts.noremap and 'n' or 'm'
+            -- The keys must be remapped only when the mapping was set up
+            -- for remapping. vim.keymap.set defaults to noremap, and
+            -- { remap = true } is its inverse, so the feed mode follows
+            -- the same rule: 'n' for noremap, 'm' for remap.
+            local feed_mode = (opts.remap == true or opts.noremap == false) and 'm' or 'n'
             feedkeys(term_key, feed_mode, false)
           end
           if config.restore_keys ~= false then set_keymap(mode, lhs, rhs, restore_opts) end
@@ -223,7 +275,9 @@ function M.register_keys(config, load_now)
           local term_key = replace_termcodes(lhs, true, false, true)
           feedkeys(term_key, 'i', false)
         end
-      end, opts)
+      end
+
+      set_keymap(mode, lhs, stub_callback, opts)
 
       teardown[#teardown + 1] = restore_keymap
     end

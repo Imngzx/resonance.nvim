@@ -410,6 +410,175 @@ test.run_suite('resonance.behavior.triggers', {
         'the VeryLazy trigger was not registered alongside it')
     end,
   },
+
+  {
+    name = 'triggers: a key shorthand without an rhs keeps the plugin own mapping',
+    fn = function()
+      -- A key shorthand without an rhs means "the plugin defines this
+      -- mapping itself". The teardown used to delete the mapping
+      -- unconditionally, so the plugin's own mapping was taken with it and
+      -- the user's shortcut was silently dead.
+      test.stub_pack()
+      local plugin_rhs = function() end
+      _G.resonance.load({
+        src = 'https://github.com/test/key-shorthand-own-mapping',
+        keys = { { 'n', '<leader>Ro', nil } },
+        event = { 'User', pattern = 'ResonanceOwnMappingTrigger' },
+        setup = function()
+          -- The plugin installs the mapping the user asked for.
+          vim.keymap.set('n', '<leader>Ro', plugin_rhs, { desc = 'plugin mapping' })
+        end,
+      })
+
+      -- A sibling trigger loads the plugin, so the teardown runs while the
+      -- plugin's mapping is already in place.
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceOwnMappingTrigger', modeline = false })
+      vim.wait(200)
+
+      -- The plugin's mapping must still be there, and it must be the
+      -- plugin's mapping, not the loading stub.
+      local maps = api.nvim_get_keymap('n')
+      local found = nil
+      for i = 1, #maps do
+        if maps[i].lhs:find('Ro') then found = maps[i] end
+      end
+      test.assert_not_nil(found, "the plugin's own mapping was deleted")
+      test.assert_eq(found.callback, plugin_rhs,
+        "the mapping is not the one the plugin installed")
+    end,
+  },
+
+  {
+    name = 'triggers: a key shorthand without an rhs keeps its mapping when the key fires',
+    fn = function()
+      -- The same defect, reached through the other path: the keymap itself
+      -- fires, so the stub removes itself on the way in and the teardown
+      -- runs afterwards.
+      test.stub_pack()
+      local plugin_rhs = function() end
+      _G.resonance.load({
+        src = 'https://github.com/test/key-shorthand-own-mapping-fire',
+        keys = { { 'n', '<leader>Rf', nil } },
+        setup = function()
+          vim.keymap.set('n', '<leader>Rf', plugin_rhs, { desc = 'plugin mapping' })
+        end,
+      })
+
+      local maps = api.nvim_get_keymap('n')
+      local stub = nil
+      for i = 1, #maps do
+        if maps[i].lhs:find('Rf') then stub = maps[i] end
+      end
+      test.assert_not_nil(stub, 'the keymap stub was not registered')
+      stub.callback()
+      vim.wait(200)
+
+      local after = api.nvim_get_keymap('n')
+      local found = nil
+      for i = 1, #after do
+        if after[i].lhs:find('Rf') then found = after[i] end
+      end
+      test.assert_not_nil(found, "the plugin's own mapping was deleted")
+      test.assert_eq(found.callback, plugin_rhs,
+        "the mapping is not the one the plugin installed")
+    end,
+  },
+
+  {
+    name = 'triggers: a keymap with an rhs is still restored after the load',
+    fn = function()
+      -- The conditional delete must not change the normal case: a keymap
+      -- with an rhs is the user's binding, and it has to survive the load
+      -- with that rhs in place.
+      test.stub_pack()
+      local rhs = function() end
+      _G.resonance.load({
+        src = 'https://github.com/test/key-with-rhs-restored',
+        event = { 'User', pattern = 'ResonanceRestoreKeyRhs' },
+        keys = { { 'n', '<leader>Rr', rhs } },
+        setup = function() end,
+      })
+
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceRestoreKeyRhs', modeline = false })
+      vim.wait(200)
+
+      local maps = api.nvim_get_keymap('n')
+      local found = nil
+      for i = 1, #maps do
+        if maps[i].lhs:find('Rr') then found = maps[i] end
+      end
+      test.assert_not_nil(found, 'the keymap was removed instead of restored')
+      test.assert_eq(found.callback, rhs,
+        'the keymap is still the loading stub, not the real mapping')
+    end,
+  },
+
+  {
+    name = 'triggers: a keymap with buffer=false is treated as a global mapping',
+    fn = function()
+      -- A buffer of false means the mapping is global. Treating it as
+      -- buffer-local made the teardown look for the keymap of a buffer
+      -- that does not exist, which raised inside the lookup.
+      test.stub_pack()
+      local rhs = function() end
+      _G.resonance.load({
+        src = 'https://github.com/test/key-buffer-false',
+        event = { 'User', pattern = 'ResonanceKeyBufferFalse' },
+        keys = { { 'n', '<leader>Rg', rhs, { buffer = false } } },
+        setup = function() end,
+      })
+
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceKeyBufferFalse', modeline = false })
+      vim.wait(200)
+
+      local maps = api.nvim_get_keymap('n')
+      local found = nil
+      for i = 1, #maps do
+        if maps[i].lhs:find('Rg') then found = maps[i] end
+      end
+      test.assert_not_nil(found, 'the global keymap was removed instead of restored')
+      test.assert_eq(found.callback, rhs,
+        'the keymap is still the loading stub, not the real mapping')
+    end,
+  },
+
+  {
+    name = 'triggers: a keymap with buf=0 is deleted from the buffer it was set on',
+    fn = function()
+      -- A buffer of 0 means the current buffer when the mapping is set.
+      -- The teardown has to delete from that same buffer, and not from
+      -- whatever happens to be current later.
+      test.stub_pack()
+      local buf = api.nvim_get_current_buf()
+      _G.resonance.load({
+        src = 'https://github.com/test/key-buf-zero',
+        event = { 'User', pattern = 'ResonanceKeyBufZero' },
+        keys = { { 'n', '<leader>Rz', nil, { buf = 0 } } },
+        setup = function() end,
+      })
+
+      -- The mapping is on the buffer that was current at registration.
+      local set_count = 0
+      for _, m in ipairs(api.nvim_buf_get_keymap(buf, 'n')) do
+        if m.lhs == ' Rz' then set_count = set_count + 1 end
+      end
+      test.assert_eq(set_count, 1, 'the buffer-local keymap was not set on the current buffer')
+
+      -- Switch away, so a teardown that used the current buffer would
+      -- delete from the wrong one.
+      local other = api.nvim_create_buf(false, true)
+      api.nvim_set_current_buf(other)
+
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceKeyBufZero', modeline = false })
+      vim.wait(200)
+
+      local left = 0
+      for _, m in ipairs(api.nvim_buf_get_keymap(buf, 'n')) do
+        if m.lhs == ' Rz' then left = left + 1 end
+      end
+      test.assert_eq(left, 0, 'the buffer-local keymap stub survived the load')
+    end,
+  },
 })
 
 test.print_summary()

@@ -894,6 +894,51 @@ test.run_suite('resonance.behavior.ui', {
   },
 
   {
+    name = 'ui: opening the UI resets the expanded rows and their details',
+    fn = function()
+      -- The expanded rows and their details belong to the UI that was
+      -- open before. They were left behind, so a reopened UI showed rows
+      -- still expanded, and the details of a row were not fetched again:
+      -- the stale branches and tags of the previous session were shown
+      -- instead.
+      local l = live()
+      require('resonance.ui')
+      local utils = require('resonance.utils')
+      local real_get = utils.get_pack()
+      test.assert_not_nil(real_get, 'vim.pack is not available')
+
+      local info_calls = {}
+      local stub = {
+        get = function(names, opts)
+          if opts and opts.info then
+            info_calls[#info_calls + 1] = names or 'ALL'
+          end
+          return real_get(names, opts)
+        end,
+      }
+      for key, value in pairs(real_get) do
+        if stub[key] == nil then stub[key] = value end
+      end
+      local orig = utils.get_pack
+      utils.get_pack = function() return stub end
+
+      -- What a previous session left behind.
+      l.state.state.expanded['some-plugin'] = true
+      l.state.state.pack_details['some-plugin'] = { branches = { 'stale-branch' } }
+
+      require('resonance').open_ui()
+      vim.wait(400)
+
+      utils.get_pack = orig
+
+      test.assert_nil(l.state.state.expanded['some-plugin'],
+        'a row stayed expanded from the previous UI')
+      test.assert_nil(l.state.state.pack_details['some-plugin'],
+        'the details of the previous UI were kept')
+    end,
+  },
+
+  {
     name = 'ui: expanding a row fetches info for that plugin only',
     fn = function()
       local l = live()

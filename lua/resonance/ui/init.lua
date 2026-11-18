@@ -134,6 +134,12 @@ function M.open(ui_config)
 
   st.state.win_width = math_floor(vim_o.columns * ui_config.width)
   st.state.updates, st.state.commits = {}, {}
+  -- The expanded rows and their details belong to the UI that was open
+  -- before. They were left behind, so a reopened UI showed rows still
+  -- expanded, and the details of a row were not fetched again: the stale
+  -- branches and tags of the previous session were shown instead.
+  st.state.expanded = {}
+  st.state.pack_details = {}
   st.state.pending_count = 0
   st.state.view_mode = 'list'
   st.state.icons = resolve_icons(ui_config.icons)

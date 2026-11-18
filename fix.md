@@ -677,6 +677,30 @@ directory`.
 
 **Mutation-verified:** dropping the reduction fails the test.
 
+### 24. **FIXED** — **`ui.open()` does not reset `expanded` or `pack_details`** — MEDIUM
+
+- **File:** `lua/resonance/ui/init.lua`
+- **Problem:** `ui.open()` resets `updates`, `commits` and `pending_count`, but not
+  `expanded` or `pack_details`. Both belong to the UI that was open before.
+- **Verified:** after a session leaves `expanded['some-plugin'] = true` and
+  `pack_details['some-plugin'] = { branches = { 'main' } }`, a reopened UI still
+  reports the row as expanded, and expanding it makes **zero** `info = true`
+  requests: the stale branches and tags of the previous session are shown instead
+  of the current ones.
+- **Impact:** the user sees stale repository state, and cannot get fresh state
+  without restarting Neovim.
+- **Fix:** reset both in `ui.open()`.
+
+#### Status: fixed
+
+`ui.open()` now resets `expanded` and `pack_details`, so a reopened UI shows no
+expanded row and fetches the details again.
+
+**Test** (`test/behavior_ui_spec.lua`): `opening the UI resets the expanded rows
+and their details`.
+
+**Mutation-verified:** dropping the reset fails the test.
+
 ---
 
 ## Suggested Execution Batches

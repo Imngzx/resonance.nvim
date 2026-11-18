@@ -7,7 +7,7 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–23 are **resolved**. Batch 4 is **done**.
+> **Status:** items 0–24 are **resolved**. Batch 4 is **done**.
 
 ---
 
@@ -208,7 +208,7 @@ there is no plugin list at all.
 ### 2. **RESOLVED** — `lazy = true` combined with `event` crashes and drops triggers
 
 - **Files:** `lua/resonance/loader/spec.lua`, `lua/resonance/utils.lua`, `lua/resonance/loader/triggers.lua`
-- **Status:** open — verified in code.
+- **Status:** DONE — the event spec is normalized across the three modules.
 - **Problem (verified):**
   - `spec.parse_config()` (`spec.lua:38-57`) inserts a **nested table**
     `{ 'User', pattern = 'VeryLazy' }` into `config.event`.
@@ -250,7 +250,7 @@ there is no plugin list at all.
 ### 4. **RESOLVED** — Dependency failure is not propagated when the dependency is in `M.specs`
 
 - **File:** `lua/resonance/loader/init.lua:517-520`
-- **Status:** open — verified.
+- **Status:** DONE — `load_now()` reports its outcome and the parent aborts on failure.
 - **Problem:** dependencies registered through `resonance.load()` take the
   `if spec_name and M.specs[spec_name]` branch, which calls
   `fn(nil, visiting_path)` and **discards the return value**. If that
@@ -267,7 +267,7 @@ there is no plugin list at all.
 ### 5. **RESOLVED** — `check_updates_network()` leaks `pending_count` and fetches empty paths
 
 - **Files:** `lua/resonance/ui/actions.lua`, `lua/resonance/ui/init.lua`
-- **Status:** open — verified.
+- **Status:** DONE — `load_now()` reports its outcome and the parent aborts on failure.
 - **Problem 1:** `actions.check_updates_network()` clears `st.state.updates = {}`
   but **never resets** `st.state.pending_count`. The spinner renders
   `Updates Available (%d)` from that counter (`render.lua:501`), so repeated
@@ -307,7 +307,8 @@ there is no plugin list at all.
 ### 7. **RESOLVED** — `details_task` survives `:q` / `<C-w>c`; UI state is not cleaned up
 
 - **File:** `lua/resonance/ui/init.lua`
-- **Status:** open — verified. `cancel_details_task()` is wired only to the
+- **Status:** DONE — the task is also cancelled when the UI buffer is wiped.
+  The original finding was that `cancel_details_task()` is wired only to the
   `q` / `<Esc>` keymaps (`ui/init.lua:253-255`, `269-271`) and the native
   `on_close`. Closing via `:q` or `<C-w>c` leaves `details_task` running and
   `st.state.buf` non-`nil`, so Pass 2 still calls `pack.get(info=true)` 50 ms
@@ -325,7 +326,7 @@ there is no plugin list at all.
 ### 8. **RESOLVED** — Sibling triggers are not cleaned up after a load; `keys`/`cmd` stub edge cases
 
 - **Files:** `lua/resonance/loader/triggers.lua`, `lua/resonance/loader/init.lua`
-- **Status:** open — verified.
+- **Status:** DONE — `load_now()` reports its outcome and the parent aborts on failure.
 - **Problem (a):** a plugin with several triggers (`cmd` + `keys` + `event`)
   only tears down the one that fired. The others stay live as stubs. The
   `cmd` path deletes its own command (`triggers.lua:81`) and the `keys` path
@@ -349,7 +350,8 @@ there is no plugin list at all.
 ### 9. **RESOLVED** — `branches` / `tags` are fetched for every plugin on UI open
 
 - **Files:** `lua/resonance/ui/init.lua`, `lua/resonance/ui/actions.lua`
-- **Status:** open — verified. Pass 2 (`ui/init.lua:184-207`) calls
+- **Status:** DONE — the info is fetched for the expanded row only.
+  The original finding was that pass 2 (`ui/init.lua:184-207`) calls
   `pack.get(nil, { offline = true, info = true })` for **every** installed
   plugin 50 ms after opening — ~420 ms at 49 plugins, ~2.5 s main-thread
   freeze at 300 plugins — even though `branches` and `tags` are only shown
@@ -367,7 +369,7 @@ there is no plugin list at all.
 ### 11. **RESOLVED** — Contradictory allocations in `ui/render.lua`; duplicate renders in `ui.open()`
 
 - **Files:** `lua/resonance/ui/render.lua`, `lua/resonance/ui/init.lua`
-- **Status:** open — verified.
+- **Status:** DONE — `load_now()` reports its outcome and the parent aborts on failure.
 - **Problem (a):** `nl()` (`render.lua:91-95`) does `line_parts = {}` on every
   line, allocating a fresh table per rendered line, while
   `reset_render_state()` (`render.lua:106`) calls `table_clear(line_parts)`
@@ -389,7 +391,7 @@ there is no plugin list at all.
 ### 12. **RESOLVED** — Long-session memory retention
 
 - **Files:** `lua/resonance/loader/init.lua`, `lua/resonance/ui/actions.lua`, `lua/resonance/ui/init.lua`, `lua/resonance/ui/render.lua`
-- **Status:** open — verified, all four sub-items are missing.
+- **Status:** DONE — all four sub-items are fixed.
 - **Problem:** four independent leaks:
   1. `fired_events[buf]` / `fired_groups[buf]` are never pruned when a
      buffer is wiped — no `BufWipeout` autocmd exists in the loader.
@@ -412,7 +414,8 @@ there is no plugin list at all.
 ### 10. **RESOLVED** — Startup `check_and_build` spawns an unbounded `git rev-parse` per plugin
 
 - **Files:** `lua/resonance/loader/build.lua`, `lua/resonance/ui/state.lua`
-- **Status:** open — verified. `build.check_and_build()` (`build.lua:93-99`)
+- **Status:** DONE — the commit is read from the git files, with no subprocess.
+  The original finding was that `build.check_and_build()` (`build.lua:93-99`)
   runs `async.run` → `git rev-parse HEAD` for **every** plugin with a build
   hook at startup, with no concurrency bound. The `build_semaphore(2)` only
   guards the actual build, not the hash check.
@@ -430,7 +433,8 @@ there is no plugin list at all.
 ### 13. **RESOLVED** — `.resonance_built` pollutes the plugin repo; `_plugin_dir_cache` never invalidates
 
 - **Files:** `lua/resonance/loader/build.lua`, `lua/resonance/loader/init.lua`
-- **Status:** open — verified. `build.lua` writes `.resonance_built` into the
+- **Status:** DONE — the markers live in Resonance's state directory.
+  The original finding was that `build.lua` writes `.resonance_built` into the
   plugin's own directory (`build.lua:31`, `48`, `91`), dirtying its git
   working tree. `loader/init.lua:129` caches `_plugin_dir_cache` and only
   clears it in `M._reset()` (`loader/init.lua:343`) — never on `PackChanged`
@@ -816,6 +820,22 @@ directory`.
 
 **Mutation-verified:** dropping the reduction fails the test.
 
+### 24. **RESOLVED** — **`ui.open()` does not reset `expanded` or `pack_details`** — MEDIUM
+
+- **File:** `lua/resonance/ui/init.lua`
+- **Problem:** `ui.open()` resets `updates`, `commits` and `pending_count`, but not
+  `expanded` or `pack_details`. Both belong to the UI that was open before.
+- **Verified:** after a session leaves `expanded['some-plugin'] = true` and
+  `pack_details['some-plugin'] = { branches = { 'main' } }`, a reopened UI still
+  reports the row as expanded, and expanding it makes **zero** `info = true`
+  requests: the stale branches and tags of the previous session are shown instead
+  of the current ones.
+- **Impact:** the user sees stale repository state, and cannot get fresh state
+  without restarting Neovim.
+- **Fix:** reset both in `ui.open()`.
+- **Verification:** a behavioural test that leaves the state behind, opens the
+  UI, and asserts both are cleared.
+
 ---
 
 ## Stale entries in `note/knowledge/fix-notes.md`
@@ -827,7 +847,7 @@ These rows are **no longer accurate** and should be corrected when
 |---|---|
 | P1 "触发器不回收" — only the fired trigger is deleted | **Fixed** (item 8, commits `3275053` / `23d4071`). All sibling stubs are torn down after a load. |
 | P1 "UI 状态陈旧" — `check_updates_network` does not clear `updates` | **Fixed.** `updates = {}` is cleared (`actions.lua:64`), and `pending_count` is now reset too (item 5). |
-| P1 "UI 状态陈旧" — `pack_details` / `expanded` not reset in `open()` | **Still true.** `ui.open()` resets `updates` and `commits` (`ui/init.lua:135`) but not `pack_details` or `expanded`. |
+| P1 "UI 状态陈旧" — `pack_details` / `expanded` not reset in `open()` | **Fixed** (item 24). `ui.open()` now resets both, so a reopened UI shows no expanded row and fetches the details again instead of showing the stale branches and tags of the previous session. |
 | P1 "`_plugin_dir_cache` 永不失效" | **Fixed** (item 13, commit `24160c7`) — the cache moved to `registry.plugin_dirs` and is invalidated on `PackChanged`. |
 | P2 "零测试、零 CI、无格式化/静态检查配置" | **Partly stale.** There are now 13 test files and 201 passing tests. Still no CI, no `stylua`/`luacheck` config, and no `:checkhealth`. |
 | P1 "无 trigger 的 spec 永远不加载也不安装" | **Fixed** (item 3, commit `be50123`) — triggerless specs load eagerly on `VimEnter`. |

@@ -115,7 +115,7 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 | 问题                                      | 位置                                          | 说明                                                                                                                                                                                                               |
 | ----------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **UI 状态陈旧**                           | `actions.lua` / `ui/init.lua`                 | **部分已修复**：`check_updates_network` 现在会清空 `updates`（`actions.lua:64`），`pending_count` 也会重置了；但 `pack_details` / `expanded` 在 `open()` 里仍不复位。                                                   |
+| **UI 状态陈旧**                           | `actions.lua` / `ui/init.lua`                 | **已修复**：`check_updates_network` 现在会清空 `updates`（`actions.lua:64`），`pending_count` 也会重置了；`pack_details` / `expanded` 现在 `open()` 里也复位了，重开的 UI 不再有残留的展开行，也不会拿上一轮的 branches/tags 缓存。                                                   |
 
 > 2026-11-18：上表其余四行均已修复并移入下方已修复表。
 
@@ -232,7 +232,7 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 | `_plugin_dir_cache` 挂 `PackChanged` | **仍待办** |
 | 触发器回收机制 | **仍待办** |
 | 无 trigger spec 的 eager 入口 | **仍待办** |
-| UI 状态自洽刷新 | **仍待办**（`pending_count` / `pack_details` / `expanded`） |
+| UI 状态自洽刷新 | **已完成**（`pending_count` / `pack_details` / `expanded` 都会复位） |
 | 拆分 `load_now`、引入 `registry` 层 | **仍待办** |
 | require 期副作用延迟 | **仍待办** |
 | `open_ui` 参数生效 | **仍待办** —— 文档写错了，代码其实是对的，应改文档 |

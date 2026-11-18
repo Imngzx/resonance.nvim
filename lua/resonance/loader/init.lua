@@ -720,6 +720,23 @@ function M.load(config)
       end
     end
 
+    -- The setup closures have run, so nothing needs them any more.
+    --
+    -- They are the only part of the spec that holds onto the user's
+    -- state: everything the closure captured stays reachable through it.
+    -- The load_now closure keeps the spec alive for the whole session,
+    -- so a setup that captured a large table would keep that table alive
+    -- too. Clearing the references here lets it be collected.
+    config.setup = nil
+    config.config = nil
+    for i = 1, #plugins do
+      local plugin_spec = plugins[i]
+      if type(plugin_spec) == 'table' then
+        plugin_spec.setup = nil
+        plugin_spec.config = nil
+      end
+    end
+
     for i = 1, #parsed_names do
       local member_state = plugin_state[parsed_names[i]]
       if not member_state then

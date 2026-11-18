@@ -526,7 +526,7 @@ either. A spec with a bad command and an event trigger ended up with neither.
 plugin does not define its own command is pre-existing behavior, not part of this
 fix. It was checked against the code before the change and reports the same.
 
-### 19. **`force_load_fns` keeps the user's `setup` closure alive for the whole session** — MEDIUM
+### 19. **FIXED** — **`force_load_fns` keeps the user's `setup` closure alive for the whole session** — MEDIUM
 
 - **File:** `lua/resonance/loader/init.lua`
 - **Problem:** `retained_spec()` drops `setup` from the registry copy, so the registry
@@ -543,6 +543,28 @@ fix. It was checked against the code before the change and reports the same.
   With `force_load_fns` intact the closure is still alive after the load.
 - **Fix:** clear `config.setup` / `config.config` (and the per-plugin `setup` /
   `config`) once the members have loaded and `member_state.loaded = true`.
+
+#### Status: fixed
+
+The setup closures are released once the members have loaded, right after the setup
+call. Both shapes are covered: `config.setup` at the top level of the spec, and
+`setup` inside a member of the `plugin` list.
+
+The release happens **after** the setup has run, so the setup still runs exactly
+once. Verified against the code before the change: a two-member spec still runs
+both setups, in order, and a second spec for an already-loaded plugin still does
+not re-run its setup.
+
+**Tests** (`test/behavior_arch_spec.lua`):
+
+| Test | Covers |
+|---|---|
+| `the setup closure is released after the plugin loads` | `config.setup` |
+| `a per-plugin setup closure is released after the plugin loads` | the `plugin` list shape |
+| `releasing the setup does not stop it from running` | the setup still runs exactly once |
+
+**Mutation-verified:** removing the release fails both release tests
+(`the setup closure is still reachable after the load`).
 
 ### 20. **`test/behavior_ui_spec.lua` asserts `#name_to_line == 0`, which is always true** — LOW
 
@@ -602,6 +624,6 @@ fix. It was checked against the code before the change and reports the same.
 1. **Batch 1 (Tests & P0 bugs) — DONE:** Items `2, 3, 4, 4b, 5, 7`. Item 4b is the user-reported `r`-key notification spam.
 2. **Batch 2 (Performance, Triggers & GC) — DONE:** Items `8, 9, 11, 12`
 3. **Batch 3 (Architecture, Build State & Docs) — DONE:** Items `10, 13, 14, 15, 16`
-4. **Batch 4 (Newly verified) — OPEN:** Items `19`–`23`. Items `17` (broke a user's shortcut)
-   and `18` (crashed the whole load on a valid config) are **fixed**. The rest are a retained
-   closure, a vacuous assertion, and three small losses.
+4. **Batch 4 (Newly verified) — OPEN:** Items `20`–`23`. Items `17` (broke a user's shortcut),
+   `18` (crashed the whole load on a valid config) and `19` (retained a closure) are **fixed**.
+   The rest are a vacuous assertion and three small losses.

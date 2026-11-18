@@ -7,7 +7,7 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–18 are **resolved**. Batch 4 items 19–23 are **open**.
+> **Status:** items 0–19 are **resolved**. Batch 4 items 20–23 are **open**.
 
 ---
 
@@ -682,7 +682,7 @@ command actually loads the plugin.
 plugin does not define its own command is pre-existing behavior — checked against
 the code before the change.
 
-### 19. **`force_load_fns` keeps the user's `setup` closure alive for the whole session** — MEDIUM
+### 19. **RESOLVED** — **`force_load_fns` keeps the user's `setup` closure alive for the whole session** — MEDIUM
 
 - **File:** `lua/resonance/loader/init.lua`
 - **Problem:** `retained_spec()` drops `setup` from the registry copy, so the registry
@@ -694,6 +694,23 @@ the code before the change.
   `force_load_fns` intact the closure is still alive after the load.
 - **Fix:** clear `config.setup` / `config.config` (and the per-plugin `setup` /
   `config`) once the members have loaded and `member_state.loaded = true`.
+
+#### Resolution
+
+The setup closures are released once the members have loaded, right after the setup
+call. Both shapes are covered: `config.setup` at the top level of the spec, and
+`setup` inside a member of the `plugin` list.
+
+The release happens **after** the setup has run, so the setup still runs exactly
+once. Verified against the code before the change: a two-member spec still runs
+both setups, in order, and a second spec for an already-loaded plugin still does
+not re-run its setup.
+
+**Tests** (`test/behavior_arch_spec.lua`) — three new cases: `config.setup` is
+released, the `plugin` list shape is released, and the setup still runs exactly
+once.
+
+**Mutation-verified:** removing the release fails both release tests.
 
 ### 20. **`test/behavior_ui_spec.lua` asserts `#name_to_line == 0`, which is always true** — LOW
 
@@ -785,9 +802,8 @@ These rows are **no longer accurate** and should be corrected when
 2. Batch 1  items 2, 3, 4, 7           ← DONE
 3. Batch 2  items 8, 9, 11, 12         ← DONE
 4. Batch 3  items 10, 13, 14, 15, 16   ← DONE
-5. Batch 4  items 17, 18               ← DONE; 17 broke a user shortcut, 18 crashed the load
-6.          items 19, 20               ← OPEN
-7.          items 21, 22, 23           ← OPEN; small losses
+5. Batch 4  items 17, 18, 19           ← DONE; 17 broke a shortcut, 18 crashed the load, 19 leaked
+6.          items 20, 21, 22, 23       ← OPEN; small losses
 ```
 
 Rationale for the order:

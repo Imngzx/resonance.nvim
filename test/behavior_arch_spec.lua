@@ -212,6 +212,98 @@ test.run_suite('resonance.behavior.arch', {
         'the parsed copy did not normalize the key list')
     end,
   },
+
+  {
+    name = 'arch: the setup closure is released after the plugin loads',
+    fn = function()
+      -- The loader keeps the load_now closure for the whole session, and
+      -- that closure holds the spec. The setup closure is the only part
+      -- of the spec that holds onto the user's state, so a setup that
+      -- captured a large table kept that table alive for the whole
+      -- session.
+      test.stub_pack()
+      local weak = setmetatable({}, { __mode = 'v' })
+      local setup
+      do
+        local payload = { marker = 'retained by the setup closure' }
+        weak.ref = payload
+        setup = function() return payload end
+      end
+
+      _G.resonance.load({
+        src = 'https://github.com/test/arch-release-setup',
+        event = { 'User', pattern = 'ResonanceArchReleaseSetup' },
+        setup = setup,
+      })
+
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceArchReleaseSetup', modeline = false })
+      vim.wait(200)
+
+      -- Drop the last outside reference, then collect.
+      setup = nil
+      collectgarbage()
+      collectgarbage()
+      collectgarbage()
+
+      test.assert_nil(weak.ref,
+        "the setup closure is still reachable after the load")
+    end,
+  },
+
+  {
+    name = 'arch: a per-plugin setup closure is released after the plugin loads',
+    fn = function()
+      -- The same for a setup that lives in the plugin table rather than
+      -- at the top level of the spec.
+      test.stub_pack()
+      local weak = setmetatable({}, { __mode = 'v' })
+      local setup
+      do
+        local payload = { marker = 'retained by the plugin setup' }
+        weak.ref = payload
+        setup = function() return payload end
+      end
+
+      _G.resonance.load({
+        src = 'https://github.com/test/arch-release-plugin-setup',
+        plugin = {
+          { 'https://github.com/test/arch-release-plugin-setup', setup = setup },
+        },
+        event = { 'User', pattern = 'ResonanceArchReleasePluginSetup' },
+      })
+
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceArchReleasePluginSetup', modeline = false })
+      vim.wait(200)
+
+      setup = nil
+      collectgarbage()
+      collectgarbage()
+      collectgarbage()
+
+      test.assert_nil(weak.ref,
+        "the plugin setup closure is still reachable after the load")
+    end,
+  },
+
+  {
+    name = 'arch: releasing the setup does not stop it from running',
+    fn = function()
+      -- The release happens after the setup ran, so the setup still runs
+      -- exactly once.
+      test.stub_pack()
+      local ran = 0
+      _G.resonance.load({
+        src = 'https://github.com/test/arch-setup-runs',
+        event = { 'User', pattern = 'ResonanceArchSetupRuns' },
+        setup = function() ran = ran + 1 end,
+      })
+
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceArchSetupRuns', modeline = false })
+      vim.wait(200)
+
+      test.assert_eq(ran, 1, 'the setup did not run exactly once')
+    end,
+  },
 })
 
 test.print_summary()

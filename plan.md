@@ -8,6 +8,8 @@
 > not copied from the notes.
 >
 > **Status:** items 0–26 are **resolved**. Batch 4 is **done**.
+> **Batch 5 (the build system rework) is open**: items 27–29 are confirmed
+> defects, item 30 is the settled design for the fix.
 
 ---
 
@@ -925,6 +927,162 @@ again.
 
 ---
 
+## Batch 5 — Build system rework (2026-11-18)
+
+The build system has three confirmed defects and needs a tracking API. The
+decisions below were settled with the user.
+
+### 27. **`setup()` runs before the build finishes** — HIGH
+
+- **File:** `lua/resonance/loader/init.lua`, `lua/resonance/loader/build.lua`
+- **Problem:** the load flow is `pack_install` → `:packadd` → `setup()`, all
+  synchronous. The build starts *afterwards*, via the `PackChanged` autocmd. So
+  `setup()` runs while the build is still in flight.
+- **Verified** (real `resonance.load()` with a `cmd` trigger):
+
+  ```
+  TIMELINE:
+    1. build START
+    2. setup() ran; artifact exists = false   ← setup ran 2s before the build
+  ```
+
+- **Impact:** the plugin is set up against a half-built tree. `markdown-preview2.nvim`
+  then starts its node server without `socket.io-client` and dies with
+  `Cannot find module 'socket.io-client/dist/socket.io.js'`. The server registers
+  `process.on("uncaughtException", ...)` and calls back into Neovim over RPC, so
+  the broken server keeps failing — including on the `:qa` path
+  (`closeAllPages` in the user's screenshot).
+- **Fix:** the load path waits for the build before it calls `setup()`. See the
+  decision on blocking below (item 30).
+
+### 28. **A build that prints errors but exits 0 is reported as succeeded** — MEDIUM
+
+- **File:** `lua/resonance/loader/build.lua`
+- **Problem:** the build verdict is the exit code alone. A build command that
+  prints errors to stderr but exits 0 is reported as a success — and the marker
+  is written, so it never rebuilds.
+- **Verified:**
+
+  ```
+  ok=true err=nil
+  => the build is reported as SUCCEEDED even though it printed errors
+  ```
+
+- **Impact:** a broken build is recorded as done and never retried. The user sees
+  "npm error" followed by "Build succeeded", which is exactly the sequence
+  reported.
+- **Fix:** the verdict stays the exit code (see the decision below), but the
+  output tail is captured and shown, so a swallowed error is visible.
+
+### 29. **A build is started twice for one load** — MEDIUM
+
+- **File:** `lua/resonance/loader/build.lua`
+- **Problem:** `check_and_build()` is called from two places — the loader when it
+  registers the hook, and the `PackChanged` handler when the plugin is
+  installed. The second call starts a second build while the first is still
+  running, because there is no per-plugin "already building" check.
+- **Verified:**
+
+  ```
+  after check_and_build: calls=1
+  after second check_and_build: calls=2
+  [Resonance] Build succeeded for dup-test
+  [Resonance] Build succeeded for dup-test
+  ```
+
+- **Impact:** two concurrent builds of the same plugin, writing into the same
+  directory, and two "Build succeeded" notifications. `yarn install` and `cargo
+  build` racing on the same tree can corrupt the output.
+- **Fix:** the build tracker (item 30) owns the per-plugin state, and a build
+  that is already running is not started again.
+
+### 30. **RESOLVED (design) — Build tracking API** — DESIGN
+
+- **New module:** `lua/resonance/builds.lua`
+- **Purpose:** a public, pure-state API for build status. `loader/build.lua` keeps
+  the mechanics (running the command), `builds.lua` owns the state and the
+  queries. This follows the `registry.lua` precedent: a module that holds state
+  and can be required without dragging in the loader.
+
+#### Public surface
+
+```lua
+local builds = require('resonance.builds')
+
+builds.status(name)
+--> { state = 'pending'|'running'|'ok'|'failed',
+      started_at = <hrtime>, elapsed = <ms>,
+      error = <string|nil>, output_tail = <string|nil>,
+      pid = <number|nil> }
+
+builds.wait(name, timeout_ms)   -- pump the event loop; returns ok, err
+builds.is_busy()                -- any build running
+builds.on_complete(name, fn)    -- called when the build settles
+builds.cancel(name)             -- stop waiting; does NOT kill the build
+```
+
+#### Decision A — never block the editor
+
+**A build started in the background never blocks.** A background build (from
+`PackChanged`, or from `check_and_build`) runs to completion without blocking
+Neovim. This is the case that matters most: a plugin with a 60-second
+`yarn install` or `cargo build --release`, loaded on `VimEnter` or `VeryLazy`,
+must not freeze the editor for a minute on startup.
+
+**Only an explicit user action waits.** When `load_now()` fires because the user
+pressed a key or typed a command, the user wants the plugin *now*. Two
+acceptable behaviours:
+
+1. **Interruptible wait** — `builds.wait()` pumps the event loop with
+   `vim.wait()`, shows a progress hint, and honours `<C-c>`. `<C-c>` cancels the
+   *wait* but not the background build.
+2. **Defer and tell the user** — notify "Building <name> in background (12s)...",
+   do not run `setup()` yet, and **do not consume the trigger stub**, so the
+   user can press the key again once the build notification arrives.
+
+For `event` / `ft` / `VimEnter` / `VeryLazy` triggers, the load is **deferred**:
+the plugin is `:packadd`ed and set up when the build completes, so the editor
+stays responsive.
+
+#### Decision B — the exit code is the verdict
+
+**Only `exit code ~= 0` (or a Lua hook raising / returning a failed object)
+counts as a failure.** `stderr` being non-empty is *not* a failure:
+`yarn`, `npm`, `cargo` and `make` all write warnings and progress to stderr on
+success. The stdout and stderr tails are captured into `output_tail` and shown
+as context, so a swallowed error is visible without producing false failures.
+
+#### Decision C — two timeouts, and a lock file with a liveness check
+
+**Two separate timeouts:**
+
+| Timeout | Default | On expiry |
+|---|---|---|
+| Notify threshold | 3–5 s | Tell the user the build is still running. A build that finishes in 0.2 s never notifies. |
+| Build hard timeout | 10 min | Kill the child process, mark the build `failed`, **do not write the marker**, so the next launch retries. |
+
+**The wait timeout is separate again.** `builds.wait(name, timeout_ms)` has its
+own timeout (or a `<C-c>` interrupt). Expiring it cancels the *wait*, **not** the
+background build — the build keeps running and still writes its marker when it
+finishes.
+
+**Cross-session lock file.** The lock file holds the **child process PID**, so a
+second Neovim session does not start a duplicate build. Two traps to avoid:
+
+- **Stale lock cleanup.** The PID must be checked for liveness with
+  `vim.uv.kill(pid, 0)` (and a timeout fallback) before the lock is trusted.
+  Otherwise a Neovim that crashed leaves a lock that permanently skips the
+  build.
+- **The orphan trap.** When a session is killed, its Lua VM dies: the orphaned
+  build keeps running and finishes, but `on_complete` never fires, so **no
+  marker is written and no lock file is removed**. The next session must
+  therefore allow a rebuild when it finds that the lock's PID is gone (`ESRCH`)
+  and the marker is missing. Re-running `yarn install` or `cargo build` over an
+  already-built tree is cheap — it verifies in under a second and writes the
+  marker.
+
+---
+
 ## Stale entries in `note/knowledge/fix-notes.md`
 
 These rows are **no longer accurate** and should be corrected when
@@ -945,6 +1103,7 @@ These rows are **no longer accurate** and should be corrected when
 | P3 "spinner 每 100ms 触发一次全量重绘" | **Stale.** `update_spinner()` (`render.lua:494-522`) rewrites a single line and two extmarks. |
 | P0 "`vim.async` 硬依赖，require 期无守卫" | **Intentionally not fixed** — the project targets Neovim 0.13+. The note already says so. |
 | P3 "首次触发可能现场 clone" | **Still true, and now deliberate.** `plan-2026-11-17.md` item 4 explains why the install stays blocking: the plugin must be on disk before `setup()` runs. |
+| P4 "构建系统" | **New — items 27–30.** Three confirmed defects (`setup()` before the build finishes, a false "build succeeded", a duplicated build) and the tracking API that fixes them. The A/B/C decisions are settled with the user; see Batch 5, item 30. |
 
 ### New entries to add to `fix-notes.md`
 
@@ -955,6 +1114,8 @@ These rows are **no longer accurate** and should be corrected when
 | `stats()` freezes forever / no `M._reset()` (item 15) | P2, new row — **added** |
 | `build_spec.lua` false positive (item 16a) | P2, new row — **added** |
 | Batch 4 items 17–23 | P1, new table — **added 2026-11-18** |
+| Batch 4 items 24–26 | P1, new rows — **added 2026-11-18** |
+| Batch 5 items 27–30 (build system) | P4, new section — **added 2026-11-18** |
 
 ---
 
@@ -967,6 +1128,11 @@ These rows are **no longer accurate** and should be corrected when
 3. Batch 2  items 8, 9, 11, 12         ← DONE
 4. Batch 3  items 10, 13, 14, 15, 16   ← DONE
 5. Batch 4  items 17-23                 ← DONE; shortcut, crash, leak, vacuous assertion, lost pattern, redundant fetch, unsanitized marker
+6. Batch 4  item 24                    ← DONE; stale UI state
+7. Batch 4  item 25                    ← DONE; eager vim.async
+8. Batch 4  item 26                    ← DONE; stale build marker after uninstall
+9. Batch 5  item 30 first              ← builds.lua API: state, tracker, lock file
+10. Batch 5 items 29, 28, 27           ← one-build-per-plugin, output tail, setup ordering
 ```
 
 Rationale for the order:
@@ -989,6 +1155,16 @@ Rationale for the order:
   the diffs stay reviewable.
 - **Item 16 last.** The docs must describe the code as it ends up, not as
   it is partway through.
+- **Item 30 first in Batch 5.** The tracker API is the foundation: item 29
+  needs the per-plugin "already building" state, item 28 needs the output
+  tail, and item 27 needs the wait. Building the API first means each
+  defect is a small change on top of it, instead of three ad-hoc fixes
+  that then have to be reconciled.
+- **Item 29 before item 28.** One-build-per-plugin is a correctness fix with
+  a sharp observable (two concurrent builds, two notifications). The output
+  tail is a presentation change.
+- **Item 27 last.** It is the one that changes the load flow, so it should
+  land on a tracker that is already correct.
 
 ---
 
@@ -1009,6 +1185,6 @@ Rationale for the order:
 ---
 
 *Every issue in this file was verified by reading the current source on
-2026-11-17, and Batch 4 was verified by running it against the installed
-copy on 2026-11-18. Nothing here is copied forward from the notes without
-re-checking it against the code.*
+2026-11-17, and Batch 4 and Batch 5 were verified by running them against
+the installed copy on 2026-11-18. Nothing here is copied forward from the
+notes without re-checking it against the code.*

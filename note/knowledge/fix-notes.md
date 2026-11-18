@@ -9,6 +9,10 @@
 > 已过时的行已划掉并注明原因，新发现的问题已补入。
 > **当前唯一权威的待办清单是仓库根目录的 `plan.md`** —— 本文保留架构分析价值，
 > 但不再作为执行依据。
+>
+> **2026-11-18 复核：** 新增 P4「构建系统」一节（4 行，含已敲定的 A/B/C 三条决策）。
+> 三个已实测复现的缺陷：`setup()` 抢在构建完成前跑、退出码 0 但打了 error 仍报
+> "构建成功"、一次 load 起两个并发构建。方案见 `plan.md` Batch 5 / `fix.md` P4。
 
 ---
 
@@ -209,6 +213,15 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 | **`vim.async` 在启动时被急切加载** | `loader/build.lua` | **已修复。** `build.lua` 在模块层 `local async = vim.async`，而 loader 在 setup 时就 require 它，于是每次启动都要付 `vim.async` 及其 7 个子模块的加载代价。实测 `vim.async` 加载要 **1.4 ms**；loader 的 require 是 1.69 ms，预加载 `vim.async` 后只要 0.03 ms。现在 async 机制改成首次使用时才建，启动时间 8.44 ms → **6.80 ms** |
 | **`vim.async` 硬依赖，require 期无守卫**  | `loader/build.lua:10,16-17`                   | 在模块加载时就执行 `async.wrap(...)`。`nvim 0.12.6`（stable）实测：`require('resonance.loader')` → `attempt to index local 'async' (a nil value)`。本项目要求 0.13+，**决策不修复**。 （注：上面的急切加载问题已单独修掉，现在 `async.wrap` 也是首次使用时才建）                               |
 
+### P4 —— 构建系统（2026-11-18，方案已定，尚未实现）
+
+| 问题 | 位置 | 说明 |
+| --- | --- | --- |
+| **`setup()` 抢在构建完成前跑** | `loader/init.lua` + `loader/build.lua` | 加载流程是 `pack_install` → `:packadd` → `setup()`，全同步；构建是之后靠 `PackChanged` 才异步开始的。实测时间线：`1. build START` → `2. setup() ran; artifact exists = false`（早了 2 秒）。插件在半成品目录上初始化，`markdown-preview2.nvim` 的 node server 缺 `socket.io-client` 直接挂掉；server 又注册了 `process.on("uncaughtException")` 回调 Neovim，于是连 `:qa` 路径都在报错（截图里的 `closeAllPages`） |
+| **构建退出码为 0 但打了 error，仍报"构建成功"** | `loader/build.lua` | 只看退出码。命令往 stderr 打了 error 但 `exit 0`，就被判成功，**marker 也写了**，以后再也不重建。用户看到的正是"先 npm error，再 Build succeeded" |
+| **一次 load 起了两个构建** | `loader/build.lua` | `check_and_build()` 有两个调用点：loader 注册 hook 时一次，`PackChanged` 安装时又一次。第二次在第一次还在跑时又起一个，并发写同一个目录，还弹两条 "Build succeeded" |
+| **缺一个构建状态查询 API** | 新增 `lua/resonance/builds.lua` | 方案已与用户敲定（详见 `plan.md` Batch 5 item 30 / `fix.md` P4 item 30）：<br>· **A 决策**：后台构建**永不阻塞**编辑器。只有用户主动按键/敲命令才等待，且等待要可 `<C-c>` 中断（只中断等待，不杀后台构建）；`event`/`ft`/`VimEnter`/`VeryLazy` 触发的加载**延后**到构建完成再 `setup()`。<br>· **B 决策**：只看 `exit code ~= 0` 判失败，**stderr 非空不算失败**（`yarn`/`npm`/`cargo`/`make` 成功时也往 stderr 写 warning）；stdout/stderr 尾部收进 `output_tail` 展示，让被吞掉的错误可见。<br>· **C 决策**：**双超时** —— 提示阈值（3–5s，超过才提示"仍在构建"）和构建硬超时（10min，超时杀子进程、标记 failed、**不写 marker**，下次重试）；`wait()` 自己的超时与 `<C-c>` **不杀**后台构建。跨会话锁文件存**子进程 PID**，用 `vim.uv.kill(pid, 0)` 探活防止死锁；还要防"孤儿陷阱" —— session 被 kill 后 Lua VM 死了，孤儿构建跑完但 `on_complete` 永不触发，marker 和锁文件都没人清，所以下一个 session 发现 PID 已不在（`ESRCH`）且 marker 缺失时**允许重建**（重跑 `yarn install` 对已建好的树很快，能补上 marker） |
+
 ---
 
 ## 6. 建议的修复顺序
@@ -226,19 +239,19 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 | 原建议项 | 状态 |
 |---|---|
-| 测试补齐 | **已完成** —— 13 个测试文件，197 个用例全绿 |
+| 测试补齐 | **已完成** —— 19 个测试文件，268 个用例全绿 |
 | `r` 键异步化 | **已完成** —— `vim.async` + 信号量 |
 | 仅重绘 spinner 行 | **已完成** —— `update_spinner()` 只写一行 |
 | README `Vim.*` → `vim.*` | **已完成** —— 当前 README 零匹配 |
 | DAG 键 `g` → `A` | **已完成** —— `doc/resonance.txt:224` 已是 `A` |
-| `_plugin_dir_cache` 挂 `PackChanged` | **仍待办** |
-| 触发器回收机制 | **仍待办** |
-| 无 trigger spec 的 eager 入口 | **仍待办** |
+| `_plugin_dir_cache` 挂 `PackChanged` | **已完成** —— 缓存移到 `registry.plugin_dirs`，`PackChanged` 时失效（item 13） |
+| 触发器回收机制 | **已完成** —— load 后所有兄弟触发器桩一起回收（item 8） |
+| 无 trigger spec 的 eager 入口 | **已完成** —— 无 trigger 的 spec 默认 `lazy = false`（`VimEnter`）加载（item 3） |
 | UI 状态自洽刷新 | **已完成**（`pending_count` / `pack_details` / `expanded` 都会复位） |
-| 拆分 `load_now`、引入 `registry` 层 | **仍待办** |
-| require 期副作用延迟 | **仍待办** |
-| `open_ui` 参数生效 | **仍待办** —— 文档写错了，代码其实是对的，应改文档 |
-| `setup` vs `load` 文档修正 | **仍待办** |
+| 拆分 `load_now`、引入 `registry` 层 | **已完成** —— `registry.lua` 已加，`scanner↔loader` 环已打破（item 14） |
+| require 期副作用延迟 | **已完成** —— autocmd / event tracker 改成首次调用时才装（item 14） |
+| `open_ui` 参数生效 | **已完成** —— 代码本来就不收参数（用 `setup()` 里的 `ui` 配置），文档已写对 |
+| `setup` vs `load` 文档修正 | **已完成** —— `doc/resonance.txt:107` 已写明 "`setup()` takes only the UI options... Plugin specifications go to `load()`" |
 | CI / stylua / luacheck / checkhealth | **仍待办** |
 
 ---

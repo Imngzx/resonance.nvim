@@ -785,6 +785,163 @@ again.
 
 ---
 
+## P4 — Build system rework (2026-11-18)
+
+The build system has three confirmed defects and needs a tracking API. The
+decisions were settled with the user; the full design is in `plan.md` (Batch 5,
+item 30).
+
+### 27. **OPEN** — **`setup()` runs before the build finishes** — HIGH
+
+- **Files:** `lua/resonance/loader/init.lua`, `lua/resonance/loader/build.lua`
+- **Problem:** the load flow is `pack_install` → `:packadd` → `setup()`, all
+  synchronous. The build starts *afterwards*, via the `PackChanged` autocmd. So
+  `setup()` runs while the build is still in flight.
+- **Verified** (real `resonance.load()` with a `cmd` trigger):
+
+  ```
+  TIMELINE:
+    1. build START
+    2. setup() ran; artifact exists = false   ← setup ran 2s before the build
+  ```
+
+- **Impact:** the plugin is set up against a half-built tree. `markdown-preview2.nvim`
+  then starts its node server without `socket.io-client` and dies with
+  `Cannot find module 'socket.io-client/dist/socket.io.js'`. The server registers
+  `process.on("uncaughtException", ...)` and calls back into Neovim over RPC, so
+  the broken server keeps failing — including on the `:qa` path
+  (`closeAllPages` in the user's screenshot).
+- **Fix:** the load path waits for the build before it calls `setup()`. See the
+  decision on blocking in item 30.
+
+### 28. **OPEN** — **A build that prints errors but exits 0 is reported as succeeded** — MEDIUM
+
+- **File:** `lua/resonance/loader/build.lua`
+- **Problem:** the build verdict is the exit code alone. A build command that
+  prints errors to stderr but exits 0 is reported as a success — and the marker
+  is written, so it never rebuilds.
+- **Verified:**
+
+  ```
+  ok=true err=nil
+  => the build is reported as SUCCEEDED even though it printed errors
+  ```
+
+- **Impact:** a broken build is recorded as done and never retried. The user sees
+  "npm error" followed by "Build succeeded", which is exactly the sequence
+  reported.
+- **Fix:** the verdict stays the exit code (see item 30, decision B), but the
+  output tail is captured and shown, so a swallowed error is visible.
+
+### 29. **OPEN** — **A build is started twice for one load** — MEDIUM
+
+- **File:** `lua/resonance/loader/build.lua`
+- **Problem:** `check_and_build()` is called from two places — the loader when it
+  registers the hook, and the `PackChanged` handler when the plugin is
+  installed. The second call starts a second build while the first is still
+  running, because there is no per-plugin "already building" check.
+- **Verified:**
+
+  ```
+  after check_and_build: calls=1
+  after second check_and_build: calls=2
+  [Resonance] Build succeeded for dup-test
+  [Resonance] Build succeeded for dup-test
+  ```
+
+- **Impact:** two concurrent builds of the same plugin, writing into the same
+  directory, and two "Build succeeded" notifications. `yarn install` and `cargo
+  build` racing on the same tree can corrupt the output.
+- **Fix:** the build tracker (item 30) owns the per-plugin state, and a build
+  that is already running is not started again.
+
+### 30. **RESOLVED (design) — Build tracking API** — DESIGN
+
+- **New module:** `lua/resonance/builds.lua`
+- **Purpose:** a public, pure-state API for build status. `loader/build.lua` keeps
+  the mechanics (running the command), `builds.lua` owns the state and the
+  queries. This follows the `registry.lua` precedent: a module that holds state
+  and can be required without dragging in the loader.
+
+#### Public surface
+
+```lua
+local builds = require('resonance.builds')
+
+builds.status(name)
+--> { state = 'pending'|'running'|'ok'|'failed',
+      started_at = <hrtime>, elapsed = <ms>,
+      error = <string|nil>, output_tail = <string|nil>,
+      pid = <number|nil> }
+
+builds.wait(name, timeout_ms)   -- pump the event loop; returns ok, err
+builds.is_busy()                -- any build running
+builds.on_complete(name, fn)    -- called when the build settles
+builds.cancel(name)             -- stop waiting; does NOT kill the build
+```
+
+#### Decision A — never block the editor
+
+**A build started in the background never blocks.** A background build (from
+`PackChanged`, or from `check_and_build`) runs to completion without blocking
+Neovim. This is the case that matters most: a plugin with a 60-second
+`yarn install` or `cargo build --release`, loaded on `VimEnter` or `VeryLazy`,
+must not freeze the editor for a minute on startup.
+
+**Only an explicit user action waits.** When `load_now()` fires because the user
+pressed a key or typed a command, the user wants the plugin *now*. Two
+acceptable behaviours:
+
+1. **Interruptible wait** — `builds.wait()` pumps the event loop with
+   `vim.wait()`, shows a progress hint, and honours `<C-c>`. `<C-c>` cancels the
+   *wait* but not the background build.
+2. **Defer and tell the user** — notify "Building <name> in background (12s)...",
+   do not run `setup()` yet, and **do not consume the trigger stub**, so the
+   user can press the key again once the build notification arrives.
+
+For `event` / `ft` / `VimEnter` / `VeryLazy` triggers, the load is **deferred**:
+the plugin is `:packadd`ed and set up when the build completes, so the editor
+stays responsive.
+
+#### Decision B — the exit code is the verdict
+
+**Only `exit code ~= 0` (or a Lua hook raising / returning a failed object)
+counts as a failure.** `stderr` being non-empty is *not* a failure:
+`yarn`, `npm`, `cargo` and `make` all write warnings and progress to stderr on
+success. The stdout and stderr tails are captured into `output_tail` and shown
+as context, so a swallowed error is visible without producing false failures.
+
+#### Decision C — two timeouts, and a lock file with a liveness check
+
+**Two separate timeouts:**
+
+| Timeout | Default | On expiry |
+|---|---|---|
+| Notify threshold | 3–5 s | Tell the user the build is still running. A build that finishes in 0.2 s never notifies. |
+| Build hard timeout | 10 min | Kill the child process, mark the build `failed`, **do not write the marker**, so the next launch retries. |
+
+**The wait timeout is separate again.** `builds.wait(name, timeout_ms)` has its
+own timeout (or a `<C-c>` interrupt). Expiring it cancels the *wait*, **not** the
+background build — the build keeps running and still writes its marker when it
+finishes.
+
+**Cross-session lock file.** The lock file holds the **child process PID**, so a
+second Neovim session does not start a duplicate build. Two traps to avoid:
+
+- **Stale lock cleanup.** The PID must be checked for liveness with
+  `vim.uv.kill(pid, 0)` (and a timeout fallback) before the lock is trusted.
+  Otherwise a Neovim that crashed leaves a lock that permanently skips the
+  build.
+- **The orphan trap.** When a session is killed, its Lua VM dies: the orphaned
+  build keeps running and finishes, but `on_complete` never fires, so **no
+  marker is written and no lock file is removed**. The next session must
+  therefore allow a rebuild when it finds that the lock's PID is gone (`ESRCH`)
+  and the marker is missing. Re-running `yarn install` or `cargo build` over an
+  already-built tree is cheap — it verifies in under a second and writes the
+  marker.
+
+---
+
 ## Suggested Execution Batches
 
 > **See `plan.md`** for the consolidated, code-verified plan of everything still
@@ -794,7 +951,12 @@ again.
 1. **Batch 1 (Tests & P0 bugs) — DONE:** Items `2, 3, 4, 4b, 5, 7`. Item 4b is the user-reported `r`-key notification spam.
 2. **Batch 2 (Performance, Triggers & GC) — DONE:** Items `8, 9, 11, 12`
 3. **Batch 3 (Architecture, Build State & Docs) — DONE:** Items `10, 13, 14, 15, 16`
-4. **Batch 4 (Newly verified) — DONE:** Item `23` (a marker path that was not sanitized).
+4. **Batch 4 (Newly verified) — DONE:** Items `23`–`26`.
    Items `17` (broke a user's shortcut), `18` (crashed the whole load on a valid config),
    `19` (retained a closure), `20` (a vacuous assertion), `21` (lost a list of patterns),
-   `22` (a redundant details fetch) and `23` are **fixed**.
+   `22` (a redundant details fetch), `23` (an unsanitized marker path), `24` (stale UI
+   state), `25` (eager `vim.async`) and `26` (a build marker that outlived an uninstall)
+   are **fixed**.
+5. **Batch 5 (Build system rework) — OPEN:** Items `27`–`30`. Three confirmed defects
+   (`setup()` before the build, a false "build succeeded", a duplicated build) and the
+   tracking API that fixes them. The design in item 30 is settled with the user.

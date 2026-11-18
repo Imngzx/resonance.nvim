@@ -181,10 +181,20 @@ address it.
 (handler), `ui/init.lua` (keymap), `ui/render.lua` (column).
 
 **Modify the build system** — `loader/build.lua`: `run_build()`,
-`check_and_build()`, `mark_build_success()`, `PackChanged` autocmd. The
-build hash marker lives in `stdpath('state') .. '/resonance/builds/'`,
-keyed by plugin name — never in the plugin's own directory, which
-dirties its git worktree.
+`check_and_build()`, `mark_build_success()`, `clear_build_marker()`,
+`PackChanged` autocmd. The build hash marker lives in
+`stdpath('state') .. '/resonance/builds/'`, keyed by plugin name — never
+in the plugin's own directory, which dirties its git worktree.
+
+**A build-system rework is planned** — see `plan.md` Batch 5 / `fix.md` P4
+(items 27–30). Three confirmed defects: `setup()` runs before the build
+finishes, a build that exits 0 while printing errors is reported as
+succeeded, and one load can start two concurrent builds. The fix is a
+new `lua/resonance/builds.lua` that owns the per-plugin build state
+(status, wait, output tail, cross-session PID lock), with the settled
+decisions: background builds never block the editor, only the exit code
+decides success, and there are two separate timeouts (a notify threshold
+and a hard build timeout).
 
 ---
 

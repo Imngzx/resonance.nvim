@@ -665,6 +665,58 @@ test.run_suite('resonance.loader.build', {
       uv.fs_rmdir(dir)
     end,
   },
+
+  {
+    name = 'PackChanged: a delete removes the build marker',
+    fn = function()
+      -- The panel's uninstall cleared the marker, but vim.pack.del() and
+      -- :packdel went through PackChanged, which ignored 'delete'. The
+      -- marker survived, and a reinstall at the same commit skipped the
+      -- build.
+      local name = 'packdel-marker-' .. os.time()
+      build.mark_build_success(name, 'abc1234')
+      test.assert_not_nil(uv.fs_stat(marker_path(name)), 'the marker was not written')
+
+      build.setup_packchanged_autocmd(function() return nil end)
+      vim.api.nvim_exec_autocmds('PackChanged', {
+        modeline = false,
+        data = { kind = 'delete', spec = { name = name }, path = '/nonexistent/' .. name },
+      })
+
+      test.assert_nil(uv.fs_stat(marker_path(name)), 'the marker outlived the delete')
+      clear_marker(name)
+    end,
+  },
+
+  {
+    name = 'PackChanged: an install builds even when a stale marker matches',
+    fn = function()
+      -- The plugin directory was removed by hand, so no delete event
+      -- cleared the marker. The reinstall lands on the same commit, and
+      -- the marker matched: the build was skipped and the plugin had no
+      -- artifacts.
+      local name = 'reinstall-marker-' .. os.time()
+      local dir = make_git_repo()
+      local hash = require('resonance.utils').get_local_hash(dir)
+      test.assert_not_nil(hash, 'the test repo has no commit')
+      build.mark_build_success(name, hash)
+
+      local built = false
+      build.build_hooks[name] = function() built = true end
+      build.setup_packchanged_autocmd(function() return dir end)
+
+      vim.api.nvim_exec_autocmds('PackChanged', {
+        modeline = false,
+        data = { kind = 'install', spec = { name = name }, path = dir },
+      })
+      vim.wait(1500, function() return built end)
+
+      test.assert_true(built, 'the install skipped the build because of a stale marker')
+      build.build_hooks[name] = nil
+      clear_marker(name)
+      vim.fn.delete(dir, 'rf')
+    end,
+  },
 })
 
 test.print_summary()

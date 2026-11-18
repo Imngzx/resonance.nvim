@@ -405,11 +405,29 @@ function M.setup_packchanged_autocmd(get_plugin_dir)
     group = api.nvim_create_augroup('ResonanceBuilder', { clear = true }),
     callback = function(args)
       local data = args.data
-      if not data or (data.kind ~= 'install' and data.kind ~= 'update') then return end
+      if not data then return end
+      local kind = data.kind
+      if kind ~= 'install' and kind ~= 'update' and kind ~= 'delete' then return end
 
       local spec = data.spec
       if not spec or not spec.name then return end
       local name = spec.name
+
+      -- The marker outlives the plugin: it is in Resonance's state
+      -- directory, while the build artifacts were in the plugin's own,
+      -- which is gone. A reinstall at the same commit then matched the
+      -- marker and skipped the build. The panel's uninstall cleared it,
+      -- but vim.pack.del() and :packdel did not.
+      if kind == 'delete' then
+        M.clear_build_marker(name)
+        return
+      end
+      -- A fresh install has no artifacts, whatever the marker says: the
+      -- directory may have been removed by hand rather than through
+      -- vim.pack.del().
+      if kind == 'install' then
+        M.clear_build_marker(name)
+      end
 
       local build_task = M.build_hooks[name]
       if not build_task then return end

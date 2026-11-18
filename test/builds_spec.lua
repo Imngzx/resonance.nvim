@@ -217,6 +217,34 @@ test.run_suite('resonance.builds', {
       builds.release_lock(name)
     end,
   },
+
+  {
+    name = 'wait: a Ctrl-C ends the wait instead of running to the deadline',
+    fn = function()
+      -- vim.wait() does not raise on Ctrl-C: it returns false, -2. The
+      -- loop ignored the return value, so an interrupted wait carried on
+      -- until the deadline. The interrupt is simulated by a vim.wait that
+      -- reports it.
+      local name = fresh_name('wait-interrupt')
+      builds.mark_pending(name)
+
+      local orig_wait = vim.wait
+      vim.wait = function() return false, -2 end
+      local started = uv.hrtime()
+      local ok, ret_ok, err = pcall(builds.wait, name, 2000)
+      local elapsed = (uv.hrtime() - started) / 1e6
+      vim.wait = orig_wait
+
+      test.assert_true(ok, 'builds.wait raised: ' .. tostring(ret_ok))
+      test.assert_false(ret_ok, 'an interrupted wait reported success')
+      test.assert_true(tostring(err):find('interrupted', 1, true) ~= nil,
+        'the error does not say the wait was interrupted: ' .. tostring(err))
+      test.assert_true(elapsed < 500,
+        'the interrupted wait ran on for ' .. elapsed .. ' ms')
+
+      builds.forget(name)
+    end,
+  },
 })
 
 test.print_summary()

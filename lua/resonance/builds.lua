@@ -362,9 +362,10 @@ end
 --- The wait is bounded: it gives up after `timeout_ms`, and the build
 --- keeps running. Cancelling the wait does not cancel the build.
 ---
---- A Ctrl-C raises an error inside the wait, which propagates out of this
---- function. The build is left running -- the user cancelled the wait,
---- not the build.
+--- A Ctrl-C ends the wait. vim.wait() does not raise on an interrupt: it
+--- returns `false, -2`, so the return value has to be checked, or the loop
+--- carries on until the deadline. The build is left running -- the user
+--- cancelled the wait, not the build.
 ---@param name string
 ---@param timeout_ms number|nil defaults to 30 seconds
 ---@return boolean ok, string|nil err
@@ -387,10 +388,13 @@ function M.wait(name, timeout_ms)
     end
     -- vim.wait pumps the event loop, so the build's completion callback
     -- gets to run while the wait is in progress.
-    vim.wait(50, function()
+    local _, reason = vim.wait(50, function()
       local c = builds[name]
       return c == nil or (c.state ~= 'pending' and c.state ~= 'running')
     end, 10)
+    if reason == -2 then
+      return false, 'interrupted waiting for the build of ' .. name
+    end
   end
 end
 

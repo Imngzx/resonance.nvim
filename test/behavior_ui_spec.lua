@@ -146,6 +146,47 @@ test.run_suite('resonance.behavior.ui', {
   },
 
   {
+    name = 'actions: uninstall_plugin drops the build marker',
+    fn = function()
+      -- The build artifacts live inside the plugin directory, so
+      -- uninstalling the plugin deletes them -- but the build marker is in
+      -- Resonance's own state directory and outlives the plugin.
+      --
+      -- A reinstall of the same version then lands on the same commit, so
+      -- the marker still matched and the build was skipped. The plugin
+      -- came back without its artifacts: no compiled native module, no
+      -- installed dependencies, no generated files.
+      local orig_confirm = vim.fn.confirm
+      vim.fn.confirm = function() return 1 end -- 'Yes'
+
+      local l = live()
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return {
+          del = function() return true end,
+          get = function() return {} end,
+        }
+      end
+
+      local name = 'marker-gone-plugin'
+      local build = require('resonance.loader.build')
+      local marker = vim.fn.stdpath('state') .. '/resonance/builds/' .. name
+      build.mark_build_success(name, 'abc1234')
+      test.assert_not_nil(vim.uv.fs_stat(marker), 'the marker was not written')
+
+      with_capture(function()
+        l.actions.uninstall_plugin(name)
+      end)
+
+      vim.fn.confirm = orig_confirm
+      l.utils.get_pack = orig_get_pack
+
+      test.assert_nil(vim.uv.fs_stat(marker),
+        'the build marker survived the uninstall')
+    end,
+  },
+
+  {
     name = 'actions: checkout_plugin refuses a plugin with no git directory',
     fn = function()
       local l = live()

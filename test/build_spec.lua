@@ -59,6 +59,55 @@ test.run_suite('resonance.loader.build', {
   },
 
   {
+    name = 'clear_build_marker: a reinstall runs the build again',
+    fn = function()
+      -- The build artifacts live inside the plugin directory, so
+      -- uninstalling the plugin deletes them -- but the marker is in
+      -- Resonance's own state directory and outlives the plugin.
+      --
+      -- A reinstall of the same version then lands on the same commit, so
+      -- the marker still matched and the build was skipped. The plugin
+      -- came back without its artifacts: no compiled native module, no
+      -- installed dependencies, no generated files.
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir, 'p')
+      local name = 'reinstall-test-' .. os.time()
+      local marker = marker_path(name)
+      local artifact = dir .. '/BUILT'
+
+      -- A git repo, so the hash is a real commit.
+      vim.fn.writefile({ 'x' }, dir .. '/file.txt')
+      vim.fn.system({ 'git', 'init', '-q', dir })
+      vim.fn.system({ 'git', '-C', dir, 'add', '-A' })
+      vim.fn.system({
+        'git', '-C', dir, '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+        'commit', '-q', '-m', 'initial',
+      })
+      local hash = require('resonance.utils').get_local_hash(dir)
+      test.assert_not_nil(hash, 'the test repo has no commit')
+
+      -- The marker from the previous install, and no artifacts.
+      build.mark_build_success(name, hash)
+      test.assert_not_nil(uv.fs_stat(marker), 'the marker was not written')
+
+      -- The uninstall drops the marker.
+      build.clear_build_marker(name)
+      test.assert_nil(uv.fs_stat(marker),
+        'the marker survived the uninstall')
+
+      -- The reinstall runs the build, because the marker is gone.
+      build.check_and_build(name, dir, 'touch ' .. artifact)
+      local waited = vim.wait(3000, function()
+        return uv.fs_stat(artifact) ~= nil
+      end)
+      test.assert_true(waited, 'the build did not run after the reinstall')
+
+      uv.fs_unlink(artifact)
+      uv.fs_unlink(marker)
+    end,
+  },
+
+  {
     name = 'mark_build_success: writes the hash to the state directory',
     fn = function()
       local name = 'marker-test-' .. os.time()

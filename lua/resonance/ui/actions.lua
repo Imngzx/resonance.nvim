@@ -278,6 +278,13 @@ function M.uninstall_plugin(name)
     local ok, err = pcall(pack.del, { name }, { force = true })
     if ok then
       utils.notify('Uninstalled ' .. name, vim_log_levels.INFO)
+      -- Forget that this plugin was built. The build artifacts live inside
+      -- the plugin directory, so uninstalling the plugin deleted them --
+      -- but the marker is in Resonance's own state directory and outlives
+      -- the plugin. A reinstall of the same version lands on the same
+      -- commit, so the marker still matched and the build was skipped. The
+      -- plugin came back without its artifacts.
+      require('resonance.loader.build').clear_build_marker(name)
       -- Drop everything the UI cached for this plugin. Otherwise the
       -- details of a plugin that is no longer on disk stay reachable for
       -- the rest of the session.

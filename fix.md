@@ -739,6 +739,50 @@ command failed outright. It also did not set the runtimepath, so under `-u NONE`
 `require('resonance')` failed with "module not found" and the benchmark timed a
 failed require. Both are fixed in `AGENTS.md`.
 
+### 26. **FIXED** — **The build marker outlives an uninstall, so a reinstall skips the build** — HIGH
+
+- **File:** `lua/resonance/ui/actions.lua`, `lua/resonance/loader/build.lua`
+- **Problem:** `uninstall_plugin()` called `pack.del` and cleared the UI caches, but
+  never removed the build marker. The marker lives in Resonance's own state
+  directory (`stdpath('state')/resonance/builds`), so it outlived the plugin.
+- **Verified:** the build artifacts live *inside* the plugin directory, so the
+  uninstall deleted them. A reinstall of the same version lands on the same
+  commit, so `check_and_build()` saw `last_hash == curr_hash` and returned early:
+  **the build was skipped and the plugin came back without its artifacts.**
+  Reproduced end to end with a real git repo:
+
+  ```
+  marker hash: "8c3dd77"
+  dir hash:    "8c3dd77"
+  BUILT before: false
+  BUILT after:  false
+  ```
+
+- **Impact:** the plugin is broken after a reinstall — no compiled native module
+  (`flash-any.nvim` builds `lua/flash-any/native.so`), no installed dependencies
+  (`markdown-preview2.nvim` and `telegram.nvim` run `yarn install` / `npm i`).
+  The user has to delete the marker by hand.
+- **Affected plugins** (all three had a marker matching their commit exactly):
+  `flash-any.nvim` (`2f61ca2`), `markdown-preview2.nvim` (`a6ae7a2`),
+  `telegram.nvim` (`b712479`).
+- **Fix:** `build.clear_build_marker(name)` removes the marker when the plugin is
+  uninstalled.
+
+#### Status: fixed
+
+The uninstall path now drops the build marker, so the reinstall runs the build
+again.
+
+**Tests**
+
+| Test | Covers |
+|---|---|
+| `clear_build_marker: a reinstall runs the build again` (`test/build_spec.lua`) | the whole uninstall → reinstall cycle, on a real git repo |
+| `actions: uninstall_plugin drops the build marker` (`test/behavior_ui_spec.lua`) | the UI path that the user actually clicks |
+
+**Mutation-verified:** making `clear_build_marker` do nothing fails both tests
+(`the marker survived the uninstall`).
+
 ---
 
 ## Suggested Execution Batches

@@ -9,6 +9,7 @@ local fs_write = uv.fs_write
 local fs_close = uv.fs_close
 local fs_mkdir = uv.fs_mkdir
 local fs_stat = uv.fs_stat
+local fs_unlink = uv.fs_unlink
 local system = vim.system
 local schedule = vim.schedule
 local type = type
@@ -110,6 +111,31 @@ local function read_marker(name)
   local content = stat and (fs_read(fd, stat.size, 0) or '') or ''
   fs_close(fd)
   return content
+end
+
+--- Forget that a plugin was built.
+---
+--- The marker has to go when the plugin itself goes. The build artifacts
+--- live inside the plugin directory, so uninstalling the plugin deletes
+--- them -- but the marker is in Resonance's own state directory and
+--- outlives the plugin.
+---
+--- A reinstall of the same version then lands on the same commit, so the
+--- marker still matched and the build was skipped. The plugin came back
+--- without its artifacts: no compiled native module, no installed
+--- dependencies, no generated files.
+---@param name string Plugin name.
+function M.clear_build_marker(name)
+  local path = marker_path(name)
+  local ok, err = fs_unlink(path)
+  if ok then return end
+  -- The file may not be there, which is the normal case: the plugin was
+  -- never built, or its marker was already dropped. Anything else is
+  -- worth saying out loud.
+  if type(err) == 'string' and err:find('ENOENT', 1, true) then return end
+  schedule(function()
+    utils.notify('Could not remove the build marker for ' .. name .. ': ' .. tostring(err), vim.log.levels.WARN)
+  end)
 end
 
 -- Run build command for a plugin

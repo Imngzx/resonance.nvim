@@ -42,10 +42,22 @@ local function get_marker_dir()
 end
 
 --- The marker file for a plugin.
+---
+--- The name is used as a file name, so it is reduced to its last path
+--- segment. A name with a slash in it used to build a path in a
+--- directory that does not exist, and the write was silently dropped --
+--- the build cache was lost, and the plugin rebuilt on every check.
+--- A name with a traversal in it was worse: it wrote outside the marker
+--- directory.
+---
+--- vim.pack already reduces a name this way, so the two agree for every
+--- plugin that came through it.
 ---@param name string
 ---@return string
 local function marker_path(name)
-  return get_marker_dir() .. '/' .. name
+  local safe = tostring(name):match('[^/]+$') or ''
+  if safe == '' then safe = '_' end
+  return get_marker_dir() .. '/' .. safe
 end
 
 --- Mark build as successful by writing hash to file

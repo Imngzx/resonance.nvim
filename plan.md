@@ -7,7 +7,7 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–22 are **resolved**. Batch 4 item 23 is **open**.
+> **Status:** items 0–23 are **resolved**. Batch 4 is **done**.
 
 ---
 
@@ -787,7 +787,7 @@ details fetch`.
 
 **Mutation-verified:** dropping the cancellation fails the test.
 
-### 23. **`marker_path` does not sanitize the plugin name** — LOW
+### 23. **RESOLVED** — **`marker_path` does not sanitize the plugin name** — LOW
 
 - **File:** `lua/resonance/loader/build.lua`
 - **Problem:** `marker_dir .. '/' .. name` — a name with a `/` in it builds a path in a
@@ -795,8 +795,26 @@ details fetch`.
 - **Verified:** `mark_build_success('evil/name', ...)` returns without error, but
   nothing is written: `evil/name written: false`, `evil dir created: false`. The
   build cache is lost for that plugin, so it rebuilds on every check.
-- **Fix:** replace anything outside `[%w_.-]` with `_`, the way
-  `triggers.trigger_group_name` does.
+- **Fix:** reduce the name to its last path segment, the way `vim.pack` does.
+
+#### Resolution
+
+`marker_path()` now reduces the name to its last path segment, so the marker always
+lands inside the marker directory. This closes two holes at once:
+
+- A name with a `/` in it no longer builds a path in a directory that does not
+  exist, so the write is no longer silently dropped and the build cache survives.
+- A name with a traversal in it no longer writes outside the marker directory.
+  Verified before the fix: `mark_build_success('../escaped.txt', ...)` wrote
+  `state/resonance/escaped.txt`; after the fix it stays in `state/resonance/builds/`.
+
+`vim.pack` already reduces a name this way (`name:match('[^/]+$')`), so the two
+agree for every plugin that came through it.
+
+**Test** (`test/build_spec.lua`) — `a name with a slash stays inside the marker
+directory`.
+
+**Mutation-verified:** dropping the reduction fails the test.
 
 ---
 
@@ -841,8 +859,7 @@ These rows are **no longer accurate** and should be corrected when
 2. Batch 1  items 2, 3, 4, 7           ← DONE
 3. Batch 2  items 8, 9, 11, 12         ← DONE
 4. Batch 3  items 10, 13, 14, 15, 16   ← DONE
-5. Batch 4  items 17-22                 ← DONE; shortcut, crash, leak, vacuous assertion, lost pattern, redundant fetch
-6.          item 23                   ← OPEN; small loss
+5. Batch 4  items 17-23                 ← DONE; shortcut, crash, leak, vacuous assertion, lost pattern, redundant fetch, unsanitized marker
 ```
 
 Rationale for the order:

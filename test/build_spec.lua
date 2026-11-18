@@ -57,6 +57,40 @@ test.run_suite('resonance.loader.build', {
   },
 
   {
+    name = 'mark_build_success: a name with a slash stays inside the marker directory',
+    fn = function()
+      -- The name is used as a file name. A name with a slash in it used
+      -- to build a path in a directory that does not exist, and the
+      -- write was silently dropped: the build cache was lost, and the
+      -- plugin rebuilt on every check.
+      --
+      -- A name with a traversal in it was worse: it wrote outside the
+      -- marker directory.
+      local name = 'slash/name-' .. os.time()
+      build.mark_build_success(name, 'abc123')
+
+      -- The marker lands under the marker directory, keyed by the last
+      -- segment of the name.
+      local segment = name:match('[^/]+$')
+      local fd = uv.fs_open(marker_path(segment), 'r', 438)
+      test.assert_not_nil(fd, 'the marker was not written to the marker directory')
+      local stat = uv.fs_fstat(fd)
+      local content = uv.fs_read(fd, stat.size, 0)
+      uv.fs_close(fd)
+      test.assert_eq(content, 'abc123')
+
+      -- Nothing is written outside the marker directory.
+      local escaped = vim.fn.stdpath('state') .. '/resonance/escaped-' .. os.time()
+      uv.fs_unlink(escaped)
+      build.mark_build_success('../' .. escaped:match('([^/]+)$'), 'abc123')
+      test.assert_nil(uv.fs_stat(escaped),
+        'a name with a traversal wrote outside the marker directory')
+
+      clear_marker(segment)
+    end,
+  },
+
+  {
     name = 'check_and_build: skips when hash matches',
     fn = function()
       -- This test used to assert that the build did not run immediately

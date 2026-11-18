@@ -160,7 +160,7 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 | **`behavior_ui_spec` 的断言恒真**            | `test/behavior_ui_spec.lua`    | **已修复。** `helpers.count(t)` 是 `#t`，而 `name_to_line` 用字符串做键，`#` 对纯字符串键表恒为 `0`。所以 `count(st.name_to_line) == 0` 无论清没清都通过——实测塞了 49 条记录，断言依然为真。旁边的 `line_to_name` 侥幸有效，但 `#` 对稀疏整数表也不是长度。现在新增 `helpers.map_count`（遍历而非取长度），两张表都用它断言 |
 | **`normalize_events` 丢掉表形式 `pattern`** | `utils.lua`                    | **已修复。** 只收 `type(pattern) == 'string'`。Neovim 接受 pattern 列表，所以 `pattern = { '*.lua', '*.vim' }` 的 patterns 全丢——验证：回读得到 `pattern=nil`。现在原生事件列表和 `User` 事件都保留列表形式的 pattern，最终交给 `nvim_create_autocmd`（每个 pattern 建一个 autocmd） |
 | **`fetch_plugin_details` 不取消上一个任务**  | `ui/actions.lua`               | **已修复。** `st.state.details_task = task` 直接覆盖，不取消旧的。连开两行会跑**两次** `info = true` 抓取（`detail_calls: 2`）。只是冗余，不是数据损坏：每个任务写自己的 name key。现在开新任务前先 `close` 旧的；被取消的任务报错是 `"closed"`，完成回调只在失败任务仍是当前任务时才通知，所以取消不再弹误报 |
-| **`marker_path` 不清洗插件名**              | `loader/build.lua`             | `marker_dir .. '/' .. name`，名字里带 `/` 就写到不存在的目录，失败被静默吞掉。验证：`mark_build_success('evil/name')` 不报错但什么都没写，构建缓存丢失，每次检查都重新构建 |
+| **`marker_path` 不清洗插件名**              | `loader/build.lua`             | **已修复。** `marker_dir .. '/' .. name`，名字里带 `/` 就写到不存在的目录，失败被静默吞掉。验证：`mark_build_success('evil/name')` 不报错但什么都没写，构建缓存丢失，每次检查都重新构建。现在名字取最后一段路径，跟 `vim.pack` 的 `name:match('[^/]+$')` 一致。除了修好缓存丢失，也堵住了路径穿越：修复前 `mark_build_success('../escaped.txt')` 会写到 `state/resonance/escaped.txt`（在 marker 目录外），修复后留在 `state/resonance/builds/` 里 |
 
 ### P2 —— 架构与可维护性
 

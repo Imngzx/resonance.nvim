@@ -629,6 +629,42 @@ test.run_suite('resonance.loader.build', {
       uv.fs_rmdir(dir)
     end,
   },
+
+  {
+    name = 'run_build: a build killed by the hard timeout settles once',
+    fn = function()
+      -- The timer reported the failure, then the killed child exited and
+      -- the task reported it again: the completion callback ran twice and
+      -- the timeout reason was overwritten by the exit-code error.
+      local builds = require('resonance.builds')
+      local dir = '/tmp/test_build_timeout_' .. os.time()
+      uv.fs_mkdir(dir, 493)
+      local name = 'timeout-build-' .. os.time()
+
+      local orig_timeout = builds.HARD_TIMEOUT_MS
+      builds.HARD_TIMEOUT_MS = 200
+
+      local calls = 0
+      local last_err = nil
+      build.run_build(name, dir, 'sleep 3', 'hash1', function(_, err)
+        calls = calls + 1
+        last_err = err
+      end)
+      vim.wait(1500)
+      builds.HARD_TIMEOUT_MS = orig_timeout
+
+      test.assert_eq(calls, 1, 'the completion callback count')
+      test.assert_true(tostring(last_err):find('timed out', 1, true) ~= nil,
+        'the timeout reason was lost: ' .. tostring(last_err))
+      local status = builds.status(name)
+      test.assert_eq(status.state, 'failed')
+      test.assert_true(tostring(status.error):find('timed out', 1, true) ~= nil,
+        'the build state lost the timeout reason: ' .. tostring(status.error))
+
+      clear_marker(name)
+      uv.fs_rmdir(dir)
+    end,
+  },
 })
 
 test.print_summary()

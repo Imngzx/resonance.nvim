@@ -210,7 +210,18 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
   -- plugin's setup has to wait for the build.
   builds.mark_pending(name)
 
+  -- The first verdict wins. On a hard timeout the timer reports the
+  -- failure, and then the killed child exits and the task reports a second
+  -- one: two notifications, the timeout reason overwritten by the exit
+  -- code, and -- for a Lua hook the timer cannot kill -- a late success
+  -- that wrote the marker after the failure. A late second report could
+  -- also overwrite the state of a newer build of the same plugin.
+  local settled = false
+
   local function finish(ok, err, output_tail)
+    if settled then return end
+    settled = true
+
     -- The verdict is the exit code, and nothing else.
     --
     -- stderr being non-empty is not a failure: yarn, npm, cargo and make

@@ -181,6 +181,8 @@ resonance.load({
     build = 'make', -- npm i or others based on plugin's docs
 
     cmd = {'cmd1', 'cmd2'},
+    -- Or with the command's own options:
+    -- cmd = {name = 'cmd1', opts = {nargs = 0}},
 
     -- Conditional loading: boolean or function
     cond = function() return vim.fn.has('nvim-0.9') == 1 end,

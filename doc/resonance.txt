@@ -149,6 +149,10 @@ event - Load when autocmd fires:
 cmd - Load when command is invoked:
     cmd = 'Neogit'
     cmd = {'Neogit', 'Git'}
+    cmd = {name = 'Neogit', opts = {nargs = 0}}  -- With the command's own options
+
+    A command with nargs = 0 takes no arguments, so no completion is
+    attached to it. A completion set in opts is kept as given.
 
 ft - Load when filetype is set:
     ft = 'lua'

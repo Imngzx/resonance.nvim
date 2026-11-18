@@ -485,7 +485,7 @@ Three buffer-handling defects surfaced while fixing this:
 | `feed_mode` reverted to the inverted form | `a string rhs is fed without remapping by default` |
 | `buf = 0` not resolved, `is_buffer` reverted | `buffer=false` and `buf=0` tests |
 
-### 18. **`register_cmd` raises `E1208` when the command takes no arguments** — MEDIUM
+### 18. **FIXED** — **`register_cmd` raises `E1208` when the command takes no arguments** — MEDIUM
 
 - **File:** `lua/resonance/loader/triggers.lua`
 - **Problem:** the command defaults are `{ nargs = '*', bang = true, range = true,
@@ -500,6 +500,31 @@ Three buffer-handling defects surfaced while fixing this:
 - **Verified:** `load ok: false` — `triggers.lua:118: 'complete' used without 'nargs'`.
 - **Fix:** drop `complete` when `nargs` is `0` (or `'0'`), unless the user set it
   explicitly.
+
+#### Status: fixed
+
+The default `complete = 'file'` is dropped when `nargs` is `0` and the user did not
+ask for a completion. A completion the user set explicitly is left alone — if it is
+invalid, Neovim reports it.
+
+The error was worse than a missing command: it escaped `resonance.load()` and
+aborted the whole call, so the spec's **other** triggers were never registered
+either. A spec with a bad command and an event trigger ended up with neither.
+
+**Tests** (`test/behavior_triggers_spec.lua`):
+
+| Test | Covers |
+|---|---|
+| `a command that takes no arguments is registered` | the command exists, with `nargs = '0'` |
+| `a command that takes no arguments keeps the other triggers` | the error no longer aborts the load |
+| `a command that takes no arguments is invoked` | the registered command actually loads the plugin |
+
+**Mutation-verified:** removing the guard fails all three tests
+(`'complete' used without 'nargs'`).
+
+**Note:** the `Execution failed: Command not found` notice a stub produces when the
+plugin does not define its own command is pre-existing behavior, not part of this
+fix. It was checked against the code before the change and reports the same.
 
 ### 19. **`force_load_fns` keeps the user's `setup` closure alive for the whole session** — MEDIUM
 
@@ -577,6 +602,6 @@ Three buffer-handling defects surfaced while fixing this:
 1. **Batch 1 (Tests & P0 bugs) — DONE:** Items `2, 3, 4, 4b, 5, 7`. Item 4b is the user-reported `r`-key notification spam.
 2. **Batch 2 (Performance, Triggers & GC) — DONE:** Items `8, 9, 11, 12`
 3. **Batch 3 (Architecture, Build State & Docs) — DONE:** Items `10, 13, 14, 15, 16`
-4. **Batch 4 (Newly verified) — OPEN:** Items `18`–`23`. Item 17 (the one that broke a user's
-   shortcut) is **fixed**. The rest are a crash on a valid config, a retained closure, a
-   vacuous assertion, and three small losses.
+4. **Batch 4 (Newly verified) — OPEN:** Items `19`–`23`. Items `17` (broke a user's shortcut)
+   and `18` (crashed the whole load on a valid config) are **fixed**. The rest are a retained
+   closure, a vacuous assertion, and three small losses.

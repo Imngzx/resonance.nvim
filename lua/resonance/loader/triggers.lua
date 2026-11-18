@@ -111,9 +111,21 @@ function M.register_cmd(config, load_now, before_setup)
     -- defaults are permissive, but a command that expects exactly one
     -- argument would reject a valid invocation under a wildcard nargs.
     local cmd_opts = { nargs = '*', bang = true, range = true, complete = 'file' }
+    local user_opts = nil
     if type(cmd) == 'table' then
-      cmd_opts = vim.tbl_extend('force', cmd_opts, cmd.opts or {})
+      user_opts = cmd.opts or {}
+      cmd_opts = vim.tbl_extend('force', cmd_opts, user_opts)
       cmd = cmd.name or cmd[1]
+    end
+
+    -- Neovim rejects a completion on a command that takes no arguments:
+    -- "'complete' used without 'nargs'". The default completion is only
+    -- there for the commands that do take arguments, so it is dropped
+    -- when nargs says the command takes none. A completion the user
+    -- asked for explicitly is left alone -- if it is invalid, Neovim
+    -- reports it.
+    if cmd_opts.nargs == 0 and user_opts and user_opts.complete == nil then
+      cmd_opts.complete = nil
     end
 
     if cmd then

@@ -7,7 +7,7 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–17 are **resolved**. Batch 4 items 18–23 are **open**.
+> **Status:** items 0–18 are **resolved**. Batch 4 items 19–23 are **open**.
 
 ---
 
@@ -653,7 +653,7 @@ case, `buffer = false`, `buf = 0`, and both feed modes.
 | `feed_mode` reverted to the inverted form | `a string rhs is fed without remapping by default` |
 | `buf = 0` not resolved, `is_buffer` reverted | the `buffer=false` and `buf=0` tests |
 
-### 18. **`register_cmd` raises `E1208` when the command takes no arguments** — MEDIUM
+### 18. **RESOLVED** — **`register_cmd` raises `E1208` when the command takes no arguments** — MEDIUM
 
 - **File:** `lua/resonance/loader/triggers.lua`
 - **Problem:** the command defaults are `{ nargs = '*', bang = true, range = true,
@@ -662,6 +662,25 @@ case, `buffer = false`, `buf = 0`, and both feed modes.
 - **Verified:** `load ok: false` — `triggers.lua:118: 'complete' used without 'nargs'`.
 - **Fix:** drop `complete` when `nargs` is `0` (or `'0'`), unless the user set it
   explicitly.
+
+#### Resolution
+
+The default `complete = 'file'` is dropped when `nargs` is `0` and the user did not
+ask for a completion. A completion the user set explicitly is left alone.
+
+The error was worse than a missing command: it escaped `resonance.load()` and
+aborted the whole call, so the spec's **other** triggers were never registered
+either. A spec with a bad command and an event trigger ended up with neither.
+
+**Tests** (`test/behavior_triggers_spec.lua`) — three new cases: the command is
+registered with `nargs = '0'`, the other triggers survive, and the registered
+command actually loads the plugin.
+
+**Mutation-verified:** removing the guard fails all three tests.
+
+**Note:** the `Execution failed: Command not found` notice a stub produces when the
+plugin does not define its own command is pre-existing behavior — checked against
+the code before the change.
 
 ### 19. **`force_load_fns` keeps the user's `setup` closure alive for the whole session** — MEDIUM
 
@@ -766,8 +785,8 @@ These rows are **no longer accurate** and should be corrected when
 2. Batch 1  items 2, 3, 4, 7           ← DONE
 3. Batch 2  items 8, 9, 11, 12         ← DONE
 4. Batch 3  items 10, 13, 14, 15, 16   ← DONE
-5. Batch 4  item 17                    ← DONE; it broke a user shortcut
-6.          items 18, 19, 20           ← OPEN
+5. Batch 4  items 17, 18               ← DONE; 17 broke a user shortcut, 18 crashed the load
+6.          items 19, 20               ← OPEN
 7.          items 21, 22, 23           ← OPEN; small losses
 ```
 

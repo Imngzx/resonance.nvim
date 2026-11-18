@@ -381,6 +381,67 @@ test.run_suite('resonance.behavior.triggers', {
   },
 
   {
+    name = 'triggers: a command that takes no arguments is registered',
+    fn = function()
+      -- The stub defaulted to complete = 'file', and Neovim rejects a
+      -- completion on a command that takes no arguments: "'complete' used
+      -- without 'nargs'". The error escaped resonance.load(), so the
+      -- command was never registered and the spec's other triggers were
+      -- never set up either.
+      local ok, err = pcall(_G.resonance.load, {
+        src = 'https://github.com/test/cmd-zero-args',
+        cmd = { name = 'ResonanceCmdZeroArgs', opts = { nargs = 0 } },
+        setup = function() end,
+      })
+      test.assert_true(ok, 'the load failed: ' .. tostring(err))
+
+      local cmds = api.nvim_get_commands({})
+      test.assert_not_nil(cmds['ResonanceCmdZeroArgs'],
+        'the command was not registered')
+      test.assert_eq(cmds['ResonanceCmdZeroArgs'].nargs, '0')
+    end,
+  },
+
+  {
+    name = 'triggers: a command that takes no arguments keeps the other triggers',
+    fn = function()
+      -- The error used to abort the whole load, so a spec with a bad
+      -- command never got its event trigger either.
+      test.stub_pack()
+      local ran = false
+      local ok, err = pcall(_G.resonance.load, {
+        src = 'https://github.com/test/cmd-zero-with-event',
+        cmd = { name = 'ResonanceCmdZeroWithEvent', opts = { nargs = 0 } },
+        event = { 'User', pattern = 'ResonanceEventAfterZeroCmd' },
+        setup = function() ran = true end,
+      })
+      test.assert_true(ok, 'the load failed: ' .. tostring(err))
+
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceEventAfterZeroCmd', modeline = false })
+      vim.wait(200)
+      test.assert_true(ran, 'the event trigger never fired')
+    end,
+  },
+
+  {
+    name = 'triggers: a command that takes no arguments is invoked',
+    fn = function()
+      -- The registered command has to work, not just exist.
+      test.stub_pack()
+      local ran = false
+      _G.resonance.load({
+        src = 'https://github.com/test/cmd-zero-invoke',
+        cmd = { name = 'ResonanceCmdZeroInvoke', opts = { nargs = 0 } },
+        setup = function() ran = true end,
+      })
+
+      vim.cmd('ResonanceCmdZeroInvoke')
+      vim.wait(200)
+      test.assert_true(ran, 'the command did not load the plugin')
+    end,
+  },
+
+  {
     name = 'triggers: a User event keeps its own pattern next to the VeryLazy one',
     fn = function()
       -- The defect was that adding VeryLazy to a User event list corrupted

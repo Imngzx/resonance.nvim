@@ -624,7 +624,7 @@ per pattern.
 **Mutation-verified:** dropping the table again fails all three tests
 (`Expected: "table", Actual: "nil"`).
 
-### 22. **`fetch_plugin_details` does not cancel the previous task** — LOW
+### 22. **FIXED** — **`fetch_plugin_details` does not cancel the previous task** — LOW
 
 - **File:** `lua/resonance/ui/actions.lua`
 - **Problem:** `st.state.details_task = task` overwrites the previous task without
@@ -634,6 +634,19 @@ per pattern.
   (`detail_calls: 2`) — the first one was never cancelled.
 - **Impact:** redundant work, not corruption: each task writes to its own name key.
 - **Fix:** cancel the previous task before starting a new one.
+
+#### Status: fixed
+
+`fetch_plugin_details()` now closes the previous task before it starts a new one, so
+only the row that is expanded gets fetched. A cancelled task reports the error
+`"closed"`; the completion handler only notifies when the failing task is still
+the current one, so a cancellation no longer raises a spurious error.
+
+**Test** (`test/behavior_ui_spec.lua`): `expanding a second row cancels the first
+details fetch`.
+
+**Mutation-verified:** dropping the cancellation fails the test
+(`expanding two rows made 2 info requests`).
 
 ### 23. **`marker_path` does not sanitize the plugin name** — LOW
 
@@ -657,6 +670,7 @@ per pattern.
 1. **Batch 1 (Tests & P0 bugs) — DONE:** Items `2, 3, 4, 4b, 5, 7`. Item 4b is the user-reported `r`-key notification spam.
 2. **Batch 2 (Performance, Triggers & GC) — DONE:** Items `8, 9, 11, 12`
 3. **Batch 3 (Architecture, Build State & Docs) — DONE:** Items `10, 13, 14, 15, 16`
-4. **Batch 4 (Newly verified) — OPEN:** Items `22`–`23`. Items `17` (broke a user's shortcut),
+4. **Batch 4 (Newly verified) — OPEN:** Item `23`. Items `17` (broke a user's shortcut),
    `18` (crashed the whole load on a valid config), `19` (retained a closure), `20` (a vacuous
-   assertion) and `21` (lost a list of patterns) are **fixed**. The rest are two small losses.
+   assertion), `21` (lost a list of patterns) and `22` (a redundant details fetch) are **fixed**.
+   The rest is one small loss.

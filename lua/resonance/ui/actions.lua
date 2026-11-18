@@ -183,6 +183,16 @@ local function fetch_plugin_details(name)
   local pack = utils.get_pack()
   if not pack then return end
 
+  -- Only one details fetch is useful at a time. Expanding a second row
+  -- makes the first fetch pointless, so it is cancelled instead of left
+  -- to run: the two fetches would otherwise both hit pack.get with
+  -- info = true, which is the expensive part.
+  local previous = st.state.details_task
+  if previous then
+    st.state.details_task = nil
+    pcall(previous.close, previous)
+  end
+
   local task = async.run('resonance_ui_details', function()
     -- Yield once so the UI stays interactive.
     async.sleep(50)
@@ -199,7 +209,11 @@ local function fetch_plugin_details(name)
   end)
   task:on_complete(function(err)
     if not err then return end
-    -- A cancelled task reports the cancellation; that is expected.
+    -- A cancelled task reports the cancellation as the error "closed".
+    -- That is expected: the task was replaced by a newer one, or the UI
+    -- was closed. Only a task that is still the current one has a real
+    -- failure to report.
+    if st.state.details_task ~= task then return end
     if st.state.buf then
       utils.notify('Failed to load plugin details: ' .. tostring(err), vim_log_levels.ERROR)
     end

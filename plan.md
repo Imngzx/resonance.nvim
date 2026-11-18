@@ -7,7 +7,7 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–21 are **resolved**. Batch 4 items 22–23 are **open**.
+> **Status:** items 0–22 are **resolved**. Batch 4 item 23 is **open**.
 
 ---
 
@@ -764,7 +764,7 @@ and it reaches the registered autocmds.
 
 **Mutation-verified:** dropping the table again fails all three tests.
 
-### 22. **`fetch_plugin_details` does not cancel the previous task** — LOW
+### 22. **RESOLVED** — **`fetch_plugin_details` does not cancel the previous task** — LOW
 
 - **File:** `lua/resonance/ui/actions.lua`
 - **Problem:** `st.state.details_task = task` overwrites the previous task without
@@ -774,6 +774,18 @@ and it reaches the registered autocmds.
   (`detail_calls: 2`) — the first one was never cancelled.
 - **Impact:** redundant work, not corruption: each task writes to its own name key.
 - **Fix:** cancel the previous task before starting a new one.
+
+#### Resolution
+
+`fetch_plugin_details()` now closes the previous task before it starts a new one, so
+only the row that is expanded gets fetched. A cancelled task reports the error
+`"closed"`; the completion handler only notifies when the failing task is still the
+current one, so a cancellation no longer raises a spurious error.
+
+**Test** (`test/behavior_ui_spec.lua`) — `expanding a second row cancels the first
+details fetch`.
+
+**Mutation-verified:** dropping the cancellation fails the test.
 
 ### 23. **`marker_path` does not sanitize the plugin name** — LOW
 
@@ -829,8 +841,8 @@ These rows are **no longer accurate** and should be corrected when
 2. Batch 1  items 2, 3, 4, 7           ← DONE
 3. Batch 2  items 8, 9, 11, 12         ← DONE
 4. Batch 3  items 10, 13, 14, 15, 16   ← DONE
-5. Batch 4  items 17-21                 ← DONE; shortcut, crash, leak, vacuous assertion, lost pattern
-6.          items 22, 23               ← OPEN; small losses
+5. Batch 4  items 17-22                 ← DONE; shortcut, crash, leak, vacuous assertion, lost pattern, redundant fetch
+6.          item 23                   ← OPEN; small loss
 ```
 
 Rationale for the order:

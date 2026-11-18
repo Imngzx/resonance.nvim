@@ -955,6 +955,79 @@ test.run_suite('resonance.behavior.ui', {
   },
 
   {
+    name = 'ui: expanding a second row cancels the first details fetch',
+    fn = function()
+      -- Only one details fetch is useful at a time. Expanding a second row
+      -- makes the first one pointless, so it has to be cancelled instead
+      -- of left to run: the two fetches would otherwise both hit
+      -- pack.get with info = true, which is the expensive part.
+      local l = live()
+      local utils = l.utils
+      local real_get = utils.get_pack()
+      test.assert_not_nil(real_get, 'vim.pack is not available')
+
+      local info_calls = {}
+      local stub = {
+        get = function(names, opts)
+          if opts and opts.info then
+            info_calls[#info_calls + 1] = names
+          end
+          return real_get(names, opts)
+        end,
+      }
+      for key, value in pairs(real_get) do
+        if stub[key] == nil then stub[key] = value end
+      end
+      local orig = utils.get_pack
+      utils.get_pack = function() return stub end
+
+      local buf = api.nvim_create_buf(false, true)
+      local win = api.nvim_open_win(buf, false, {
+        relative = 'editor', row = 1, col = 1, width = 40, height = 10,
+      })
+      l.state.state.buf = buf
+      l.state.state.win = win
+      l.state.state.info = {
+        total = 2,
+        loaded = 2,
+        plugins = {
+          name = { 'first-plugin', 'second-plugin' },
+          type = { 'opt', 'opt' },
+          path = { '/tmp', '/tmp' },
+          loaded = { true, true },
+          disabled = { false, false },
+          trigger = { 'event', 'event' },
+        },
+      }
+      api.nvim_set_current_win(win)
+      require('resonance.ui.render').render()
+
+      local first_line = l.state.state.name_to_line['first-plugin']
+      test.assert_not_nil(first_line)
+
+      api.nvim_win_set_cursor(win, { first_line, 0 })
+      l.actions.toggle_details()
+
+      -- Expanding a row redraws the list, so the line of the second
+      -- plugin has to be looked up again.
+      local second_line = l.state.state.name_to_line['second-plugin']
+      test.assert_not_nil(second_line)
+      api.nvim_win_set_cursor(win, { second_line, 0 })
+      l.actions.toggle_details()
+
+      vim.wait(600)
+
+      utils.get_pack = orig
+      api.nvim_win_close(win, true)
+
+      test.assert_eq(#info_calls, 1,
+        'expanding two rows made ' .. #info_calls .. ' info requests')
+      test.assert_eq(info_calls[1][1], 'second-plugin',
+        'the info request was not for the row that is expanded now')
+    end,
+  },
+
+  {
     name = 'actions: toggle_details flips the expanded flag for the plugin at the cursor',
     fn = function()
       local l = live()

@@ -510,6 +510,40 @@ test.run_suite('resonance.loader.build', {
       uv.fs_rmdir(dir)
     end,
   },
+
+  {
+    name = 'mark_build_success: a name that reduces to a relative path still writes a marker',
+    fn = function()
+      -- The marker name is reduced to its last path segment, which is
+      -- what keeps a name with a slash inside the marker directory. The
+      -- two names that survive that reduction without a slash -- "." and
+      -- ".." -- are the directory itself and its parent.
+      --
+      -- The write to such a path fails: fs_open on a directory is
+      -- refused. The marker was therefore never written, the build cache
+      -- was lost, and the plugin rebuilt on every check -- the same
+      -- failure the slash case had.
+      local names = { '.', '..' }
+      for i = 1, #names do
+        local name = names[i]
+        build.mark_build_success(name, 'abc123')
+
+        -- The marker is written under the marker directory under a
+        -- replacement name, and it holds the hash.
+        local replaced = marker_path('_')
+        local fd = uv.fs_open(replaced, 'r', 438)
+        test.assert_not_nil(fd,
+          'no marker was written for the name "' .. name .. '"')
+        local stat = uv.fs_fstat(fd)
+        local content = uv.fs_read(fd, stat.size, 0)
+        uv.fs_close(fd)
+        test.assert_eq(content, 'abc123',
+          'the marker for the name "' .. name .. '" holds the wrong content')
+
+        clear_marker('_')
+      end
+    end,
+  },
 })
 
 test.print_summary()

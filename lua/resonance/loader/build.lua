@@ -79,7 +79,9 @@ end
 ---@return string
 local function marker_path(name)
   local safe = tostring(name):match('[^/]+$') or ''
-  if safe == '' then safe = '_' end
+  -- A name that reduces to a path traversal would write outside the marker
+  -- directory, so the two relative names are replaced as well.
+  if safe == '' or safe == '.' or safe == '..' then safe = '_' end
   return get_marker_dir() .. '/' .. safe
 end
 

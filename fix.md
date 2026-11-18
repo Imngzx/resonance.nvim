@@ -942,6 +942,115 @@ second Neovim session does not start a duplicate build. Two traps to avoid:
 
 ---
 
+## P5 — Batch 4 leftovers (2026-11-18)
+
+A line-by-line re-read of the `fix` branch and the new tests found one real
+crash and two defensive edges that the earlier passes had missed.
+
+### 31. **FIXED** — **`utils.parse_trigger()` crashes on a `User` event with a list of patterns** — HIGH
+
+- **File:** `lua/resonance/utils.lua`
+- **Problem:** `normalize_events()` accepts a list of patterns for a `User`
+  event — `event = { 'User', pattern = { 'ResonanceA', 'ResonanceB' } }` — and
+  keeps it as a list, because Neovim accepts a list of patterns on an autocmd.
+  Item 21 added that support. But `parse_trigger()` concatenated the pattern
+  as if it were a string:
+  ```lua
+  parts[#parts + 1] = 'User(' .. (e.pattern or 'Unknown') .. ')'
+  ```
+  A table cannot be concatenated, so the load died with
+  `attempt to concatenate a table value`.
+- **Verified** (both the direct call and the real `resonance.load()` path):
+  ```
+  parse_trigger ok= false err= ./lua/resonance/utils.lua:257: attempt to concatenate a table value
+  load ok= false err= ./lua/resonance/utils.lua:257: attempt to concatenate a table value
+  ```
+- **Impact:** the whole load is aborted. The spec's other triggers never
+  register, and the plugin never loads. This was reachable from a config
+  line — no exotic input needed.
+- **Fix:** the list is joined for display. The trigger string is a display
+  string; the autocmd still gets the list.
+- **Why it slipped through:** the item-21 test called `normalize_events()`
+  directly, and the `resonance.load()` test only used a native event with a
+  table pattern. The `User`-with-a-list case was never driven through the
+  load path.
+
+#### Status: fixed
+
+| Test | Covers |
+|---|---|
+| `triggers: a User event with a list of patterns does not crash the load` (`test/behavior_triggers_spec.lua`) | the whole `resonance.load()` path, and that the trigger still fires |
+| `triggers: a User event with a list of patterns has a readable trigger string` (`test/behavior_triggers_spec.lua`) | the display string, which is what the user sees |
+
+**Mutation-verified:** restoring the string concatenation fails both tests
+(`attempt to concatenate a table value`).
+
+### 32. **FIXED** — **`nargs` given as the string `"0"` aborts the load** — LOW
+
+- **File:** `lua/resonance/loader/triggers.lua`
+- **Problem:** a command spec may give `opts.nargs` as a number or as a
+  string. Neovim only accepts the **number** `0`; the string form is
+  rejected outright with `Invalid 'nargs': '0'`. The completion-dropping
+  check compared against the number only, so the string form was never
+  normalized and the error escaped `resonance.load()`.
+- **Verified:**
+  ```
+  load ok= false err= ./lua/resonance/loader/triggers.lua:132: Invalid 'nargs': '0'
+  ```
+  And the accepted forms, straight from Neovim:
+  ```
+  0 number ok= false 'complete' used without 'nargs'
+  0 string ok= false Invalid 'nargs': '0'
+  * string ok= true
+  ? string ok= true
+  1 number ok= true
+  1 string ok= false Invalid 'nargs': '1'
+  ```
+- **Fix:** a numeric string is converted to a number before the command is
+  created, so the string form behaves exactly like the number form — and
+  the default completion is still dropped.
+
+#### Status: fixed
+
+| Test | Covers |
+|---|---|
+| `triggers: a command spec may give nargs as the string "0"` (`test/behavior_triggers_spec.lua`) | that the command registers, that `nargs` is `0`, and that the default completion was dropped |
+
+**Mutation-verified:** removing the normalization fails the test
+(`Invalid 'nargs': '0'`).
+
+### 33. **FIXED** — **A plugin name that reduces to `.` or `..` silently loses its build marker** — LOW
+
+- **File:** `lua/resonance/loader/build.lua`
+- **Problem:** `marker_path()` reduces the plugin name to its last path
+  segment, which is what keeps a name with a slash inside the marker
+  directory (item 23). The two names that survive that reduction without a
+  slash — `.` and `..` — are the marker directory itself and its parent.
+  `fs_open` on a directory is refused, so the marker was never written.
+- **Verified:**
+  ```
+  old path= /home/alice/.local/state/nvim/resonance/builds/..
+  old open= FAILED (marker silently dropped)
+  ```
+- **Impact:** the same failure item 23 fixed for slashes — the build cache is
+  lost and the plugin rebuilds on every check. The write fails silently:
+  `mark_build_success()` has no error path.
+- **Fix:** the two relative names are replaced along with the empty name.
+- **Note:** this one does **not** escape the directory. `unlink` on a
+  directory is refused by the filesystem (`EISDIR`), so there was no
+  traversal here — the defect is the dropped write, not an escape.
+
+#### Status: fixed
+
+| Test | Covers |
+|---|---|
+| `mark_build_success: a name that reduces to a relative path still writes a marker` (`test/build_spec.lua`) | that a marker is written and holds the hash, for both `.` and `..` |
+
+**Mutation-verified:** removing the dot handling fails the test
+(`no marker was written for the name "."`).
+
+---
+
 ## Suggested Execution Batches
 
 > **See `plan.md`** for the consolidated, code-verified plan of everything still
@@ -960,3 +1069,7 @@ second Neovim session does not start a duplicate build. Two traps to avoid:
 5. **Batch 5 (Build system rework) — OPEN:** Items `27`–`30`. Three confirmed defects
    (`setup()` before the build, a false "build succeeded", a duplicated build) and the
    tracking API that fixes them. The design in item 30 is settled with the user.
+6. **Batch 6 (Batch 4 leftovers) — DONE:** Items `31`–`33`. A `User` event with a list of
+   patterns crashed the load; a `nargs` given as the string `"0"` aborted it; a plugin
+   name that reduced to `.` or `..` lost its build marker. All three are fixed and
+   mutation-verified.

@@ -13,6 +13,11 @@
 > **2026-11-18 复核：** 新增 P4「构建系统」一节（4 行，含已敲定的 A/B/C 三条决策）。
 > 三个已实测复现的缺陷：`setup()` 抢在构建完成前跑、退出码 0 但打了 error 仍报
 > "构建成功"、一次 load 起两个并发构建。方案见 `plan.md` Batch 5 / `fix.md` P4。
+>
+> **2026-11-18 二次复核：** 新增 P5「Batch 4 遗留」一节。对 `fix` 分支和新测试逐行
+> 复查后补抓到 **1 个真会崩**（`User` 事件 + table pattern 在 `parse_trigger()` 里
+> 拼接崩溃）和 2 个极小的防御边角（`nargs` 传字符串 `"0"`、插件名归约成 `.`/`..`
+> 时 marker 静默丢失）。三项均已修复并做了 mutation 验证。
 
 ---
 
@@ -222,6 +227,16 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 | **一次 load 起了两个构建** | `loader/build.lua` | `check_and_build()` 有两个调用点：loader 注册 hook 时一次，`PackChanged` 安装时又一次。第二次在第一次还在跑时又起一个，并发写同一个目录，还弹两条 "Build succeeded" |
 | **缺一个构建状态查询 API** | 新增 `lua/resonance/builds.lua` | 方案已与用户敲定（详见 `plan.md` Batch 5 item 30 / `fix.md` P4 item 30）：<br>· **A 决策**：后台构建**永不阻塞**编辑器。只有用户主动按键/敲命令才等待，且等待要可 `<C-c>` 中断（只中断等待，不杀后台构建）；`event`/`ft`/`VimEnter`/`VeryLazy` 触发的加载**延后**到构建完成再 `setup()`。<br>· **B 决策**：只看 `exit code ~= 0` 判失败，**stderr 非空不算失败**（`yarn`/`npm`/`cargo`/`make` 成功时也往 stderr 写 warning）；stdout/stderr 尾部收进 `output_tail` 展示，让被吞掉的错误可见。<br>· **C 决策**：**双超时** —— 提示阈值（3–5s，超过才提示"仍在构建"）和构建硬超时（10min，超时杀子进程、标记 failed、**不写 marker**，下次重试）；`wait()` 自己的超时与 `<C-c>` **不杀**后台构建。跨会话锁文件存**子进程 PID**，用 `vim.uv.kill(pid, 0)` 探活防止死锁；还要防"孤儿陷阱" —— session 被 kill 后 Lua VM 死了，孤儿构建跑完但 `on_complete` 永不触发，marker 和锁文件都没人清，所以下一个 session 发现 PID 已不在（`ESRCH`）且 marker 缺失时**允许重建**（重跑 `yarn install` 对已建好的树很快，能补上 marker） |
 
+### P5 —— Batch 4 的遗留（2026-11-18，已修复）
+
+对 `fix` 分支和新测试逐行复查后，补抓到一个**真会崩**的遗漏和两个极小的防御边角。
+
+| 问题 | 位置 | 说明 |
+| --- | --- | --- |
+| **`User` 事件 + table pattern 直接崩** | `utils.lua` `parse_trigger()` | **已修复。** Batch 4 item 21 给 `normalize_events()` 加了 `User` 事件支持 table `pattern`（`event = { 'User', pattern = { 'ResonanceA', 'ResonanceB' } }`），因为 Neovim 的 autocmd 本来就接受 pattern 列表，所以 `normalize_events()` 把它**原样保留为 table**。但 `parse_trigger()` 还是按字符串拼接：`'User(' .. (e.pattern or 'Unknown') .. ')'` —— table 不能拼接，于是整个 `resonance.load()` 挂在 `attempt to concatenate a table value` 上，**spec 的其他 trigger 也不会注册，插件永远加载不了**。实测直调与走 `load()` 两条路径都复现。<br>**为什么 item 21 的测试没抓到**：它直接调 `normalize_events()`，而走 `resonance.load()` 的那条用例用的是**原生事件**的 table pattern，`User` + 列表这条组合从没被驱动过。<br>**修法**：列表在**展示字符串**里 join（trigger 串只是给人看的），autocmd 那边仍然拿列表。 |
+| **`nargs` 传字符串 `"0"` 直接崩** | `loader/triggers.lua` | **已修复。** `opts.nargs` 允许写数字或字符串，但 **Neovim 只接受数字 `0`**，字符串形式直接报 `Invalid 'nargs': '0'`。原来的"去掉默认 completion"判断只跟数字 `0` 比，字符串形式没被归一化，错误就逃出了 `resonance.load()`。实测 Neovim 接受的形式：`0` 数字（但带 completion 会报 `'complete' used without 'nargs'`）、`*`、`?`、`1` 数字；`'0'`/`'1'` 字符串一律拒绝。<br>**修法**：纯数字字符串先转成数字，字符串形式与数字形式行为完全一致，默认 completion 照常去掉。 |
+| **插件名归约成 `.` / `..` 时 build marker 静默丢失** | `loader/build.lua` `marker_path()` | **已修复。** `marker_path()` 把插件名归约成最后一段路径（item 23 就是靠这个把带斜杠的名字关在 marker 目录里）。但**不带斜杠**时能原样通过归约的 `.` 和 `..` 正好是 marker 目录本身和它的父目录 —— `fs_open` 对目录会被拒绝，于是 marker **根本没写出来**。实测 `old open= FAILED (marker silently dropped)`。<br>**影响**：跟 item 23 修的斜杠是同一个后果 —— 构建缓存丢了，每次 check 都重建。而且 `mark_build_success()` 没有错误分支，是**静默**丢的。<br>**修法**：空名、`.`、`..` 一律替换掉。<br>**补充**：这条**并不构成目录穿越** —— `unlink` 对目录会被文件系统拒绝（`EISDIR`），缺陷是"写丢了"而不是"写到外面去了"。 |
+
 ---
 
 ## 6. 建议的修复顺序
@@ -239,7 +254,7 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 | 原建议项 | 状态 |
 |---|---|
-| 测试补齐 | **已完成** —— 19 个测试文件，268 个用例全绿 |
+| 测试补齐 | **已完成** —— 19 个测试文件，272 个用例全绿 |
 | `r` 键异步化 | **已完成** —— `vim.async` + 信号量 |
 | 仅重绘 spinner 行 | **已完成** —— `update_spinner()` 只写一行 |
 | README `Vim.*` → `vim.*` | **已完成** —— 当前 README 零匹配 |

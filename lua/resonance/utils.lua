@@ -254,7 +254,14 @@ function M.parse_trigger(config)
       for i = 1, #events do
         local e = events[i]
         if e.user then
-          parts[#parts + 1] = 'User(' .. (e.pattern or 'Unknown') .. ')'
+          -- A User event's pattern may be a list -- Neovim accepts a list of
+          -- patterns on an autocmd -- so it cannot be concatenated as a
+          -- string. The list is joined for display instead.
+          local pat = e.pattern
+          if type(pat) == 'table' then
+            pat = table_concat(pat, ', ')
+          end
+          parts[#parts + 1] = 'User(' .. (pat or 'Unknown') .. ')'
         else
           parts[#parts + 1] = e.event
         end

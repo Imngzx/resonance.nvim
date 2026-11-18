@@ -670,6 +670,71 @@ test.run_suite('resonance.behavior.triggers', {
       test.assert_eq(left, 0, 'the buffer-local keymap stub survived the load')
     end,
   },
+
+  {
+    name = 'triggers: a User event with a list of patterns does not crash the load',
+    fn = function()
+      -- A User event's pattern may be a list -- Neovim accepts a list of
+      -- patterns on an autocmd -- and normalize_events keeps it as a list.
+      -- The trigger string built for the display concatenated the pattern
+      -- as if it were a string, which raised
+      -- "attempt to concatenate a table value" and took the whole load
+      -- down with it.
+      test.stub_pack()
+      local ran = false
+      local ok, err = pcall(_G.resonance.load, {
+        src = 'https://github.com/test/user-list-pattern',
+        event = { 'User', pattern = { 'ResonanceUserA', 'ResonanceUserB' } },
+        setup = function() ran = true end,
+      })
+      test.assert_true(ok, 'the load failed: ' .. tostring(err))
+
+      -- The trigger still has to work: the list is the autocmd's pattern.
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceUserB', modeline = false })
+      vim.wait(200)
+      test.assert_true(ran, 'the User trigger with a list of patterns never fired')
+    end,
+  },
+
+  {
+    name = 'triggers: a User event with a list of patterns has a readable trigger string',
+    fn = function()
+      -- The display string is what the user sees in the UI and in the
+      -- notifications. A list of patterns is joined, not dropped.
+      local utils = require('resonance.utils')
+      local trig = utils.parse_trigger({
+        event = { 'User', pattern = { 'ResonanceUserA', 'ResonanceUserB' } },
+      })
+      test.assert_not_nil(trig)
+      test.assert_true(trig:find('ResonanceUserA', 1, true) ~= nil,
+        'the first pattern is missing from the trigger string')
+      test.assert_true(trig:find('ResonanceUserB', 1, true) ~= nil,
+        'the second pattern is missing from the trigger string')
+    end,
+  },
+
+  {
+    name = 'triggers: a command spec may give nargs as the string "0"',
+    fn = function()
+      -- Neovim only accepts the number 0 for nargs; the string '0' is
+      -- rejected with "Invalid 'nargs': '0'". The value is normalized, so
+      -- the command registers and the default completion is dropped -- a
+      -- completion on a command that takes no arguments is an error.
+      local ok, err = pcall(_G.resonance.load, {
+        src = 'https://github.com/test/cmd-zero-args-string',
+        cmd = { name = 'ResonanceCmdZeroArgsString', opts = { nargs = '0' } },
+        setup = function() end,
+      })
+      test.assert_true(ok, 'the load failed: ' .. tostring(err))
+
+      local cmds = api.nvim_get_commands({})
+      test.assert_not_nil(cmds['ResonanceCmdZeroArgsString'],
+        'the command was not registered')
+      test.assert_eq(cmds['ResonanceCmdZeroArgsString'].nargs, '0')
+      test.assert_eq(cmds['ResonanceCmdZeroArgsString'].complete, nil,
+        "the default completion was left on a command that takes no arguments")
+    end,
+  },
 })
 
 test.print_summary()

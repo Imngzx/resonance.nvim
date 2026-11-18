@@ -124,6 +124,13 @@ function M.register_cmd(config, load_now, before_setup)
     -- when nargs says the command takes none. A completion the user
     -- asked for explicitly is left alone -- if it is invalid, Neovim
     -- reports it.
+    --
+    -- The nargs value may be the number 0 or the string '0'. Neovim only
+    -- accepts the number -- the string form is rejected with "Invalid
+    -- 'nargs': '0'" -- so the string is normalized before it is used.
+    if type(cmd_opts.nargs) == 'string' and cmd_opts.nargs:match('^%d+$') then
+      cmd_opts.nargs = tonumber(cmd_opts.nargs)
+    end
     if cmd_opts.nargs == 0 and user_opts and user_opts.complete == nil then
       cmd_opts.complete = nil
     end

@@ -196,6 +196,13 @@ decisions: background builds never block the editor, only the exit code
 decides success, and there are two separate timeouts (a notify threshold
 and a hard build timeout).
 
+**A trigger pattern may be a list** — `normalize_events()` keeps a table
+pattern as a table, because Neovim accepts a list of patterns on an
+autocmd. Anything that renders a pattern for display has to join it
+rather than concatenate it. `parse_trigger()` does this; a bare
+`'(' .. pattern .. ')'` raises `attempt to concatenate a table value` and
+takes the whole load down.
+
 ---
 
 ## 6. Committing

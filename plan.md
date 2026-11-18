@@ -7,7 +7,8 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–26 are **resolved**. Batch 4 is **done**.
+> **Status:** items 0–26 and 31–33 are **resolved**. Batch 4 and Batch 6
+> are **done**.
 > **Batch 5 (the build system rework) is open**: items 27–29 are confirmed
 > defects, item 30 is the settled design for the fix.
 
@@ -1083,6 +1084,87 @@ second Neovim session does not start a duplicate build. Two traps to avoid:
 
 ---
 
+## Batch 6 — Batch 4 leftovers (2026-11-18)
+
+A line-by-line re-read of the `fix` branch and the new tests found one real
+crash and two defensive edges that the earlier passes had missed.
+
+### 31. **`utils.parse_trigger()` crashes on a `User` event with a list of patterns** — HIGH
+
+- **File:** `lua/resonance/utils.lua`
+- **Problem:** `normalize_events()` accepts a list of patterns for a `User`
+  event — `event = { 'User', pattern = { 'ResonanceA', 'ResonanceB' } }` — and
+  keeps it as a list, because Neovim accepts a list of patterns on an autocmd.
+  Item 21 added that support. But `parse_trigger()` concatenated the pattern
+  as if it were a string:
+  ```lua
+  parts[#parts + 1] = 'User(' .. (e.pattern or 'Unknown') .. ')'
+  ```
+  A table cannot be concatenated, so the load died with
+  `attempt to concatenate a table value`.
+- **Verified** (both the direct call and the real `resonance.load()` path):
+  ```
+  parse_trigger ok= false err= ./lua/resonance/utils.lua:257: attempt to concatenate a table value
+  load ok= false err= ./lua/resonance/utils.lua:257: attempt to concatenate a table value
+  ```
+- **Impact:** the whole load is aborted. The spec's other triggers never
+  register, and the plugin never loads. This was reachable from a config
+  line — no exotic input needed.
+- **Fix:** the list is joined for display. The trigger string is a display
+  string; the autocmd still gets the list.
+- **Why it slipped through:** the item-21 test called `normalize_events()`
+  directly, and the `resonance.load()` test only used a native event with a
+  table pattern. The `User`-with-a-list case was never driven through the
+  load path.
+
+### 32. **`nargs` given as the string `"0"` aborts the load** — LOW
+
+- **File:** `lua/resonance/loader/triggers.lua`
+- **Problem:** a command spec may give `opts.nargs` as a number or as a
+  string. Neovim only accepts the **number** `0`; the string form is
+  rejected outright with `Invalid 'nargs': '0'`. The completion-dropping
+  check compared against the number only, so the string form was never
+  normalized and the error escaped `resonance.load()`.
+- **Verified:**
+  ```
+  load ok= false err= ./lua/resonance/loader/triggers.lua:132: Invalid 'nargs': '0'
+  ```
+  And the accepted forms, straight from Neovim:
+  ```
+  0 number ok= false 'complete' used without 'nargs'
+  0 string ok= false Invalid 'nargs': '0'
+  * string ok= true
+  ? string ok= true
+  1 number ok= true
+  1 string ok= false Invalid 'nargs': '1'
+  ```
+- **Fix:** a numeric string is converted to a number before the command is
+  created, so the string form behaves exactly like the number form — and
+  the default completion is still dropped.
+
+### 33. **A plugin name that reduces to `.` or `..` silently loses its build marker** — LOW
+
+- **File:** `lua/resonance/loader/build.lua`
+- **Problem:** `marker_path()` reduces the plugin name to its last path
+  segment, which is what keeps a name with a slash inside the marker
+  directory (item 23). The two names that survive that reduction without a
+  slash — `.` and `..` — are the marker directory itself and its parent.
+  `fs_open` on a directory is refused, so the marker was never written.
+- **Verified:**
+  ```
+  old path= /home/alice/.local/state/nvim/resonance/builds/..
+  old open= FAILED (marker silently dropped)
+  ```
+- **Impact:** the same failure item 23 fixed for slashes — the build cache is
+  lost and the plugin rebuilds on every check. The write fails silently:
+  `mark_build_success()` has no error path.
+- **Fix:** the two relative names are replaced along with the empty name.
+- **Note:** this one does **not** escape the directory. `unlink` on a
+  directory is refused by the filesystem (`EISDIR`), so there was no
+  traversal here — the defect is the dropped write, not an escape.
+
+---
+
 ## Stale entries in `note/knowledge/fix-notes.md`
 
 These rows are **no longer accurate** and should be corrected when
@@ -1094,7 +1176,7 @@ These rows are **no longer accurate** and should be corrected when
 | P1 "UI 状态陈旧" — `check_updates_network` does not clear `updates` | **Fixed.** `updates = {}` is cleared (`actions.lua:64`), and `pending_count` is now reset too (item 5). |
 | P1 "UI 状态陈旧" — `pack_details` / `expanded` not reset in `open()` | **Fixed** (item 24). `ui.open()` now resets both, so a reopened UI shows no expanded row and fetches the details again instead of showing the stale branches and tags of the previous session. |
 | P1 "`_plugin_dir_cache` 永不失效" | **Fixed** (item 13, commit `24160c7`) — the cache moved to `registry.plugin_dirs` and is invalidated on `PackChanged`. |
-| P2 "零测试、零 CI、无格式化/静态检查配置" | **Partly stale.** There are now 19 test files and 265 passing tests. Still no CI, no `stylua`/`luacheck` config, and no `:checkhealth`. |
+| P2 "零测试、零 CI、无格式化/静态检查配置" | **Partly stale.** There are now 19 test files and 272 passing tests. Still no CI, no `stylua`/`luacheck` config, and no `:checkhealth`. |
 | P1 "无 trigger 的 spec 永远不加载也不安装" | **Fixed** (item 3, commit `be50123`) — triggerless specs load eagerly on `VimEnter`. |
 | P1 "`BufEnter` 对已存在的文件从不被重放" | **Fixed** (commit `be80437`). |
 | P2 "文档漂移" — README uses `Vim.fn` / `Vim.uv` / `Vim.notify` / `Vim.system` | **Stale.** Verified: zero matches in the current README. |
@@ -1116,6 +1198,7 @@ These rows are **no longer accurate** and should be corrected when
 | Batch 4 items 17–23 | P1, new table — **added 2026-11-18** |
 | Batch 4 items 24–26 | P1, new rows — **added 2026-11-18** |
 | Batch 5 items 27–30 (build system) | P4, new section — **added 2026-11-18** |
+| Batch 6 items 31–33 (Batch 4 leftovers) | P5, new section — **added 2026-11-18** |
 
 ---
 
@@ -1133,6 +1216,7 @@ These rows are **no longer accurate** and should be corrected when
 8. Batch 4  item 26                    ← DONE; stale build marker after uninstall
 9. Batch 5  item 30 first              ← builds.lua API: state, tracker, lock file
 10. Batch 5 items 29, 28, 27           ← one-build-per-plugin, output tail, setup ordering
+11. Batch 6 items 31, 32, 33            ← DONE; User list pattern crash, nargs string, marker name
 ```
 
 Rationale for the order:
@@ -1165,6 +1249,10 @@ Rationale for the order:
   tail is a presentation change.
 - **Item 27 last.** It is the one that changes the load flow, so it should
   land on a tracker that is already correct.
+- **Batch 6 after Batch 4.** These are the leftovers of the Batch 4
+  re-read, not new work: one crash that the item-21 test could not reach,
+  and two defensive edges. They are independent of Batch 5 and do not
+  touch the same files it does.
 
 ---
 
@@ -1185,6 +1273,6 @@ Rationale for the order:
 ---
 
 *Every issue in this file was verified by reading the current source on
-2026-11-17, and Batch 4 and Batch 5 were verified by running them against
-the installed copy on 2026-11-18. Nothing here is copied forward from the
-notes without re-checking it against the code.*
+2026-11-17, and Batch 4, Batch 5 and Batch 6 were verified by running them
+against the installed copy on 2026-11-18. Nothing here is copied forward
+from the notes without re-checking it against the code.*

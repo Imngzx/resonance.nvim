@@ -185,6 +185,14 @@ local function stub_pack(opts)
           path_for(name)
         end
       end
+      -- The loader caches the plugin directories, and the cache was
+      -- built before this install. It has to go, or the loader looks
+      -- the plugin up in a cache that does not have it -- and a build
+      -- hook for it never finds a directory to build in.
+      local registry = package.loaded['resonance.registry']
+      if registry and registry.invalidate_plugin_dirs then
+        registry.invalidate_plugin_dirs()
+      end
     end,
   }
   if real then
@@ -195,7 +203,26 @@ local function stub_pack(opts)
     -- `names` is a flat list of plugin names, or nil for every plugin.
     local real_get = real.get
     stub.get = function(names, opts2)
-      if not names then return real_get(names, opts2) end
+      if not names then
+        -- Every plugin: the real ones, plus the stubbed ones. The
+        -- loader's plugin directory cache is built from this call, so a
+        -- stubbed plugin that is missing here has no directory -- and a
+        -- build hook for it never finds a directory to build in.
+        local out = real_get(names, opts2)
+        for name in pairs(installed) do
+          local known = false
+          for i = 1, #out do
+            if out[i].spec and out[i].spec.name == name then known = true break end
+          end
+          if not known then
+            out[#out + 1] = {
+              spec = { name = name },
+              path = path_for(name),
+            }
+          end
+        end
+        return out
+      end
       local out = {}
       for _, name in ipairs(names) do
         if installed[name] then

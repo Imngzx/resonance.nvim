@@ -1,5 +1,6 @@
 local M = {}
 local utils = require('resonance.utils')
+local builds = require('resonance.builds')
 
 local uv = vim.uv
 local fs_open = uv.fs_open
@@ -17,8 +18,13 @@ local tostring = tostring
 local fn_stdpath = vim.fn.stdpath
 
 -- Built on first use; see get_async() below.
-local _system_async = nil
 local build_semaphore = nil
+
+-- The child process of the build that is running, keyed by plugin name.
+--
+-- The hard timeout has to kill the child, and the lock file has to hold
+-- its PID. The SystemObj is what carries both.
+local running_objects = {}
 
 -- vim.async costs ~1.4 ms to load: it pulls in seven submodules. The
 -- loader requires this module at setup time, but a build only runs for
@@ -32,19 +38,43 @@ local build_semaphore = nil
 -- @return table The vim.async module.
 local function get_async()
   local async = vim.async
-  if not _system_async then
-    _system_async = async.wrap(3, system)
+  if not build_semaphore then
     build_semaphore = async.semaphore(2)
   end
   return async
 end
 
+--- Run a command, and wait for it without blocking the editor.
+---
+--- The wait yields to the event loop, so other work -- other builds, the
+--- UI, the user's keystrokes -- keeps running while the command runs.
+---
+--- The result is the completed command: its exit code, and its output.
+--- A command that fails is not an error here: the exit code is the
+--- verdict, and the caller decides what to do with it.
+---
+--- The child process's PID is reported through `on_start`, so the caller
+--- can write it into the lock file and kill it on a timeout.
 ---@param cmd string[]
 ---@param opts table
----@return vim.SystemCompleted
-local function system_async(cmd, opts)
-  get_async()
-  return _system_async(cmd, opts) --[[@as vim.SystemCompleted]]
+---@param on_start? fun(handle: table) Called once the child process exists.
+---@return table result { code, stdout, stderr }
+local function run_command(cmd, opts, on_start)
+  local async = get_async()
+
+  -- The awaitable starts the process and returns its handle. The handle is
+  -- a closable, so async closes it if the task is cancelled -- which is
+  -- how a cancelled build kills its child.
+  local ok, result = async.pawait(1, function(callback)
+    local handle = system(cmd, opts, callback)
+    if on_start then on_start(handle) end
+    return handle
+  end)
+
+  if not ok then
+    return { code = -1, stdout = '', stderr = tostring(result) }
+  end
+  return result or { code = -1, stdout = '', stderr = 'command did not run' }
 end
 
 M.build_hooks = {}
@@ -157,7 +187,45 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
     return
   end
 
-  local function finish(ok, err)
+  -- A build that is already running is not started again.
+  --
+  -- check_and_build() is called from two places: the loader, when it
+  -- registers the build hook, and the PackChanged handler, when the
+  -- plugin is installed. The second call landed while the first was
+  -- still running, so two builds of the same plugin wrote into the same
+  -- directory at the same time, and two "Build succeeded" notifications
+  -- said the same thing twice.
+  if builds.is_building(name) then
+    -- The caller waits for the build that is already running, rather than
+    -- starting a second one.
+    if on_done then
+      builds.on_complete(name, function(ok, err) on_done(ok, err) end)
+    end
+    return
+  end
+
+  -- The build is marked as pending before it is scheduled to run, so a
+  -- caller that checks the status right after this call already sees that
+  -- a build is coming. The loader uses that to decide whether the
+  -- plugin's setup has to wait for the build.
+  builds.mark_pending(name)
+
+  local function finish(ok, err, output_tail)
+    -- The verdict is the exit code, and nothing else.
+    --
+    -- stderr being non-empty is not a failure: yarn, npm, cargo and make
+    -- all write warnings and progress to stderr on a successful build.
+    -- The output is kept as the tail of both streams so a swallowed
+    -- error is still visible to the user.
+    builds.finish(name, ok, err, output_tail)
+
+    -- The lock is released, so another session can build the plugin once
+    -- this build is done. It is also disarmed: a build that is over must
+    -- not be killed by a timer that is still armed.
+    builds.disarm_hard_timeout(name)
+    builds.release_lock(name)
+    running_objects[name] = nil
+
     if ok then
       M.mark_build_success(name, curr_hash)
       schedule(function()
@@ -165,7 +233,13 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
       end)
     else
       schedule(function()
-        utils.notify('Build failed for ' .. name .. ': ' .. tostring(err), vim.log.levels.ERROR)
+        local msg = 'Build failed for ' .. name .. ': ' .. tostring(err)
+        local status = builds.status(name)
+        local tail = status and status.output_tail
+        if tail and tail ~= '' then
+          msg = msg .. '\n' .. tail
+        end
+        utils.notify(msg, vim.log.levels.ERROR)
       end)
     end
     if on_done then on_done(ok, err) end
@@ -173,6 +247,39 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
 
   schedule(function()
     local build_run = get_async().run('resonance_build:' .. name, function()
+      -- The build is marked as running before the command starts, so a
+      -- second check_and_build() in the same tick sees it and does not
+      -- start a second build.
+      if not builds.start(name) then return end
+
+      -- The lock keeps a second Neovim session from building the same
+      -- plugin at the same time. The PID is the child process, so a
+      -- session that was killed leaves a lock whose PID is gone -- the
+      -- lock is stale, and the build goes ahead again.
+      --
+      -- The lock is taken without a PID first, because the child process
+      -- does not exist yet. It is rewritten with the PID once the command
+      -- starts, so a second session can tell that the build is alive.
+      local locked = builds.acquire_lock(name, nil)
+      if not locked then
+        -- Another session is building this plugin right now. The build is
+        -- skipped: two builds of the same plugin write into the same
+        -- directory.
+        builds.finish(name, true, nil)
+        return
+      end
+
+      -- The hard timeout kills the build if it runs too long. A build that
+      -- runs for ten minutes is stuck, not slow.
+      builds.arm_hard_timeout(name, function(timeout_name)
+        local handle = running_objects[timeout_name]
+        if handle then
+          pcall(function() handle:kill(15) end)
+        end
+        finish(false, 'the build timed out after ' ..
+          tostring(builds.HARD_TIMEOUT_MS / 1000) .. ' seconds')
+      end)
+
       if type(build_task) == 'function' then
         -- A Lua build hook may be synchronous, or it may hand back an
         -- object for work it started itself. Marking the build as
@@ -190,6 +297,13 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
           end
         elseif result and type(result.wait) == 'function' then
           local obj = result:wait()
+          -- The output is captured even on success: a build that exits 0
+          -- while printing errors is a success by the exit code, but the
+          -- output is what shows the user what happened.
+          if obj then
+            builds.append_output(name, obj.stdout)
+            builds.append_output(name, obj.stderr)
+          end
           if obj and obj.code ~= 0 then
             local msg = obj.stderr
             if not msg or msg == '' then msg = obj.stdout end
@@ -199,8 +313,19 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
         end
       else
         local obj = build_semaphore:with(function()
-          return system_async({ 'sh', '-c', build_task }, { cwd = dir, text = true })
+          return run_command({ 'sh', '-c', build_task }, { cwd = dir, text = true }, function(handle)
+            -- The handle is kept so the hard timeout can kill the child,
+            -- and the PID is recorded as soon as the child exists, so the
+            -- lock file names a process that can be probed for liveness.
+            running_objects[name] = handle
+            builds.set_pid(name, handle.pid)
+            builds.update_lock_pid(name, handle.pid)
+          end)
         end)
+        -- The output is captured before the exit code is checked, so a
+        -- failure has the output that caused it.
+        builds.append_output(name, obj.stdout)
+        builds.append_output(name, obj.stderr)
         if obj.code ~= 0 then
           error(obj.stderr and obj.stderr ~= '' and obj.stderr or obj.stdout or 'command failed', 0)
         end
@@ -234,6 +359,29 @@ function M.check_and_build(name, dir, build_task)
   if last_hash == curr_hash then return end
 
   M.run_build(name, dir, build_task, curr_hash)
+end
+
+--- Whether a build is pending or running for a plugin.
+---
+--- The loader uses this to decide whether the plugin's setup has to wait
+--- for the build. A build that is running means the plugin's tree is
+--- incomplete, and a setup that runs against an incomplete tree fails.
+---@param name string
+---@return boolean
+function M.is_building(name)
+  return builds.is_building(name)
+end
+
+--- Wait for a plugin's build to settle.
+---
+--- The wait pumps the event loop, so the editor stays responsive while it
+--- waits. It gives up after `timeout_ms`; the build keeps running, and the
+--- caller decides what to do about that.
+---@param name string
+---@param timeout_ms number|nil defaults to 30 seconds
+---@return boolean ok, string|nil err
+function M.wait_for_build(name, timeout_ms)
+  return builds.wait(name, timeout_ms)
 end
 
 -- Setup PackChanged autocmd for automatic builds

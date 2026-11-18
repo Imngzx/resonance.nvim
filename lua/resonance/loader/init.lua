@@ -4,6 +4,7 @@ local registry = require('resonance.registry')
 local spec = require('resonance.loader.spec')
 local triggers = require('resonance.loader.triggers')
 local build = require('resonance.loader.build')
+local builds = require('resonance.builds')
 local dag = require('resonance.loader.dag')
 
 local api = vim.api
@@ -47,6 +48,7 @@ local hrtime = uv.hrtime
 local fn_stdpath = vim.fn.stdpath
 local vim_log_levels = vim.log.levels
 local pcall = pcall
+local schedule = vim.schedule
 
 local pack_dir_base = utils.fast_normalize(fn_stdpath('data') .. '/site/pack')
 
@@ -578,6 +580,120 @@ function M.load(config)
     run_teardown(trigger_teardown_before_setup)
   end
 
+  -- Whether this spec is loaded by an explicit user action.
+  --
+  -- A command or a keymap is the user saying "I want this plugin now". An
+  -- event, a filetype or an eager load is the editor getting there on its
+  -- own, and the user is not waiting for anything.
+  --
+  -- The distinction decides what happens when the plugin has a build and
+  -- the build is still running: an explicit action waits for the build, and
+  -- an automatic one does not wait -- it defers the setup until the build
+  -- is done, so the editor stays responsive.
+  local user_initiated = false
+  if config.cmd or config.keys then
+    user_initiated = true
+  end
+
+  -- How long an explicit user action waits for a build before giving up
+  -- and letting the build finish in the background.
+  local BUILD_WAIT_MS = 30000
+
+  -- The setup closures, kept until the build is done.
+  --
+  -- A deferred setup has to hold on to the closure until the build
+  -- finishes. It is dropped as soon as it has run, so the closure does not
+  -- stay reachable for the rest of the session.
+  local deferred_setups = nil
+
+  -- Drop the setup closures once they have all run.
+  --
+  -- They are the only part of the spec that holds onto the user's state,
+  -- and the load_now closure keeps the spec alive for the whole session.
+  local function release_setups()
+    config.setup = nil
+    config.config = nil
+    for i = 1, #plugins do
+      local plugin_spec = plugins[i]
+      if type(plugin_spec) == 'table' then
+        plugin_spec.setup = nil
+        plugin_spec.config = nil
+      end
+    end
+  end
+
+  -- Run the setups of the members `from` .. `upto`.
+  --
+  -- The setups run in the order the plugins were listed, so a plugin that
+  -- depends on an earlier one still sees it set up. Each member is set up
+  -- by exactly one call: the callers split the members into disjoint
+  -- ranges. Running 1..upto twice set every member up twice.
+  ---@param member_loaded boolean[] which members were already loaded
+  ---@param from integer the first member to set up
+  ---@param upto integer the last member to set up
+  local function run_setups(member_loaded, from, upto)
+    for pi = from, upto do
+      if not member_loaded[pi] then
+        local plugin_spec = plugins[pi]
+        local plugin_setup = type(plugin_spec) == 'table' and plugin_spec.setup
+        if plugin_setup then
+          local ok, err = pcall(plugin_setup)
+          if not ok then
+            utils.notify('Setup error for ' .. parsed_names[pi] .. ': ' .. tostring(err),
+              vim_log_levels.ERROR)
+          end
+        elseif config.setup and pi == 1 then
+          -- Only call config.setup once (for first plugin) as fallback
+          local ok, err = pcall(config.setup)
+          if not ok then utils.notify('Setup error: ' .. tostring(err), vim_log_levels.ERROR) end
+        end
+      end
+    end
+  end
+
+  -- Set the members `from` .. #parsed_names up once every build is done.
+  --
+  -- The setup of a plugin whose build is still running is deferred: the
+  -- build finishes in the background, and the setup runs when it is done.
+  -- The editor is never blocked by a build it did not ask for.
+  --
+  -- Every deferred build is waited for, not only the last one: builds
+  -- finish in any order, and waiting for the last one alone set up a
+  -- member whose own build was still running.
+  ---@param deferred integer[] the indexes of the members whose build is running
+  ---@param member_loaded boolean[] which members were already loaded
+  ---@param from integer the first member still to set up
+  local function defer_setups_until_build(deferred, member_loaded, from)
+    local token = {}
+    deferred_setups = token
+    local remaining = #deferred
+
+    local function settled(name, ok, err)
+      if not ok then
+        -- The build failed. The plugin is set up anyway -- the setup may
+        -- still work, and the build's failure is reported on its own.
+        utils.notify('Build failed for ' .. name .. ': ' .. tostring(err), vim_log_levels.ERROR)
+      end
+      remaining = remaining - 1
+      if remaining > 0 or deferred_setups ~= token then return end
+      -- The setups run on the main loop: the build callback may fire from
+      -- a fast context. deferred_setups stays set until they have run --
+      -- a build that had already settled calls back synchronously, and
+      -- clearing it here would let load_now release the closures first.
+      schedule(function()
+        if deferred_setups ~= token then return end
+        deferred_setups = nil
+        run_setups(member_loaded, from, #parsed_names)
+        release_setups()
+      end)
+    end
+
+    for i = 1, #deferred do
+      local name = parsed_names[deferred[i]]
+      builds.on_complete(name, function(ok, err) settled(name, ok, err) end)
+    end
+  end
+
   --- Load this spec's plugins now.
   ---
   --- Returns true when the plugins are loaded (or were already loaded), and
@@ -711,21 +827,96 @@ function M.load(config)
     end
 
     -- Call setup once per member that was not already loaded.
+    --
+    -- The setup must not run while a build is still going: the plugin's
+    -- tree is incomplete, and a setup that expects the build's output
+    -- fails against a half-built tree. markdown-preview2.nvim is the
+    -- clear case -- its setup starts a node server that needs
+    -- node_modules, and without them the server dies.
+    --
+    -- So the build is started here if it is not running yet, and the
+    -- setup waits for it. The build is started here because the plugin
+    -- may have been installed by this very load: the PackChanged handler
+    -- starts the build, but that happens after the install, and the load
+    -- that triggered it is already on its way to the setup.
+    --
+    -- How long the setup waits depends on how the plugin was loaded:
+    --
+    --   - an explicit user action (a command or a keymap) waits for the
+    --     build, because the user asked for the plugin and wants it now.
+    --     The wait pumps the event loop, so the editor stays responsive.
+    --
+    --   - an automatic load (an event, a filetype, an eager load) does
+    --     not wait. A plugin with a 60-second build would freeze the
+    --     editor on startup. The setup is deferred until the build is
+    --     done instead, and the editor carries on.
+    local building = {}
     for pi = 1, #parsed_names do
-      if not member_loaded[pi] then
-        local plugin_spec = plugins[pi]
-        local plugin_setup = type(plugin_spec) == 'table' and plugin_spec.setup
-        if plugin_setup then
-          local ok, err = pcall(plugin_setup)
-          if not ok then
-            utils.notify('Setup error for ' .. parsed_names[pi] .. ': ' .. tostring(err),
-              vim_log_levels.ERROR)
-          end
-        elseif config.setup and pi == 1 then
-          -- Only call config.setup once (for first plugin) as fallback
-          local ok, err = pcall(config.setup)
-          if not ok then utils.notify('Setup error: ' .. tostring(err), vim_log_levels.ERROR) end
+      local plugin_name = parsed_names[pi]
+      local build_cmd = M.build_hooks[plugin_name]
+      if build_cmd then
+        -- The build is started if it is not running already. A plugin
+        -- that was just installed has no build running yet, and the
+        -- setup must not race it.
+        build.check_and_build(plugin_name, get_plugin_dir(plugin_name), build_cmd)
+        if build.is_building(plugin_name) then
+          building[pi] = true
         end
+      end
+    end
+
+    -- The members waiting for a build, and the first of them.
+    --
+    -- The setups run in the order the plugins were listed, so a plugin
+    -- that depends on an earlier one still sees it set up. Everything
+    -- before the first building member is set up now; everything from it
+    -- on waits, ready members included, so the order is kept. The two
+    -- ranges are disjoint: no member is set up twice.
+    local deferred = {}
+    for pi = 1, #parsed_names do
+      if building[pi] then deferred[#deferred + 1] = pi end
+    end
+    local first_deferred = deferred[1] or (#parsed_names + 1)
+
+    run_setups(member_loaded, 1, first_deferred - 1)
+
+    if #deferred > 0 then
+      if user_initiated then
+        -- The user asked for this plugin, so the setup waits for the
+        -- build. The wait is bounded: if the build takes too long, the
+        -- setup is deferred instead, and the build carries on in the
+        -- background.
+        --
+        -- A build that failed is not a build that is still running. The
+        -- wait reports both the same way -- it did not succeed -- but
+        -- they mean different things: a failed build is over, and the
+        -- plugin has to be set up now.
+        local still_building = nil
+        for i = 1, #deferred do
+          local name = parsed_names[deferred[i]]
+          local ok = builds.wait(name, BUILD_WAIT_MS)
+          if not ok then
+            local status = builds.status(name)
+            if not (status and status.state == 'failed') then
+              still_building = name
+              break
+            end
+          end
+        end
+        if not still_building then
+          run_setups(member_loaded, first_deferred, #parsed_names)
+        else
+          -- The build is taking too long. The setup is deferred, and the
+          -- user is told why.
+          defer_setups_until_build(deferred, member_loaded, first_deferred)
+          utils.notify('Still building ' .. still_building ..
+            ' -- the plugin will be set up when the build finishes',
+            vim_log_levels.WARN)
+        end
+      else
+        -- An automatic load does not wait. The setup runs when the build
+        -- is done.
+        defer_setups_until_build(deferred, member_loaded, first_deferred)
       end
     end
 
@@ -736,14 +927,11 @@ function M.load(config)
     -- The load_now closure keeps the spec alive for the whole session,
     -- so a setup that captured a large table would keep that table alive
     -- too. Clearing the references here lets it be collected.
-    config.setup = nil
-    config.config = nil
-    for i = 1, #plugins do
-      local plugin_spec = plugins[i]
-      if type(plugin_spec) == 'table' then
-        plugin_spec.setup = nil
-        plugin_spec.config = nil
-      end
+    --
+    -- A deferred setup has not run yet, so its closure is still needed.
+    -- It is cleared when the deferred setup runs instead.
+    if not deferred_setups then
+      release_setups()
     end
 
     for i = 1, #parsed_names do

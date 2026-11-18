@@ -544,6 +544,91 @@ test.run_suite('resonance.loader.build', {
       end
     end,
   },
+
+  {
+    name = 'run_build: a build that is already running is not started again',
+    fn = function()
+      -- check_and_build() is called from two places: the loader, when it
+      -- registers the build hook, and the PackChanged handler, when the
+      -- plugin is installed. The second call landed while the first was
+      -- still running, so two builds of the same plugin wrote into the
+      -- same directory at the same time.
+      local dir = '/tmp/test_build_dup_' .. os.time()
+      uv.fs_mkdir(dir, 493)
+      local name = 'dup-build-' .. os.time()
+
+      local runs = 0
+      local task = function()
+        runs = runs + 1
+      end
+
+      build.run_build(name, dir, task, 'hash1')
+      -- The second call arrives while the first is still in flight.
+      build.run_build(name, dir, task, 'hash1')
+      vim.wait(1500)
+
+      test.assert_eq(runs, 1,
+        'the build ran ' .. runs .. ' times; it must run once')
+      clear_marker(name)
+      uv.fs_rmdir(dir)
+    end,
+  },
+
+  {
+    name = 'run_build: the output is captured, and the exit code is the verdict',
+    fn = function()
+      -- A build that prints errors and exits 0 is a success by the exit
+      -- code -- yarn, npm, cargo and make all write warnings to stderr on
+      -- a successful build. But the output is captured, so the swallowed
+      -- error is visible.
+      local dir = '/tmp/test_build_tail_' .. os.time()
+      uv.fs_mkdir(dir, 493)
+      local name = 'tail-build-' .. os.time()
+
+      local result = nil
+      build.run_build(name, dir, 'echo "npm error swallowed" >&2; exit 0', 'hash1',
+        function(ok, err) result = { ok = ok, err = err } end)
+      vim.wait(1500)
+
+      test.assert_not_nil(result, 'the completion callback never fired')
+      test.assert_true(result.ok, 'a build that exited 0 was reported as failed')
+
+      local status = require('resonance.builds').status(name)
+      test.assert_not_nil(status, 'the build has no status')
+      test.assert_eq(status.state, 'ok')
+      test.assert_not_nil(status.output_tail, 'the output was not captured')
+      test.assert_true(status.output_tail:find('npm error swallowed', 1, true) ~= nil,
+        'the output tail does not hold the error: ' .. tostring(status.output_tail))
+
+      clear_marker(name)
+      uv.fs_rmdir(dir)
+    end,
+  },
+
+  {
+    name = 'run_build: a failed build carries its output',
+    fn = function()
+      local dir = '/tmp/test_build_failout_' .. os.time()
+      uv.fs_mkdir(dir, 493)
+      local name = 'failout-build-' .. os.time()
+
+      local result = nil
+      build.run_build(name, dir, 'echo "the real reason" >&2; exit 3', 'hash1',
+        function(ok, err) result = { ok = ok, err = err } end)
+      vim.wait(1500)
+
+      test.assert_not_nil(result, 'the completion callback never fired')
+      test.assert_false(result.ok, 'a failed build was reported as successful')
+
+      local status = require('resonance.builds').status(name)
+      test.assert_not_nil(status.output_tail, 'the output was not captured')
+      test.assert_true(status.output_tail:find('the real reason', 1, true) ~= nil,
+        'the output tail does not hold the reason: ' .. tostring(status.output_tail))
+
+      clear_marker(name)
+      uv.fs_rmdir(dir)
+    end,
+  },
 })
 
 test.print_summary()

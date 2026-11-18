@@ -188,7 +188,7 @@ function M.normalize_events(event)
   -- positionally as ev[2], which is what the native autocmd API accepts.
   if event[1] == 'User' then
     local pattern = event.pattern or event[2]
-    if type(pattern) == 'string' then
+    if type(pattern) == 'string' or type(pattern) == 'table' then
       return { { event = 'User', pattern = pattern, user = true } }
     end
     -- A User event without a pattern matches every User event.
@@ -207,7 +207,8 @@ function M.normalize_events(event)
   end
 
   -- A pattern on the list itself applies to the native events in it.
-  if type(event.pattern) == 'string' then
+  -- Neovim accepts a list of patterns, so a table is kept as it is.
+  if type(event.pattern) == 'string' or type(event.pattern) == 'table' then
     for i = 1, #out do
       out[i].pattern = event.pattern
     end

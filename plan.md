@@ -7,7 +7,7 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–20 are **resolved**. Batch 4 items 21–23 are **open**.
+> **Status:** items 0–21 are **resolved**. Batch 4 items 22–23 are **open**.
 
 ---
 
@@ -743,7 +743,7 @@ so the test would have passed against a UI that rendered no names at all.
 **Mutation-verified:** removing the close-time cleanup in `render.clear()` now fails
 the test (`Expected: 0, Actual: 49`). It passed before the fix.
 
-### 21. **`utils.normalize_events()` drops a table `pattern`** — LOW
+### 21. **RESOLVED** — **`utils.normalize_events()` drops a table `pattern`** — LOW
 
 - **File:** `lua/resonance/utils.lua`
 - **Problem:** only `type(event.pattern) == 'string'` is kept. Neovim accepts a list of
@@ -751,6 +751,18 @@ the test (`Expected: 0, Actual: 49`). It passed before the fix.
   patterns.
 - **Verified:** `event[1] event=BufReadPost pattern=nil`.
 - **Fix:** accept a table as well as a string.
+
+#### Resolution
+
+`normalize_events()` now keeps a table pattern, for both a native event list and a
+`User` event. The pattern reaches `nvim_create_autocmd`, which creates one autocmd
+per pattern.
+
+**Tests** (`test/spec_spec.lua`, `test/behavior_triggers_spec.lua`) — three new
+cases: the list survives the normalization for a native event, for a `User` event,
+and it reaches the registered autocmds.
+
+**Mutation-verified:** dropping the table again fails all three tests.
 
 ### 22. **`fetch_plugin_details` does not cancel the previous task** — LOW
 
@@ -817,8 +829,8 @@ These rows are **no longer accurate** and should be corrected when
 2. Batch 1  items 2, 3, 4, 7           ← DONE
 3. Batch 2  items 8, 9, 11, 12         ← DONE
 4. Batch 3  items 10, 13, 14, 15, 16   ← DONE
-5. Batch 4  items 17, 18, 19, 20       ← DONE; shortcut, crash, leak, vacuous assertion
-6.          items 21, 22, 23           ← OPEN; small losses
+5. Batch 4  items 17-21                 ← DONE; shortcut, crash, leak, vacuous assertion, lost pattern
+6.          items 22, 23               ← OPEN; small losses
 ```
 
 Rationale for the order:

@@ -473,6 +473,36 @@ test.run_suite('resonance.behavior.triggers', {
   },
 
   {
+    name = 'triggers: an event keeps a list of patterns',
+    fn = function()
+      -- Neovim accepts a list of patterns. The list used to be dropped
+      -- during the normalization, so the trigger matched every file
+      -- instead of the ones the user listed.
+      --
+      -- Neovim creates one autocmd per pattern, and each one reports its
+      -- own pattern as a string.
+      test.stub_pack()
+      _G.resonance.load({
+        src = 'https://github.com/test/event-list-pattern',
+        event = { 'BufReadPost', pattern = { '*.lua', '*.vim' } },
+        setup = function() end,
+      })
+
+      local patterns = {}
+      for _, a in ipairs(api.nvim_get_autocmds({ event = 'BufReadPost' })) do
+        if a.group_name == 'Resonance_event-list-pattern' then
+          patterns[a.pattern] = true
+        end
+      end
+
+      test.assert_true(patterns['*.lua'],
+        'the first pattern of the list was lost')
+      test.assert_true(patterns['*.vim'],
+        'the second pattern of the list was lost')
+    end,
+  },
+
+  {
     name = 'triggers: a key shorthand without an rhs keeps the plugin own mapping',
     fn = function()
       -- A key shorthand without an rhs means "the plugin defines this

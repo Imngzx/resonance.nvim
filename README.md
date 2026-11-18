@@ -140,6 +140,9 @@ event = "VimEnter"
 -- Multiple events
 event = { "BufReadPost", "BufNewFile" }
 
+-- Restrict the event to certain files
+event = { "BufReadPost", pattern = { "*.lua", "*.vim" } }
+
 -- Trigger when entering Insert or Command mode (Great for completion plugins)
 event = { "InsertEnter", "CmdlineEnter" }
 ```

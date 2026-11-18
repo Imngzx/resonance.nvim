@@ -145,6 +145,8 @@ list:
 event - Load when autocmd fires:
     event = 'LspAttach'
     event = {'BufReadPost', 'BufNewFile'}
+    event = {'BufReadPost', pattern = {'*.lua', '*.vim'}}  -- With a pattern
+    event = {'User', pattern = 'VeryLazy'}
 
 cmd - Load when command is invoked:
     cmd = 'Neogit'

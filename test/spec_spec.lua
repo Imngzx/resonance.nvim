@@ -359,6 +359,40 @@ test.run_suite('resonance.loader.spec', {
   },
 
   {
+    name = 'normalize_events: a native event keeps a list of patterns',
+    fn = function()
+      -- Neovim accepts a list of patterns, so the list has to survive the
+      -- normalization. It used to be dropped, and the trigger then matched
+      -- every file instead of the ones the user listed.
+      local events = utils.normalize_events({
+        'BufReadPost',
+        pattern = { '*.lua', '*.vim' },
+      })
+      test.assert_eq(#events, 1)
+      test.assert_eq(events[1].event, 'BufReadPost')
+      test.assert_eq(type(events[1].pattern), 'table')
+      test.assert_eq(events[1].pattern[1], '*.lua')
+      test.assert_eq(events[1].pattern[2], '*.vim')
+    end,
+  },
+
+  {
+    name = 'normalize_events: a User event keeps a list of patterns',
+    fn = function()
+      local events = utils.normalize_events({
+        'User',
+        pattern = { 'ResonanceA', 'ResonanceB' },
+      })
+      test.assert_eq(#events, 1)
+      test.assert_eq(events[1].event, 'User')
+      test.assert_true(events[1].user)
+      test.assert_eq(type(events[1].pattern), 'table')
+      test.assert_eq(events[1].pattern[1], 'ResonanceA')
+      test.assert_eq(events[1].pattern[2], 'ResonanceB')
+    end,
+  },
+
+  {
     name = 'normalize_events: is idempotent',
     fn = function()
       local once = utils.normalize_events({ 'BufReadPost', { event = 'User', pattern = 'VeryLazy', user = true } })

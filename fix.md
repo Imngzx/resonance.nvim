@@ -598,7 +598,7 @@ The new assertion reports the entries.
 **Mutation-verified:** removing the close-time cleanup in `render.clear()` now fails
 the test (`Expected: 0, Actual: 49`). It passed before the fix.
 
-### 21. **`utils.normalize_events()` drops a table `pattern`** — LOW
+### 21. **FIXED** — **`utils.normalize_events()` drops a table `pattern`** — LOW
 
 - **File:** `lua/resonance/utils.lua`
 - **Problem:** only `type(event.pattern) == 'string'` is kept. Neovim accepts a list of
@@ -606,6 +606,23 @@ the test (`Expected: 0, Actual: 49`). It passed before the fix.
   patterns.
 - **Verified:** `event[1] event=BufReadPost pattern=nil`.
 - **Fix:** accept a table as well as a string.
+
+#### Status: fixed
+
+`normalize_events()` now keeps a table pattern, for both a native event list and a
+`User` event. The pattern reaches `nvim_create_autocmd`, which creates one autocmd
+per pattern.
+
+**Tests** (`test/spec_spec.lua`, `test/behavior_triggers_spec.lua`):
+
+| Test | Covers |
+|---|---|
+| `a native event keeps a list of patterns` | the list survives the normalization |
+| `a User event keeps a list of patterns` | the `User` shape |
+| `an event keeps a list of patterns` | the list reaches the registered autocmds |
+
+**Mutation-verified:** dropping the table again fails all three tests
+(`Expected: "table", Actual: "nil"`).
 
 ### 22. **`fetch_plugin_details` does not cancel the previous task** — LOW
 
@@ -640,6 +657,6 @@ the test (`Expected: 0, Actual: 49`). It passed before the fix.
 1. **Batch 1 (Tests & P0 bugs) — DONE:** Items `2, 3, 4, 4b, 5, 7`. Item 4b is the user-reported `r`-key notification spam.
 2. **Batch 2 (Performance, Triggers & GC) — DONE:** Items `8, 9, 11, 12`
 3. **Batch 3 (Architecture, Build State & Docs) — DONE:** Items `10, 13, 14, 15, 16`
-4. **Batch 4 (Newly verified) — OPEN:** Items `21`–`23`. Items `17` (broke a user's shortcut),
-   `18` (crashed the whole load on a valid config), `19` (retained a closure) and `20` (a
-   vacuous assertion) are **fixed**. The rest are three small losses.
+4. **Batch 4 (Newly verified) — OPEN:** Items `22`–`23`. Items `17` (broke a user's shortcut),
+   `18` (crashed the whole load on a valid config), `19` (retained a closure), `20` (a vacuous
+   assertion) and `21` (lost a list of patterns) are **fixed**. The rest are two small losses.

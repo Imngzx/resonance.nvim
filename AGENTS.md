@@ -143,9 +143,23 @@ lua-language-server --check=lua/resonance/loader/init.lua   # and the other modu
 
 ```bash
 # startup
-vim-startuptime -count 10 -warmup 3 -- -u NONE \
-  -c "luafile $I/lua/resonance/init.lua" \
+#
+# -vimpath is required: vim-startuptime defaults to the `vim` binary,
+# which is not installed on this machine. Without it the command fails.
+#
+# The runtimepath has to be set explicitly. Under `-u NONE` the plugin
+# directory is not on the runtimepath, so `require('resonance')` fails
+# with "module not found" and the benchmark measures a failed require
+# instead of the plugin.
+I=$HOME/.local/share/nvim/site/pack/core/opt/resonance.nvim
+vim-startuptime -vimpath "$(which nvim)" -count 10 -warmup 3 -- \
+  -u NONE --cmd "set rtp+=$I" \
   -c "lua require('resonance').setup()" -c "qall"
+
+# Baseline, to get the plugin's own cost. Run it too: the startup total
+# is mostly Neovim itself.
+vim-startuptime -vimpath "$(which nvim)" -count 10 -warmup 3 -- \
+  -u NONE -c "qall"
 
 # UI open time
 nvim --headless -c "luafile lua/resonance/init.lua" \

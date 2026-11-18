@@ -7,7 +7,7 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–24 are **resolved**. Batch 4 is **done**.
+> **Status:** items 0–25 are **resolved**. Batch 4 is **done**.
 
 ---
 
@@ -835,6 +835,49 @@ directory`.
 - **Fix:** reset both in `ui.open()`.
 - **Verification:** a behavioural test that leaves the state behind, opens the
   UI, and asserts both are cleared.
+
+### 25. **RESOLVED** — **`vim.async` is loaded eagerly at startup** — PERF
+
+- **File:** `lua/resonance/loader/build.lua`
+- **Problem:** `build.lua` did `local async = vim.async` at module level. The loader
+  requires the build module at setup time, so every Neovim startup paid for
+  `vim.async` and its seven submodules.
+- **Verified:** `vim.async` costs **1.4 ms** to load, and `require('resonance.loader')`
+  pulls in all seven submodules. The loader's require was 1.69 ms; with
+  `vim.async` pre-loaded it was 0.03 ms.
+- **Impact:** ~1.4 ms on every startup, for a build that only runs for a plugin
+  with a build hook whose hash changed.
+- **Fix:** build the async machinery on first use, not at require time.
+- **Verification:** a child-Neovim test that counts the loaded `vim.async`
+  submodules after requiring the build module. It has to run in a child:
+  `vim.async` is cached in the `vim` metatable, so a same-process check can
+  never see it unloaded again.
+
+#### Resolution
+
+The async machinery (`async.wrap`, `async.semaphore`) is now built on first use.
+
+**Benchmark** (`vim-startuptime -vimpath "$(which nvim)" -count 20 -warmup 3`):
+
+| Measurement | Before | After |
+|---|---|---|
+| Startup, with resonance | 8.44 ms avg | **6.80 ms avg** |
+| Startup, baseline (`-u NONE`) | 4.65 ms avg | 4.45 ms avg |
+| Resonance's own cost | ~3.8 ms | **~2.35 ms** |
+
+**Test** (`test/build_spec.lua`) — `the build module does not load vim.async until
+a build runs`.
+
+**Mutation-verified:** loading `vim.async` eagerly again fails the test
+(`Expected: 0, Actual: 7`).
+
+#### Benchmark methodology
+
+The startup benchmark in `AGENTS.md` was measuring the wrong thing: it did
+not pass `-vimpath`, and `vim` is not installed on this machine, so the
+command failed outright. It also did not set the runtimepath, so under `-u NONE`
+`require('resonance')` failed with "module not found" and the benchmark timed a
+failed require. Both are fixed in `AGENTS.md`.
 
 ---
 

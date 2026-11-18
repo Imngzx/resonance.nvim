@@ -205,7 +205,8 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 | 问题                                      | 位置                                          | 说明                                                                                                                                                                                                               |
 | ----------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`vim.async` 硬依赖，require 期无守卫**  | `loader/build.lua:10,16-17`                   | 在模块加载时就执行 `async.wrap(...)`。`nvim 0.12.6`（stable）实测：`require('resonance.loader')` → `attempt to index local 'async' (a nil value)`。本项目要求 0.13+，**决策不修复**。                               |
+| **`vim.async` 在启动时被急切加载** | `loader/build.lua` | **已修复。** `build.lua` 在模块层 `local async = vim.async`，而 loader 在 setup 时就 require 它，于是每次启动都要付 `vim.async` 及其 7 个子模块的加载代价。实测 `vim.async` 加载要 **1.4 ms**；loader 的 require 是 1.69 ms，预加载 `vim.async` 后只要 0.03 ms。现在 async 机制改成首次使用时才建，启动时间 8.44 ms → **6.80 ms** |
+| **`vim.async` 硬依赖，require 期无守卫**  | `loader/build.lua:10,16-17`                   | 在模块加载时就执行 `async.wrap(...)`。`nvim 0.12.6`（stable）实测：`require('resonance.loader')` → `attempt to index local 'async' (a nil value)`。本项目要求 0.13+，**决策不修复**。 （注：上面的急切加载问题已单独修掉，现在 `async.wrap` 也是首次使用时才建）                               |
 
 ---
 

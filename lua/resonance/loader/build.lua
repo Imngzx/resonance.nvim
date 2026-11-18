@@ -9,20 +9,42 @@ local fs_write = uv.fs_write
 local fs_close = uv.fs_close
 local fs_mkdir = uv.fs_mkdir
 local fs_stat = uv.fs_stat
-local async = vim.async
 local system = vim.system
 local schedule = vim.schedule
 local type = type
 local tostring = tostring
 local fn_stdpath = vim.fn.stdpath
-local _system_async = async.wrap(3, system)
+
+-- Built on first use; see get_async() below.
+local _system_async = nil
+local build_semaphore = nil
+
+-- vim.async costs ~1.4 ms to load: it pulls in seven submodules. The
+-- loader requires this module at setup time, but a build only runs for
+-- a plugin that has a build hook and whose hash changed -- rarely, and
+-- never at startup for most setups.
+--
+-- So the async machinery is built on first use rather than at require
+-- time. The cost then lands on the build that needs it, not on every
+-- Neovim startup.
+--
+-- @return table The vim.async module.
+local function get_async()
+  local async = vim.async
+  if not _system_async then
+    _system_async = async.wrap(3, system)
+    build_semaphore = async.semaphore(2)
+  end
+  return async
+end
+
 ---@param cmd string[]
 ---@param opts table
 ---@return vim.SystemCompleted
 local function system_async(cmd, opts)
+  get_async()
   return _system_async(cmd, opts) --[[@as vim.SystemCompleted]]
 end
-local build_semaphore = async.semaphore(2)
 
 M.build_hooks = {}
 
@@ -122,7 +144,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
   end
 
   schedule(function()
-    local build_run = async.run('resonance_build:' .. name, function()
+    local build_run = get_async().run('resonance_build:' .. name, function()
       if type(build_task) == 'function' then
         -- A Lua build hook may be synchronous, or it may hand back an
         -- object for work it started itself. Marking the build as

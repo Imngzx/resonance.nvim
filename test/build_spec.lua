@@ -20,6 +20,45 @@ end
 test.run_suite('resonance.loader.build', {
 
   {
+    name = 'the build module does not load vim.async until a build runs',
+    fn = function()
+      -- vim.async costs ~1.4 ms to load: it pulls in seven submodules. The
+      -- loader requires the build module at setup time, so loading it
+      -- eagerly put that cost on every Neovim startup, for a build that
+      -- only runs for a plugin with a build hook whose hash changed.
+      --
+      -- The check has to run in a child Neovim: vim.async is cached in the
+      -- vim metatable, so once anything has touched it, a same-process
+      -- check can never see it unloaded again.
+      local root = vim.fn.tempname()
+      vim.fn.mkdir(root, 'p')
+      local script = root .. '/child.lua'
+      local child = ([[
+        vim.opt.runtimepath:append(%q)
+        require('resonance.loader.build')
+        local n = 0
+        for k in pairs(package.loaded) do
+          if k:match('^vim%%.async') then n = n + 1 end
+        end
+        print('ASYNC_COUNT:' .. n)
+      ]]):format(vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim')
+      vim.fn.writefile(vim.split(child, '\n', { plain = true }), script)
+
+      local out = vim.fn.system({
+        'nvim', '--headless', '-u', 'NONE',
+        '-c', 'luafile ' .. script,
+        '-c', 'qall',
+      })
+      test.assert_eq(vim.v.shell_error, 0, 'the child nvim failed:\n' .. out)
+
+      local count = out:match('ASYNC_COUNT:(%d+)')
+      test.assert_not_nil(count, 'the child printed no count:\n' .. out)
+      test.assert_eq(tonumber(count), 0,
+        'requiring the build module loaded ' .. count .. ' vim.async submodule(s)')
+    end,
+  },
+
+  {
     name = 'mark_build_success: writes the hash to the state directory',
     fn = function()
       local name = 'marker-test-' .. os.time()

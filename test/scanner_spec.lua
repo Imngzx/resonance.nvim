@@ -133,8 +133,8 @@ test.run_suite('resonance.scanner', {
   {
     name = 'fallback: loaded count matches loaded=true entries',
     fn = function()
-      local orig_pack = rawget(vim, 'pack')
-      rawset(vim, 'pack', nil)
+      local orig_pack = rawget(vim, 'pack') or vim.pack
+      require('resonance.utils').disable_pack()
       package.loaded['resonance.scanner'] = nil
       local fallback_scanner = require('resonance.scanner')
 
@@ -157,7 +157,7 @@ test.run_suite('resonance.scanner', {
         and #info.plugins.disabled == info.total
       test.assert_true(all_arrays_same_length)
 
-      rawset(vim, 'pack', orig_pack)
+      require('resonance.utils').restore_pack(orig_pack)
       package.loaded['resonance.scanner'] = nil
     end,
   },
@@ -165,8 +165,8 @@ test.run_suite('resonance.scanner', {
   {
     name = 'fallback: discovers real plugin directories',
     fn = function()
-      local orig_pack = rawget(vim, 'pack')
-      rawset(vim, 'pack', nil)
+      local orig_pack = rawget(vim, 'pack') or vim.pack
+      require('resonance.utils').disable_pack()
       package.loaded['resonance.scanner'] = nil
       local fallback_scanner = require('resonance.scanner')
 
@@ -182,7 +182,7 @@ test.run_suite('resonance.scanner', {
         test.assert_eq(info.plugins.type[i], 'opt')
       end
 
-      rawset(vim, 'pack', orig_pack)
+      require('resonance.utils').restore_pack(orig_pack)
       package.loaded['resonance.scanner'] = nil
     end,
   },
@@ -190,8 +190,8 @@ test.run_suite('resonance.scanner', {
   {
     name = 'fallback: does not report unloaded plugins as loaded',
     fn = function()
-      local orig_pack = rawget(vim, 'pack')
-      rawset(vim, 'pack', nil)
+      local orig_pack = rawget(vim, 'pack') or vim.pack
+      require('resonance.utils').disable_pack()
       package.loaded['resonance.scanner'] = nil
       local fallback_scanner = require('resonance.scanner')
 
@@ -208,7 +208,7 @@ test.run_suite('resonance.scanner', {
         end
       end
 
-      rawset(vim, 'pack', orig_pack)
+      require('resonance.utils').restore_pack(orig_pack)
       package.loaded['resonance.scanner'] = nil
     end,
   },
@@ -216,8 +216,8 @@ test.run_suite('resonance.scanner', {
   {
     name = 'fallback: disabled plugins are excluded from loaded count',
     fn = function()
-      local orig_pack = rawget(vim, 'pack')
-      rawset(vim, 'pack', nil)
+      local orig_pack = rawget(vim, 'pack') or vim.pack
+      require('resonance.utils').disable_pack()
       package.loaded['resonance.scanner'] = nil
       local fallback_scanner = require('resonance.scanner')
 
@@ -228,7 +228,7 @@ test.run_suite('resonance.scanner', {
         end
       end
 
-      rawset(vim, 'pack', orig_pack)
+      require('resonance.utils').restore_pack(orig_pack)
       package.loaded['resonance.scanner'] = nil
     end,
   },

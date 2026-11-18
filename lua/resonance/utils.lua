@@ -74,15 +74,76 @@ function M.get_local_hash(path)
 end
 
 --- Resolve the native vim.pack module, if available.
---- `vim.pack` is lazily rehydrated by the `vim` metatable's __index, so assigning
---- nil to it is silently undone on the next read. Reading the raw field avoids
---- that rehydration: a raw nil means vim.pack was explicitly disabled and the
---- caller should use the filesystem fallback.
+---
+--- `vim.pack` is lazily rehydrated by the vim metatable's __index. The raw
+--- field is nil until the module has been read once, so reading it alone
+--- would report "no vim.pack" in a fresh session -- and the caller would
+--- fall back to the filesystem scan, and the install path would fail.
+---
+--- So the module is read once to materialize it, and the raw field is
+--- checked afterwards. The raw field is `false` when the module was
+--- disabled on purpose: the lazy __index only fills a nil field, so a
+--- false stays false. That is the "no vim.pack" case, and the caller
+--- falls back to the filesystem scan.
+---
+--- The check is done once: the result is remembered, so the hot paths do
+--- not pay for the rehydration check on every call.
 ---@return table|nil
+local _pack_cache = nil
+local _pack_checked = false
 function M.get_pack()
+  if _pack_checked then return _pack_cache end
+
+  -- Reading vim.pack materializes the lazy module. The value is
+  -- discarded: the raw field is what decides.
+  local ok = pcall(function() return vim.pack end)
   local pack = rawget(vim, 'pack')
-  if type(pack) ~= 'table' or type(pack.get) ~= 'function' then return nil end
-  return pack
+  if ok and type(pack) == 'table' and type(pack.get) == 'function' then
+    _pack_cache = pack
+  else
+    _pack_cache = nil
+  end
+  _pack_checked = true
+  return _pack_cache
+end
+
+--- Disable the native vim.pack module.
+---
+--- For testing, and for a user who wants the filesystem fallback. The
+--- lazy __index only fills a nil field, so false stays false: the module
+--- really is gone.
+function M.disable_pack()
+  rawset(vim, 'pack', false)
+  _pack_cache = nil
+  _pack_checked = true
+end
+
+--- Restore the native vim.pack module.
+---
+--- For testing: the counterpart of disable_pack(). The module is
+--- materialized first, so the raw field holds the real module again --
+--- reading vim.pack while the raw field is false would just give false
+--- back.
+---@param original table|nil the value to restore, when there is one
+function M.restore_pack(original)
+  if not original then
+    -- Clear the false, so the lazy loader can materialize the module.
+    rawset(vim, 'pack', nil)
+    pcall(function() return vim.pack end)
+    original = rawget(vim, 'pack')
+  end
+  rawset(vim, 'pack', original)
+  _pack_cache = nil
+  _pack_checked = false
+end
+
+--- Forget the cached vim.pack lookup.
+---
+--- For testing: a test that changes vim.pack has to be able to make the
+--- loader see the change.
+function M.reset_pack_cache()
+  _pack_cache = nil
+  _pack_checked = false
 end
 
 ---@param msg string

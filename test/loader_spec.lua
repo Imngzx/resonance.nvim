@@ -71,8 +71,8 @@ test.run_suite('resonance.loader.init', {
     fn = function()
       -- vim.pack is lazily rehydrated by the vim metatable, so nil it out via
       -- rawset to actually exercise the filesystem fallback.
-      local orig_pack = rawget(vim, 'pack')
-      rawset(vim, 'pack', nil)
+      local orig_pack = rawget(vim, 'pack') or vim.pack
+      require('resonance.utils').disable_pack()
       loader._reset()
       package.loaded['resonance.loader'] = nil
       local fallback_loader = require('resonance.loader')
@@ -85,7 +85,7 @@ test.run_suite('resonance.loader.init', {
       test.assert_true(dir:match('/opt/resonance%.nvim$') ~= nil)
       test.assert_true(vim.uv.fs_stat(dir) ~= nil)
 
-      rawset(vim, 'pack', orig_pack)
+      require('resonance.utils').restore_pack(orig_pack)
       loader._reset()
       package.loaded['resonance.loader'] = nil
     end,

@@ -635,8 +635,8 @@ test.run_suite('resonance.loader.deep', {
     fn = function()
       -- vim.pack is lazily rehydrated by the vim metatable, so nil it out via
       -- rawset to actually exercise the filesystem fallback.
-      local original_pack = rawget(vim, 'pack')
-      rawset(vim, 'pack', nil)
+      local original_pack = rawget(vim, 'pack') or vim.pack
+      require('resonance.utils').disable_pack()
       _G.resonance.setup({})
       _G.resonance.load({src = 'https://github.com/test/fallback', event = 'BufReadPre'})
       local info = _G.scanner.get_info()
@@ -645,7 +645,7 @@ test.run_suite('resonance.loader.deep', {
         test.assert_not_eq(info.plugins.name[i], 'opt')
         test.assert_not_eq(info.plugins.name[i], 'start')
       end
-      rawset(vim, 'pack', original_pack)
+      require('resonance.utils').restore_pack(original_pack)
     end,
   },
 })

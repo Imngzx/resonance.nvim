@@ -3,6 +3,7 @@
 > **Purpose:** the hard rules for editing this codebase. Read it, then read
 > the source — the source wins.
 > **Target:** Neovim **0.13+** (`vim.pack` + `vim.async` both required).
+> by [Stellar:Vim](https://github.com/Imngzx/stellar-vim).
 
 ---
 

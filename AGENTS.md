@@ -13,6 +13,7 @@
 | `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `stats()`, `open_ui()`, `has_fired()`, `replay_for_buffer()` |
 | `lua/resonance/registry.lua` | Shared pure data: specs, triggers, disabled plugins, load times, plugin dirs. No side effects. |
 | `lua/resonance/loader/` | Control plane: `init` (load/force-load), `spec` (normalize), `triggers` (autocmd/cmd/keymap/ft), `build` (build hooks), `dag` (dependency + event-chain data) |
+| `lua/resonance/builds.lua` | Per-plugin build state: status, wait, `on_complete`, output tail, hard timeout, cross-session PID lock. Requires nothing from the loader. |
 | `lua/resonance/scanner.lua` | Read-only discovery of installed plugins (SOA parallel arrays) |
 | `lua/resonance/ui/` | Panel: `init` (window + keymaps), `state` (singleton), `render`, `actions` |
 | `lua/resonance/utils.lua` | Shared helpers — **`utils.get_pack()` lives here** |
@@ -35,9 +36,10 @@ Installed copy (what users actually run, and what the test suite exercises):
 ~/.local/share/nvim/site/pack/core/opt/resonance.nvim/
 ```
 
-**Open issues live in `plan.md` (repo root).** Read it before starting work —
-it lists every unresolved bug with reproduction steps. `fix.md` and
-`note/knowledge/fix-notes.md` are history, not a task list.
+**Open issues live in GitHub Issues.** History is `git log`; the *why* of
+each fix lives in the code comments and the regression tests. Keep any
+working plan in a local, untracked file (for example via
+`.git/info/exclude`) and do not commit it.
 
 ---
 
@@ -186,15 +188,12 @@ address it.
 `stdpath('state') .. '/resonance/builds/'`, keyed by plugin name — never
 in the plugin's own directory, which dirties its git worktree.
 
-**A build-system rework is planned** — see `plan.md` Batch 5 / `fix.md` P4
-(items 27–30). Three confirmed defects: `setup()` runs before the build
-finishes, a build that exits 0 while printing errors is reported as
-succeeded, and one load can start two concurrent builds. The fix is a
-new `lua/resonance/builds.lua` that owns the per-plugin build state
-(status, wait, output tail, cross-session PID lock), with the settled
-decisions: background builds never block the editor, only the exit code
-decides success, and there are two separate timeouts (a notify threshold
-and a hard build timeout).
+**Build state lives in `lua/resonance/builds.lua`.** The settled rules:
+one build per plugin at a time; only the exit code decides success;
+`setup()` runs after the build (a `cmd`/`keys` load waits, bounded; an
+automatic load defers until every build of the spec settles); a failed
+build still gets its plugin set up; background builds never block the
+editor. See `:h resonance-build-order`.
 
 **A trigger pattern may be a list** — `normalize_events()` keeps a table
 pattern as a table, because Neovim accepts a list of patterns on an

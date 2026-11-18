@@ -9,8 +9,11 @@
 --   nvim --headless -c "luafile test/runner.lua" -c "luafile test/behavior_spec.lua" -c "qall"
 
 local SUITES = {
+  'test/behavior_arch_spec.lua',
+  'test/behavior_build_spec.lua',
   'test/behavior_chain_spec.lua',
   'test/behavior_replay_spec.lua',
+  'test/behavior_stats_spec.lua',
   'test/behavior_triggers_spec.lua',
   'test/behavior_ui_spec.lua',
 }

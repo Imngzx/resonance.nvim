@@ -18,8 +18,9 @@ CONTENTS                                                 *resonance-contents*
 6. API Reference                         |resonance-api|
    6.1 Main Functions                    |resonance-api-main|
    6.2 Loader Module                     |resonance-api-loader|
-   6.3 Scanner Module                    |resonance-api-scanner|
-   6.4 UI Module                         |resonance-api-ui|
+   6.3 Builds Module                     |resonance-api-builds|
+   6.4 Scanner Module                    |resonance-api-scanner|
+   6.5 UI Module                         |resonance-api-ui|
 7. Events                                |resonance-events|
 8. Fallback Mode                         |resonance-fallback|
 9. Performance                           |resonance-performance|
@@ -230,6 +231,28 @@ Build runs automatically:
 The commit is read from the plugin's git files, so the check spawns no
 subprocesses.
 
+The build verdict is the exit code, and nothing else. A build that exits 0
+is a success even when stderr is not empty -- yarn, npm, cargo and make all
+write warnings and progress to stderr on a successful build. The output of
+both streams is captured and shown with a failure, so a swallowed error is
+still visible.
+
+                                                    *resonance-build-order*
+The setup runs after the build has finished. A plugin is never set up
+against a half-built tree -- a setup that expects the build's output (a
+node_modules directory, a compiled native module) would otherwise fail.
+
+- A plugin loaded by a command or a keymap waits for its build. The wait
+  is bounded; if the build outlasts it, the setup is deferred and you are
+  told the build is still running.
+- A plugin loaded by an event, a filetype or an eager load does not wait.
+  The editor is never blocked by a build it did not ask for, and the
+  setup runs when the build finishes.
+
+A build that fails does not stop the plugin from being set up. The failure
+is reported, and the setup runs anyway -- the plugin may still work without
+the build's artifacts.
+
 4.4 Version Pinning                                *resonance-version*
 
 Pin to specific tag, branch, or commit:
@@ -435,7 +458,63 @@ actually has.
     loader.specs
         Table of plugin_name -> raw spec config
 
-6.3 Scanner Module                                 *resonance-api-scanner*
+6.3 Builds Module                                  *resonance-api-builds*
+
+    local builds = require('resonance.builds')
+
+    The build tracker. It holds the state of the builds and answers the
+    queries; the loader keeps the mechanics. The module can be required
+    on its own -- it does not pull in the loader.
+
+    builds.status(name)
+        The state of one build.
+        Returns: {state = 'pending'|'running'|'ok'|'failed',
+                  started_at = hrtime, elapsed = ms,
+                  error = string|nil, output_tail = string|nil,
+                  pid = number|nil} or nil when there is no such build
+
+    builds.wait(name, timeout_ms)
+        Pump the event loop until the build settles. The default timeout
+        is 30 seconds.
+        Returns: boolean ok, string|nil err
+        Note: a failure and a timeout both report ok=false. Ask
+        builds.status() which it was -- a failed build is over, a timeout
+        means the build is still running.
+
+    builds.is_building(name)
+        Whether a build for this plugin is pending or running.
+        Returns: boolean
+
+    builds.is_busy()
+        Whether any build is pending or running.
+        Returns: boolean
+
+    builds.on_complete(name, fn)
+        Call fn(ok, err) once when the build settles. The callback runs
+        immediately if the build has already settled.
+
+    builds.forget(name)
+        Drop a finished build's state.
+
+    builds.acquire_lock(name, pid)
+        Take the cross-session lock for a plugin, so a second Neovim
+        session does not build it at the same time.
+        Returns: boolean acquired
+
+    builds.holds_lock(name)
+        Whether this session holds the lock for a plugin.
+        Returns: boolean
+
+    builds.release_lock(name)
+        Release the cross-session lock for a plugin.
+
+    builds.stale_locks()
+        The locks whose process is gone. A session that was killed leaves
+        its lock behind; the next session may then rebuild the plugin,
+        because the build's artifacts are cheap to reproduce.
+        Returns: table of plugin names
+
+6.4 Scanner Module                                 *resonance-api-scanner*
 
     local scanner = require('resonance.scanner')
 
@@ -453,7 +532,7 @@ actually has.
     scanner.load_times
         Table of plugin_name -> load_time_ms
 
-6.4 UI Module                                      *resonance-api-ui*
+6.5 UI Module                                      *resonance-api-ui*
 
     local ui = require('resonance.ui')
     local actions = require('resonance.ui.actions')

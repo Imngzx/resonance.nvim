@@ -212,7 +212,7 @@ so nothing fires twice. They detect a replay that fires **too much**. The
 Both directions are covered, so the suite now has a real safety net for the
 replay logic — which is what made the item 0 fix verifiable.
 
-### 2. Fix `lazy = true` combined with `event` crashing and dropping triggers
+### 2. **FIXED** — Fix `lazy = true` combined with `event` crashing and dropping triggers
 
 - **Files:** `lua/resonance/loader/spec.lua`, `lua/resonance/utils.lua`, `lua/resonance/loader/triggers.lua`
 - **Problem:**
@@ -223,13 +223,13 @@ replay logic — which is what made the item 0 fix verifiable.
 - **Fix:** Normalize multi-event / mixed `User` + native event specs cleanly across `spec.parse_config()`, `utils.parse_trigger()`, and `triggers.register_event()` (e.g., register each `User` entry separately from plain event names instead of mixing tables into a string list).
 - **Verification:** Add end-to-end tests in `test/behavior_spec.lua` (with `test.stub_pack()`) calling `resonance.load()` for `lazy = true` + string `event`, array `event`, and `{ 'User', pattern = ... }`, verifying both the primary event and `VeryLazy` can trigger loading without errors.
 
-### 3. Handle specs with neither triggers nor `lazy`
+### 3. **FIXED** — Handle specs with neither triggers nor `lazy`
 
 - **Files:** `lua/resonance/loader/spec.lua`, `lua/resonance/loader/init.lua`
 - **Problem:** A spec with no `event`/`cmd`/`keys`/`ft` and `lazy == nil` (like the `version = 'v1.0.0'` example in `README.md`) registers nothing in `triggers.register_all()`. It is silently never installed and never loaded unless referenced as a dependency.
 - **Fix:** Choose explicit behavior—either default triggerless specs (`lazy == nil` and no `event`/`cmd`/`keys`/`ft`) to `lazy = false` (`VimEnter`, or `VeryLazy` if preferred, updating docs to match), or emit a clear `utils.notify(..., vim.log.levels.WARN)` warning when a top-level spec has no triggers. Add a test in `test/behavior_spec.lua`.
 
-### 4. Propagate dependency load/install failure when dependency is in `M.specs`
+### 4. **FIXED** — Propagate dependency load/install failure when dependency is in `M.specs`
 
 - **File:** `lua/resonance/loader/init.lua`
 - **Problem:** In `load_now()`, inline dependencies (`else` branch) call `return fail_install(...)` when install fails, aborting the parent plugin. Dependencies registered via `resonance.load()` (`if spec_name and M.specs[spec_name]`) call `fn(nil, visiting_path)` (`force_load_fns[spec_name]`) and ignore the result—so if the dependency fails `pack_install`/`is_installed`, the parent still installs and executes `setup()` with a broken dependency.
@@ -316,13 +316,13 @@ again nor queues a second check.
 | `pending_count` reset removed | `actions: check_updates_network resets the pending count` (`Expected: 0, Actual: 7`) |
 | path filter removed | `actions: check_updates_network skips plugins without a path` (`Expected: 1, Actual: 2`) |
 
-### 7. Cancel `details_task` and clean UI state on `BufWipeout` (e.g. `:q`)
+### 7. **FIXED** — Cancel `details_task` and clean UI state on `BufWipeout` (e.g. `:q`)
 
 - **File:** `lua/resonance/ui/init.lua`
 - **Problem:** `cancel_details_task()` is only wired to `q` and `<Esc>` keymaps. Closing the window via `:q` or `<C-w>c` leaves `details_task` uncancelled and `st.state.buf` non-nil, so Pass 2 still runs `pack.get(info=true)` after 50ms.
 - **Fix:** Register a `BufWipeout` autocmd (`once = true`, `buffer = st.state.buf`) inside `ui.open()` that calls `cancel_details_task()` and clears `st.state.win, st.state.buf = nil, nil`. Add a test closing the UI window via `nvim_win_close` / `:bwipeout` and verifying `details_task` is cancelled.
 
-### 8. Clean up sibling triggers after load & fix `keys`/`cmd` stub edge cases
+### 8. **FIXED** — Clean up sibling triggers after load & fix `keys`/`cmd` stub edge cases
 
 - **Files:** `lua/resonance/loader/triggers.lua`, `lua/resonance/loader/init.lua`
 - **Problem:**
@@ -335,25 +335,25 @@ again nor queues a second check.
 
 ## P1 — Performance (300-Plugin Scaling) & Memory Retention
 
-### 9. Lazy-load `branches` / `tags` on `<CR>` expand instead of bulk `info = true` on UI open
+### 9. **FIXED** — Lazy-load `branches` / `tags` on `<CR>` expand instead of bulk `info = true` on UI open
 
 - **Files:** `lua/resonance/ui/init.lua`, `lua/resonance/ui/actions.lua`
 - **Problem:** Pass 2 (`details_task` in `ui/init.lua`) calls `vim.pack.get(nil, { offline = true, info = true })` for **every** installed plugin 50ms after opening (~420ms at 49 plugins, ~2.5s main-thread freeze at 300 plugins), even though `branches` and `tags` are only rendered when a row is expanded via `<CR>`.
 - **Fix:** Remove the bulk 50ms `info = true` Pass 2 from `ui.open()`. In `actions.toggle_details()`, when expanding `name` and `st.state.pack_details[name]` does not yet have `branches`/`tags`, query `pack.get({ name }, { offline = true, info = true })` for just that single plugin and re-render.
 
-### 10. Bound startup `check_and_build` concurrency & avoid unnecessary `git` spawns
+### 10. **FIXED** — Bound startup `check_and_build` concurrency & avoid unnecessary `git` spawns
 
 - **Files:** `lua/resonance/loader/build.lua`, `lua/resonance/ui/state.lua`
 - **Problem:** `check_and_build()` spawns an unbounded `git rev-parse HEAD` subprocess via `async.run` for every plugin with a `build` hook at startup. Also, `run_build()` calls `mark_build_success()` immediately after `build_task(dir)` returns, even if a Lua `build` function spawns async work.
 - **Fix:** Gate `git rev-parse HEAD` behind a bounded semaphore (or read `.git/HEAD` / `packed-refs` directly via `vim.uv`, sharing a helper with `ui/state.lua` so zero subprocesses are spawned on startup); document or support a completion callback for async Lua `build` hooks.
 
-### 11. Fix contradictory allocations in `ui/render.lua` & deduplicate `ui.open()` renders
+### 11. **FIXED** — Fix contradictory allocations in `ui/render.lua` & deduplicate `ui.open()` renders
 
 - **Files:** `lua/resonance/ui/render.lua`, `lua/resonance/ui/init.lua`
 - **Problem:** `nl()` sets `line_parts = {}` on every line despite `table_clear(line_parts)` in `reset_render_state()`; `reset_render_state()` allocates fresh `st.state.line_to_name = {}` and `st.state.name_to_line = {}`; `ui.open()` performs a synchronous `render()` plus `chunk()` `schedule_render()` plus a trailing `schedule_render()`.
 - **Fix:** Use `table_clear(line_parts)` in `nl()`, `table_clear(st.state.line_to_name)` / `table_clear(st.state.name_to_line)` in `reset_render_state()`, and drop the duplicate trailing `schedule_render()` in `ui.open()`.
 
-### 12. Prune long-session memory retention
+### 12. **FIXED** — Prune long-session memory retention
 
 - **Files:** `lua/resonance/loader/init.lua`, `lua/resonance/ui/actions.lua`, `lua/resonance/ui/init.lua`, `lua/resonance/ui/render.lua`
 - **Fix:**
@@ -366,12 +366,12 @@ again nor queues a second check.
 
 ## P2 — Architecture, Cache Consistency, Tests & Docs
 
-### 13. Move `.resonance_built` to `stdpath('state')` & invalidate `_plugin_dir_cache`
+### 13. **FIXED** — Move `.resonance_built` to `stdpath('state')` & invalidate `_plugin_dir_cache`
 
 - **Files:** `lua/resonance/loader/build.lua`, `lua/resonance/loader/init.lua`
 - **Fix:** Store build hash markers under `vim.fn.stdpath('state') .. '/resonance/builds/' .. name` (migrating/ignoring old markers cleanly) so plugin git repos are not dirtied. Update or clear `_plugin_dir_cache` on `PackChanged` (`install`/`delete`) and after `pack_install()`.
 
-### 14. Break `scanner` ↔ `loader` circular dependency & stop mutating user specs
+### 14. **FIXED** — Break `scanner` ↔ `loader` circular dependency & stop mutating user specs
 
 - **Files:** `lua/resonance/scanner.lua`, `lua/resonance/utils.lua`, `lua/resonance/loader/init.lua`, `lua/resonance/loader/spec.lua`, `lua/resonance/ui/render.lua`
 - **Fix:**
@@ -379,13 +379,13 @@ again nor queues a second check.
   - Stop mutating caller-owned `config` tables in `spec.parse_config()` and `load_now()` (`config._replay_done` should live in `plugin_state` / `registry`).
   - *(Optional cleanup)* Replace the 9-array SoA + `apply_sort()` in `scanner.lua` / `utils.lua` with a plain array of plugin entry tables sorted in-place.
 
-### 15. Fix `M.stats()` caching & implement `M._reset()`
+### 15. **FIXED** — Fix `M.stats()` caching & implement `M._reset()`
 
 - **File:** `lua/resonance/init.lua`
 - **Problem:** `M.stats()` freezes `loaded` and `count` on first call forever; `test/runner.lua` checks `resonance._reset()`, which does not exist.
 - **Fix:** Freeze only `startuptime` (`_end_time`) at `UIEnter`/`VimEnter` or first `stats()` call; read `count`, `loaded`, and `times` dynamically from `scanner.get_info()`. Implement `M._reset()` to clear `M._cached_stats`, `M._end_time`, and `loader_mod`.
 
-### 16. Fix `test/build_spec.lua` async false positive & align documentation
+### 16. **FIXED** — Fix `test/build_spec.lua` async false positive & align documentation
 
 - **Files:** `test/build_spec.lua`, `doc/resonance.txt`, `README.md`, `AGENTS.md`
 - **Fixes:**
@@ -400,12 +400,140 @@ again nor queues a second check.
 
 ---
 
+## P3 — Newly verified (2026-11-18)
+
+Every item below was checked against the installed copy, not inferred.
+
+### 17. **`register_keys` deletes the plugin's real mapping when the shorthand has no `rhs`** — HIGH
+
+- **File:** `lua/resonance/loader/triggers.lua`
+- **Problem:** `keys = { '<leader>Tg' }` — the shorthand with no `rhs` — means "the plugin
+  defines this mapping itself". When the plugin loads, its `setup()` creates the real
+  mapping, and the teardown that follows deletes it:
+
+  ```lua
+  local function restore_keymap()
+    local del_opts = is_buffer and { buf = target_buf } or {}
+    pcall(del_keymap, mode, lhs, del_opts)      -- deletes whatever is there now
+    if rhs and config.restore_keys ~= false then
+      set_keymap(mode, lhs, rhs, restore_opts)   -- ...and rhs is nil, so nothing is restored
+    end
+  end
+  ```
+
+  The delete is unconditional, so it removes the plugin's mapping, not just the stub.
+  `rhs` being nil means nothing is put back. The user's shortcut is silently dead.
+- **Verified (both paths):**
+
+  | Path | Before | After the load |
+  |---|---|---|
+  | the key itself fired | `rhs=nil callback=true` | `rhs=nil callback=nil` — **gone** |
+  | a sibling trigger fired | `rhs=nil callback=true` | `rhs=nil callback=nil` — **gone** |
+
+- **Fix:** keep a reference to the stub callback and check whether the mapping at
+  teardown time is still that stub. Only then is it the stub to remove; if the plugin
+  has already taken the mapping over, leave it alone. When `rhs` is nil, the stub
+  must not delete anything the plugin owns.
+- **Also in the same function:**
+  - `local feed_mode = opts.noremap and 'n' or 'm'` is inverted. `vim.keymap.set` is
+    noremap by default; `opts.noremap` is nil unless the user asks for it. So a key
+    with no options is replayed with `'m'` — forced remapping. It should be
+    `(opts.remap == true or opts.noremap == false) and 'm' or 'n'`.
+  - The mapping is set twice when the key fires: `restore_keymap()` sets it, then the
+    stub callback sets it again. Same mapping, same options — harmless, but redundant.
+
+### 18. **`register_cmd` raises `E1208` when the command takes no arguments** — MEDIUM
+
+- **File:** `lua/resonance/loader/triggers.lua`
+- **Problem:** the command defaults are `{ nargs = '*', bang = true, range = true,
+  complete = 'file' }`. A spec with `cmd = { name = 'X', opts = { nargs = 0 } }` merges
+  to `nargs = 0` with `complete = 'file'` still set, and Neovim rejects that:
+
+  ```
+  'complete' used without 'nargs'
+  ```
+
+  The error escapes `resonance.load()` and the plugin is never registered.
+- **Verified:** `load ok: false` — `triggers.lua:118: 'complete' used without 'nargs'`.
+- **Fix:** drop `complete` when `nargs` is `0` (or `'0'`), unless the user set it
+  explicitly.
+
+### 19. **`force_load_fns` keeps the user's `setup` closure alive for the whole session** — MEDIUM
+
+- **File:** `lua/resonance/loader/init.lua`
+- **Problem:** `retained_spec()` drops `setup` from the registry copy, so the registry
+  does not hold it. But `force_load_fns[name] = load_now` stores the `load_now`
+  closure, whose upvalue is `config` — and `config.setup` is the user's closure. It
+  is never released.
+- **Verified:** holding the setup closure weakly and clearing `force_load_fns` releases
+  it immediately:
+
+  ```
+  after clearing force_load_fns, closure alive: false
+  ```
+
+  With `force_load_fns` intact the closure is still alive after the load.
+- **Fix:** clear `config.setup` / `config.config` (and the per-plugin `setup` /
+  `config`) once the members have loaded and `member_state.loaded = true`.
+
+### 20. **`test/behavior_ui_spec.lua` asserts `#name_to_line == 0`, which is always true** — LOW
+
+- **File:** `test/behavior_ui_spec.lua`
+- **Problem:** `helpers.count(t)` is `#t`. `name_to_line` is keyed by plugin name
+  (strings), and `#` on a table with only string keys is always `0`. So
+
+  ```lua
+  test.assert_eq(count(st.name_to_line), 0, ...)
+  ```
+
+  passes whether or not the map was cleared. The neighbouring assertion on
+  `line_to_name` happens to work only because its keys are integers — and `#` on a
+  sparse integer table is not the length either.
+- **Fix:** assert with `next(st.name_to_line) ~= nil` before the close and
+  `next(st.name_to_line) == nil` after. Same for `line_to_name`.
+
+### 21. **`utils.normalize_events()` drops a table `pattern`** — LOW
+
+- **File:** `lua/resonance/utils.lua`
+- **Problem:** only `type(event.pattern) == 'string'` is kept. Neovim accepts a list of
+  patterns, so `event = { 'BufReadPost', pattern = { '*.lua', '*.vim' } }` loses its
+  patterns.
+- **Verified:** `event[1] event=BufReadPost pattern=nil`.
+- **Fix:** accept a table as well as a string.
+
+### 22. **`fetch_plugin_details` does not cancel the previous task** — LOW
+
+- **File:** `lua/resonance/ui/actions.lua`
+- **Problem:** `st.state.details_task = task` overwrites the previous task without
+  cancelling it. `cancel_details_task()` exists in `ui/init.lua`, but only the UI
+  close path uses it.
+- **Verified:** expanding two rows in a row runs **two** `info = true` fetches
+  (`detail_calls: 2`) — the first one was never cancelled.
+- **Impact:** redundant work, not corruption: each task writes to its own name key.
+- **Fix:** cancel the previous task before starting a new one.
+
+### 23. **`marker_path` does not sanitize the plugin name** — LOW
+
+- **File:** `lua/resonance/loader/build.lua`
+- **Problem:** `marker_dir .. '/' .. name` — a name with a `/` in it builds a path in a
+  directory that does not exist, and the write is silently dropped.
+- **Verified:** `mark_build_success('evil/name', ...)` returns without error, but
+  nothing is written: `evil/name written: false`, `evil dir created: false`. The
+  build cache is lost for that plugin, so it rebuilds on every check.
+- **Fix:** replace anything outside `[%w_.-]` with `_`, the way
+  `triggers.trigger_group_name` does.
+
+---
+
 ## Suggested Execution Batches
 
 > **See `plan.md`** for the consolidated, code-verified plan of everything still
 > open. This list is the same sequencing, kept here for history.
 
 0. **Batch 0 (REGRESSION) — DONE:** Items `0` and `1`. The UI was broken on `nvim <file>` and open-from-yazi; both are fixed and mutation-verified. Item 1 (restoring the test coverage) had to land first: the replay assertions were vacuous, so there was no safety net to prove the item 0 fix. Item 6 (invalid-buffer guard) landed as part of the item 0 fix and has been removed from this list.
-1. **Batch 1 (Tests & P0 bugs):** Items `2, 3, 4, 4b, 5, 7`. Item 4b is the user-reported `r`-key notification spam.
-2. **Batch 2 (Performance, Triggers & GC):** Items `8, 9, 11, 12`
-3. **Batch 3 (Architecture, Build State & Docs):** Items `10, 13, 14, 15, 16`
+1. **Batch 1 (Tests & P0 bugs) — DONE:** Items `2, 3, 4, 4b, 5, 7`. Item 4b is the user-reported `r`-key notification spam.
+2. **Batch 2 (Performance, Triggers & GC) — DONE:** Items `8, 9, 11, 12`
+3. **Batch 3 (Architecture, Build State & Docs) — DONE:** Items `10, 13, 14, 15, 16`
+4. **Batch 4 (Newly verified) — OPEN:** Items `17`–`23`. Item 17 is the only one that breaks a
+   user's shortcut; the rest are a crash on a valid config, a retained closure, a vacuous
+   assertion, and three small losses.

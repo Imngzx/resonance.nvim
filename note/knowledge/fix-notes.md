@@ -115,18 +115,20 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 
 | 问题                                      | 位置                                          | 说明                                                                                                                                                                                                               |
 | ----------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **无 trigger 的 spec 永远不加载也不安装** | `triggers.register_all`                       | `load()` 只注册触发器；没有 `event/cmd/keys/ft` 就没有任何路径走到 `pack_add`。缺 `lazy=false` / eager 入口，而 `doc/resonance.txt` 还说 "load 由 setup 内部调用"，与实现不符。                                    |
-| **触发器不回收**                          | `triggers.lua`                                | 一个 spec 同时有 event+cmd+keys 时，只有先触发的那个被删；`once` autocmd 之后会空转一次，keymap 残留成"删除→重放"闭包。卸载插件后 specs/triggers 也永不清除。                                                      |
-| **`_plugin_dir_cache` 永不失效**          | `loader/init.lua:129`                         | 首次 `pack.add` 新装的插件不在缓存里，`get_plugin_dir` 返回 nil（`PackChanged` 因带 `data.path` 侥幸绕过）。缓存只在 `M._reset()` 里清空，从不在 `PackChanged` 时失效。                                                    |
 | **UI 状态陈旧**                           | `actions.lua` / `ui/init.lua`                 | **部分已修复**：`check_updates_network` 现在会清空 `updates`（`actions.lua:64`），`pending_count` 也会重置了；但 `pack_details` / `expanded` 在 `open()` 里仍不复位。                                                   |
-| **`BufEnter` 对已存在的文件从不被重放**（2026-11-17 用户发现） | `loader/init.lua:298-306` | `replay_for_buffer()` 的 `is_file` 分支把 `BufEnter` 放进了 `else`，于是只有"非磁盘文件"的 buffer 才会重放它。但 `BufEnter` 对**每个** buffer 都会触发（实测 `nvim <file>` 的事件顺序为 `BufReadPre,BufReadPost,FileType,BufEnter`）。只监听 `BufEnter` 的 trigger group 因此永远不会被重放，插件静默不加载。**当前用户配置未受影响**（没有插件用 `BufEnter` 作 trigger），但缺陷本身成立。 |
+
+> 2026-11-18：上表其余四行均已修复并移入下方已修复表。
 
 ### P1 —— 已修复 (2026-11-17, 续)
 
 | 问题                                      | 修复 Commit | 说明                                                                                                                     |
 | ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `r` 键重复触发时通知刷屏（用户报告）      | 7a8c3e1     | 重入保护原本在 `actions.check_updates_network()` 内部，而通知写在 keymap 里、位于保护之外；该函数无返回值，keymap 无从判断，于是每按一次都弹一条 "Resonating in background..."。现在该函数返回 `boolean`（本次调用是否发起了检查），keymap 只在返回 `true` 时通知——检查期间 `r` 完全失效，既不重复通知也不排队第二次检查 |
-| `check_updates_network` 泄漏 `pending_count`、对空路径执行 fetch | 7a8c3e1 | 每次检查前重置 `pending_count`（`ui.open()` 同步重置）；只对路径非空的插件执行 `git fetch`，不再以 `{ cwd = '' }` 启动进程 |
+| `r` 键重复触发时通知刷屏（用户报告）      | 7bfaabe     | 重入保护原本在 `actions.check_updates_network()` 内部，而通知写在 keymap 里、位于保护之外；该函数无返回值，keymap 无从判断，于是每按一次都弹一条 "Resonating in background..."。现在该函数返回 `boolean`（本次调用是否发起了检查），keymap 只在返回 `true` 时通知——检查期间 `r` 完全失效，既不重复通知也不排队第二次检查 |
+| `check_updates_network` 泄漏 `pending_count`、对空路径执行 fetch | 7bfaabe | 每次检查前重置 `pending_count`（`ui.open()` 同步重置）；只对路径非空的插件执行 `git fetch`，不再以 `{ cwd = '' }` 启动进程 |
+| 无 trigger 的 spec 永远不加载也不安装 | be50123 | 没有 `event/cmd/keys/ft` 也没有 `lazy` 的 spec 现在按 `lazy = false` 处理，在 `VimEnter` 加载；README 与 `doc/resonance.txt` 也改成了同样的说法 |
+| 触发器不回收 | 3275053, 23d4071 | 一个 spec 的任一 trigger 触发后，**所有** sibling trigger 的桩都会被回收。键位桩换成真实映射而不是删除，命令桩在插件 `setup()` 之前就让位 |
+| `_plugin_dir_cache` 永不失效 | 24160c7 | 缓存移到了 `registry.plugin_dirs`，`PackChanged`（install / delete）会让它失效 |
+| `BufEnter` 对已存在的文件从不被重放 | be80437 | `fire_groups('BufEnter')` 已移出 `is_file` 分支，任何 buffer 都会重放它 |
 
 ### P1 —— 已修复 (2026-10-19 至 2026-10-22)
 
@@ -145,6 +147,20 @@ scanner.get_info()                     -- 同步 ~1ms，离线快路径
 | ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `replay_for_buffer` 饿死迟注册的 trigger  | 38375de     | 改为按 **trigger group** 记录已触发状态，而非按事件；`nvim <file>` / yazi 打开时状态栏、bufferline、面包屑不再缺失 |
 | 9 个 replay 测试空跑（断言从未执行）       | 38375de     | 补上 `test.stub_pack()` 并断言 `setup` 确实执行过；正反两个方向都做过 mutation 验证                                  |
+
+### P1 —— 新核验 (2026-11-18)
+
+> 下面每一行都在**已安装副本**上跑过，不是读代码猜的。完整清单见根目录 `fix.md` 的 P3 段。
+
+| 问题                                          | 位置                          | 说明                                                                                                                                                                                                                                    |
+| --------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`keys` 简写无 `rhs` 时删掉插件自己的映射** | `triggers.lua` `restore_keymap` | `keys = { '<leader>Tg' }` 表示"映射由插件自己定义"。插件加载后 `setup()` 建好真实映射，teardown 里的 `pcall(del_keymap, ...)` **无条件删除**它，而 `rhs` 为 nil 所以不会补回来——用户的快捷键静默失效。key 自身触发和 sibling trigger 触发两条路径都验证过：映射都是 `rhs=nil callback=nil`，即被删光 |
+| **`nargs = 0` 的命令触发器报 `E1208`**       | `triggers.lua` `register_cmd`  | 命令默认带 `complete = 'file'`，spec 把 `nargs` 覆盖成 `0` 后 Neovim 拒绝：`'complete' used without 'nargs'`。错误从 `resonance.load()` 抛出，插件根本没注册 |
+| **`force_load_fns` 留住用户的 `setup` 闭包** | `loader/init.lua`              | `retained_spec()` 不留 `setup`，但 `force_load_fns[name] = load_now` 的闭包 upvalue 仍然是 `config`，`config.setup` 因而活到会话结束。清掉 `force_load_fns` 后闭包立刻可回收——验证过 |
+| **`behavior_ui_spec` 的断言恒真**            | `test/behavior_ui_spec.lua`    | `helpers.count(t)` 是 `#t`，而 `name_to_line` 用字符串做键，`#` 对纯字符串键表恒为 `0`。所以 `count(st.name_to_line) == 0` 无论清没清都通过。旁边的 `line_to_name` 侥幸有效，但 `#` 对稀疏整数表也不是长度 |
+| **`normalize_events` 丢掉表形式 `pattern`** | `utils.lua`                    | 只收 `type(pattern) == 'string'`。Neovim 接受 pattern 列表，所以 `pattern = { '*.lua', '*.vim' }` 的 patterns 全丢——验证：回读得到 `pattern=nil` |
+| **`fetch_plugin_details` 不取消上一个任务**  | `ui/actions.lua`               | `st.state.details_task = task` 直接覆盖，不取消旧的。连开两行会跑**两次** `info = true` 抓取（`detail_calls: 2`）。只是冗余，不是数据损坏：每个任务写自己的 name key |
+| **`marker_path` 不清洗插件名**              | `loader/build.lua`             | `marker_dir .. '/' .. name`，名字里带 `/` 就写到不存在的目录，失败被静默吞掉。验证：`mark_build_success('evil/name')` 不报错但什么都没写，构建缓存丢失，每次检查都重新构建 |
 
 ### P2 —— 架构与可维护性
 

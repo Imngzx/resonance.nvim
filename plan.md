@@ -1,10 +1,13 @@
 # resonance.nvim — Open Issues Plan
 
 > **Branch:** `fix`
-> **Baseline:** `38375de` (197 tests passing, 0 failed)
-> **Compiled:** 2026-11-17 by cross-checking `fix.md`, `note/knowledge/fix-notes.md`,
-> and the actual Lua source. Every item below was **verified against the code**,
+> **Baseline:** `24160c7`
+> **Compiled:** 2026-11-17, refreshed 2026-11-18 by cross-checking `fix.md`,
+> `note/knowledge/fix-notes.md`, and the actual Lua source. Every item below was
+> **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
+>
+> **Status:** items 0–16 are **resolved**. Batch 4 (items 17–23) is **open**.
 
 ---
 
@@ -15,10 +18,11 @@ source:
 
 | Source | Items | Result |
 |---|---|---|
-| `fix.md` | 0–16 | 0, 1, 6 **done**; the rest **open** |
-| `note/knowledge/fix-notes.md` | P1/P2/P3 lists | mostly **still open**; a few now **stale** |
+| `fix.md` | 0–16 | **all done** |
+| `note/knowledge/fix-notes.md` | P1/P2/P3 lists | reconciled with the source on 2026-11-18 |
 | `note/knowledge/plan-2026-11-17.md` | items 0–4 | **done** (previous session) |
 | User report (this session) | `r` key notification spam | **confirmed by reproduction** |
+| Fresh audit (2026-11-18) | 17–23 | **confirmed on the installed copy** — Batch 4 |
 
 Items already resolved are listed under "Already resolved" in `fix.md` and are
 **not** repeated in the work batches.
@@ -111,7 +115,7 @@ nothing to fetch — the spinner was raised and the check completes on the
 next tick. It returns `false` only when a check was already running or
 there is no plugin list at all.
 
-### N2. `replay_for_buffer()` never replays `BufEnter` for an existing file
+### N2. **RESOLVED** — `replay_for_buffer()` never replays `BufEnter` for an existing file
 
 - **Severity:** high — a trigger group whose only event is `BufEnter` never
   fires on the `nvim <file>` path, so the plugin silently never loads.
@@ -201,7 +205,7 @@ there is no plugin list at all.
 
 ## Batch 1 — P0 correctness (from `fix.md`)
 
-### 2. `lazy = true` combined with `event` crashes and drops triggers
+### 2. **RESOLVED** — `lazy = true` combined with `event` crashes and drops triggers
 
 - **Files:** `lua/resonance/loader/spec.lua`, `lua/resonance/utils.lua`, `lua/resonance/loader/triggers.lua`
 - **Status:** open — verified in code.
@@ -227,7 +231,7 @@ there is no plugin list at all.
   Each must prove both the primary event and `VeryLazy` can trigger the load
   without error, and must fail before the fix.
 
-### 3. Specs with neither triggers nor `lazy` are silently never installed
+### 3. **RESOLVED** — Specs with neither triggers nor `lazy` are silently never installed
 
 - **Files:** `lua/resonance/loader/spec.lua`, `lua/resonance/loader/init.lua`
 - **Status:** DONE. The false positive is fixed and the docs are corrected;
@@ -243,7 +247,7 @@ there is no plugin list at all.
   the plugin, just pinned.
 - **Verification:** behavioural test asserting the chosen behaviour.
 
-### 4. Dependency failure is not propagated when the dependency is in `M.specs`
+### 4. **RESOLVED** — Dependency failure is not propagated when the dependency is in `M.specs`
 
 - **File:** `lua/resonance/loader/init.lua:517-520`
 - **Status:** open — verified.
@@ -300,7 +304,7 @@ there is no plugin list at all.
 | `pending_count` reset removed | `actions: check_updates_network resets the pending count` (`Expected: 0, Actual: 7`) |
 | path filter removed | `actions: check_updates_network skips plugins without a path` (`Expected: 1, Actual: 2`) |
 
-### 7. `details_task` survives `:q` / `<C-w>c`; UI state is not cleaned up
+### 7. **RESOLVED** — `details_task` survives `:q` / `<C-w>c`; UI state is not cleaned up
 
 - **File:** `lua/resonance/ui/init.lua`
 - **Status:** open — verified. `cancel_details_task()` is wired only to the
@@ -318,7 +322,7 @@ there is no plugin list at all.
 
 ## Batch 2 — Triggers, UX and memory
 
-### 8. Sibling triggers are not cleaned up after a load; `keys`/`cmd` stub edge cases
+### 8. **RESOLVED** — Sibling triggers are not cleaned up after a load; `keys`/`cmd` stub edge cases
 
 - **Files:** `lua/resonance/loader/triggers.lua`, `lua/resonance/loader/init.lua`
 - **Status:** open — verified.
@@ -342,7 +346,7 @@ there is no plugin list at all.
 - **Verification:** behavioural tests — after one trigger fires, the sibling
   triggers of the same plugin are gone.
 
-### 9. `branches` / `tags` are fetched for every plugin on UI open
+### 9. **RESOLVED** — `branches` / `tags` are fetched for every plugin on UI open
 
 - **Files:** `lua/resonance/ui/init.lua`, `lua/resonance/ui/actions.lua`
 - **Status:** open — verified. Pass 2 (`ui/init.lua:184-207`) calls
@@ -360,7 +364,7 @@ there is no plugin list at all.
 - **Verification:** behavioural test — opening the UI must not request
   `info = true` for all plugins; expanding one row must fetch only that one.
 
-### 11. Contradictory allocations in `ui/render.lua`; duplicate renders in `ui.open()`
+### 11. **RESOLVED** — Contradictory allocations in `ui/render.lua`; duplicate renders in `ui.open()`
 
 - **Files:** `lua/resonance/ui/render.lua`, `lua/resonance/ui/init.lua`
 - **Status:** open — verified.
@@ -382,7 +386,7 @@ there is no plugin list at all.
 - **Verification:** no behavioural test needed — this is a pure allocation
   change. Benchmark UI open time to confirm no regression.
 
-### 12. Long-session memory retention
+### 12. **RESOLVED** — Long-session memory retention
 
 - **Files:** `lua/resonance/loader/init.lua`, `lua/resonance/ui/actions.lua`, `lua/resonance/ui/init.lua`, `lua/resonance/ui/render.lua`
 - **Status:** open — verified, all four sub-items are missing.
@@ -405,7 +409,7 @@ there is no plugin list at all.
 
 ## Batch 3 — Architecture, build state and docs
 
-### 10. Startup `check_and_build` spawns an unbounded `git rev-parse` per plugin
+### 10. **RESOLVED** — Startup `check_and_build` spawns an unbounded `git rev-parse` per plugin
 
 - **Files:** `lua/resonance/loader/build.lua`, `lua/resonance/ui/state.lua`
 - **Status:** open — verified. `build.check_and_build()` (`build.lua:93-99`)
@@ -423,7 +427,7 @@ there is no plugin list at all.
 - **Verification:** behavioural test — `check_and_build` on N plugins must
   not spawn N concurrent `git` processes.
 
-### 13. `.resonance_built` pollutes the plugin repo; `_plugin_dir_cache` never invalidates
+### 13. **RESOLVED** — `.resonance_built` pollutes the plugin repo; `_plugin_dir_cache` never invalidates
 
 - **Files:** `lua/resonance/loader/build.lua`, `lua/resonance/loader/init.lua`
 - **Status:** open — verified. `build.lua` writes `.resonance_built` into the
@@ -439,7 +443,7 @@ there is no plugin list at all.
 - **Verification:** behavioural test — a marker written for plugin `foo`
   must not appear inside `foo`'s directory.
 
-### 14. `scanner` ↔ `loader` circular dependency; user specs are mutated
+### 14. **RESOLVED** — `scanner` ↔ `loader` circular dependency; user specs are mutated
 
 - **Files:** `lua/resonance/scanner.lua`, `lua/resonance/utils.lua`, `lua/resonance/loader/init.lua`, `lua/resonance/loader/spec.lua`, `lua/resonance/ui/render.lua`
 - **Status:** DONE — `registry.lua` added, the cycle is broken, the loader's
@@ -499,7 +503,7 @@ there is no plugin list at all.
 - The `config._replay_done` write was already safe: it writes to the
   loader's retained copy, not the user's table.
 
-### 15. `M.stats()` freezes forever; `M._reset()` does not exist
+### 15. **RESOLVED** — `M.stats()` freezes forever; `M._reset()` does not exist
 
 - **File:** `lua/resonance/init.lua`
 - **Status:** DONE — `8ead18f`. `M.stats()` now latches only `startuptime`
@@ -513,7 +517,7 @@ there is no plugin list at all.
 - **Verification:** behavioural test — `stats().loaded` must reflect a
   plugin loaded after the first `stats()` call.
 
-### 16. `test/build_spec.lua` false positive; documentation drift
+### 16. **RESOLVED** — `test/build_spec.lua` false positive; documentation drift
 
 - **Files:** `test/build_spec.lua`, `doc/resonance.txt`, `README.md`, `AGENTS.md`
 - **Status:** DONE — `f5be742`. The false positive is fixed and the docs are
@@ -576,6 +580,121 @@ there is no plugin list at all.
 
 ---
 
+## Batch 4 — Newly verified (2026-11-18)
+
+Every item below was checked against the **installed copy**, not inferred from
+reading the source. Each one names the command output that proves it.
+
+### 17. **`register_keys` deletes the plugin's real mapping when the shorthand has no `rhs`** — HIGH
+
+- **File:** `lua/resonance/loader/triggers.lua`
+- **Problem:** `keys = { '<leader>Tg' }` — the shorthand with no `rhs` — means "the
+  plugin defines this mapping itself". When the plugin loads, its `setup()` creates
+  the real mapping, and the teardown that follows deletes it:
+
+  ```lua
+  local function restore_keymap()
+    local del_opts = is_buffer and { buf = target_buf } or {}
+    pcall(del_keymap, mode, lhs, del_opts)      -- deletes whatever is there now
+    if rhs and config.restore_keys ~= false then
+      set_keymap(mode, lhs, rhs, restore_opts)   -- ...and rhs is nil, so nothing is restored
+    end
+  end
+  ```
+
+  The delete is unconditional, so it removes the plugin's mapping, not just the stub.
+  `rhs` being nil means nothing is put back. The user's shortcut is silently dead.
+- **Verified (both paths):**
+
+  | Path | Before | After the load |
+  |---|---|---|
+  | the key itself fired | `rhs=nil callback=true` | `rhs=nil callback=nil` — **gone** |
+  | a sibling trigger fired | `rhs=nil callback=true` | `rhs=nil callback=nil` — **gone** |
+
+- **Fix:** keep a reference to the stub callback and check whether the mapping at
+  teardown time is still that stub. Only then is it the stub to remove; if the plugin
+  has already taken the mapping over, leave it alone. When `rhs` is nil, the stub
+  must not delete anything the plugin owns.
+- **Also in the same function:**
+  - `local feed_mode = opts.noremap and 'n' or 'm'` is inverted. `vim.keymap.set` is
+    noremap by default; `opts.noremap` is nil unless the user asks for it. So a key
+    with no options is replayed with `'m'` — forced remapping. It should be
+    `(opts.remap == true or opts.noremap == false) and 'm' or 'n'`.
+  - The mapping is set twice when the key fires: `restore_keymap()` sets it, then the
+    stub callback sets it again. Same mapping, same options — harmless, but redundant.
+
+### 18. **`register_cmd` raises `E1208` when the command takes no arguments** — MEDIUM
+
+- **File:** `lua/resonance/loader/triggers.lua`
+- **Problem:** the command defaults are `{ nargs = '*', bang = true, range = true,
+  complete = 'file' }`. A spec with `cmd = { name = 'X', opts = { nargs = 0 } }` merges
+  to `nargs = 0` with `complete = 'file'` still set, and Neovim rejects that.
+- **Verified:** `load ok: false` — `triggers.lua:118: 'complete' used without 'nargs'`.
+- **Fix:** drop `complete` when `nargs` is `0` (or `'0'`), unless the user set it
+  explicitly.
+
+### 19. **`force_load_fns` keeps the user's `setup` closure alive for the whole session** — MEDIUM
+
+- **File:** `lua/resonance/loader/init.lua`
+- **Problem:** `retained_spec()` drops `setup` from the registry copy, so the registry
+  does not hold it. But `force_load_fns[name] = load_now` stores the `load_now`
+  closure, whose upvalue is `config` — and `config.setup` is the user's closure. It
+  is never released.
+- **Verified:** holding the setup closure weakly and clearing `force_load_fns` releases
+  it immediately (`after clearing force_load_fns, closure alive: false`). With
+  `force_load_fns` intact the closure is still alive after the load.
+- **Fix:** clear `config.setup` / `config.config` (and the per-plugin `setup` /
+  `config`) once the members have loaded and `member_state.loaded = true`.
+
+### 20. **`test/behavior_ui_spec.lua` asserts `#name_to_line == 0`, which is always true** — LOW
+
+- **File:** `test/behavior_ui_spec.lua`
+- **Problem:** `helpers.count(t)` is `#t`. `name_to_line` is keyed by plugin name
+  (strings), and `#` on a table with only string keys is always `0`. So
+
+  ```lua
+  test.assert_eq(count(st.name_to_line), 0, ...)
+  ```
+
+  passes whether or not the map was cleared. The neighbouring assertion on
+  `line_to_name` happens to work only because its keys are integers — and `#` on a
+  sparse integer table is not the length either.
+- **Fix:** assert with `next(st.name_to_line) ~= nil` before the close and
+  `next(st.name_to_line) == nil` after. Same for `line_to_name`.
+
+### 21. **`utils.normalize_events()` drops a table `pattern`** — LOW
+
+- **File:** `lua/resonance/utils.lua`
+- **Problem:** only `type(event.pattern) == 'string'` is kept. Neovim accepts a list of
+  patterns, so `event = { 'BufReadPost', pattern = { '*.lua', '*.vim' } }` loses its
+  patterns.
+- **Verified:** `event[1] event=BufReadPost pattern=nil`.
+- **Fix:** accept a table as well as a string.
+
+### 22. **`fetch_plugin_details` does not cancel the previous task** — LOW
+
+- **File:** `lua/resonance/ui/actions.lua`
+- **Problem:** `st.state.details_task = task` overwrites the previous task without
+  cancelling it. `cancel_details_task()` exists in `ui/init.lua`, but only the UI
+  close path uses it.
+- **Verified:** expanding two rows in a row runs **two** `info = true` fetches
+  (`detail_calls: 2`) — the first one was never cancelled.
+- **Impact:** redundant work, not corruption: each task writes to its own name key.
+- **Fix:** cancel the previous task before starting a new one.
+
+### 23. **`marker_path` does not sanitize the plugin name** — LOW
+
+- **File:** `lua/resonance/loader/build.lua`
+- **Problem:** `marker_dir .. '/' .. name` — a name with a `/` in it builds a path in a
+  directory that does not exist, and the write is silently dropped.
+- **Verified:** `mark_build_success('evil/name', ...)` returns without error, but
+  nothing is written: `evil/name written: false`, `evil dir created: false`. The
+  build cache is lost for that plugin, so it rebuilds on every check.
+- **Fix:** replace anything outside `[%w_.-]` with `_`, the way
+  `triggers.trigger_group_name` does.
+
+---
+
 ## Stale entries in `note/knowledge/fix-notes.md`
 
 These rows are **no longer accurate** and should be corrected when
@@ -583,11 +702,13 @@ These rows are **no longer accurate** and should be corrected when
 
 | Row in `fix-notes.md` | Actual status |
 |---|---|
-| P1 "触发器不回收" — only the fired trigger is deleted | **Still true**, now item 8. The `cmd` path deletes its command and the `keys` path deletes its keymap, but siblings survive. |
+| P1 "触发器不回收" — only the fired trigger is deleted | **Fixed** (item 8, commits `3275053` / `23d4071`). All sibling stubs are torn down after a load. |
 | P1 "UI 状态陈旧" — `check_updates_network` does not clear `updates` | **Fixed.** `updates = {}` is cleared (`actions.lua:64`), and `pending_count` is now reset too (item 5). |
 | P1 "UI 状态陈旧" — `pack_details` / `expanded` not reset in `open()` | **Still true.** `ui.open()` resets `updates` and `commits` (`ui/init.lua:135`) but not `pack_details` or `expanded`. |
-| P1 "`_plugin_dir_cache` 永不失效" | **Still true** — item 13. |
+| P1 "`_plugin_dir_cache` 永不失效" | **Fixed** (item 13, commit `24160c7`) — the cache moved to `registry.plugin_dirs` and is invalidated on `PackChanged`. |
 | P2 "零测试、零 CI、无格式化/静态检查配置" | **Partly stale.** There are now 13 test files and 201 passing tests. Still no CI, no `stylua`/`luacheck` config, and no `:checkhealth`. |
+| P1 "无 trigger 的 spec 永远不加载也不安装" | **Fixed** (item 3, commit `be50123`) — triggerless specs load eagerly on `VimEnter`. |
+| P1 "`BufEnter` 对已存在的文件从不被重放" | **Fixed** (commit `be80437`). |
 | P2 "文档漂移" — README uses `Vim.fn` / `Vim.uv` / `Vim.notify` / `Vim.system` | **Stale.** Verified: zero matches in the current README. |
 | P2 "文档漂移" — doc says the DAG key is `g`, code uses `A` | **Stale.** `doc/resonance.txt:224` already says `A`. |
 | P3 "`r` 键阻塞主线程" | **Stale.** `check_updates_network()` uses `vim.async` + a semaphore; the git fetches are non-blocking. The *notification* spam is a separate, new issue — N1. |
@@ -599,10 +720,11 @@ These rows are **no longer accurate** and should be corrected when
 
 | Issue | Where |
 |---|---|
-| `r` key notification spam (N1) | P1, new row |
-| Triggerless specs never install (item 3) | already present as the first P1 row |
-| `stats()` freezes forever / no `M._reset()` (item 15) | P2, new row |
-| `build_spec.lua` false positive (item 16a) | P2, new row |
+| `r` key notification spam (N1) | P1, new row — **added** |
+| Triggerless specs never install (item 3) | already present as the first P1 row — **now fixed** |
+| `stats()` freezes forever / no `M._reset()` (item 15) | P2, new row — **added** |
+| `build_spec.lua` false positive (item 16a) | P2, new row — **added** |
+| Batch 4 items 17–23 | P1, new table — **added 2026-11-18** |
 
 ---
 
@@ -610,11 +732,12 @@ These rows are **no longer accurate** and should be corrected when
 
 ```text
 0. N1  r-key notification spam        ← DONE (with item 5)
-1. N2  BufEnter never replayed        ← user-reported, one-line fix, one test
-2. Batch 1  items 2, 3, 4, 7           ← P0 correctness
-3. Batch 2  items 8, 9, 11, 12         ← triggers, UX, memory
-4. Batch 3  items 10, 13, 15, 16       ← build state, stats, docs
-5.          item 14                    ← architecture; largest blast radius, last
+1. N2  BufEnter never replayed        ← DONE
+2. Batch 1  items 2, 3, 4, 7           ← DONE
+3. Batch 2  items 8, 9, 11, 12         ← DONE
+4. Batch 3  items 10, 13, 14, 15, 16   ← DONE
+5. Batch 4  items 17, 18, 19, 20       ← OPEN; item 17 breaks a user shortcut
+6.          items 21, 22, 23           ← OPEN; small losses
 ```
 
 Rationale for the order:
@@ -642,7 +765,7 @@ Rationale for the order:
 
 ## Definition of done
 
-- Full suite green (baseline: **197 passing, 0 failed**).
+- Full suite green.
 - Every behavioural change has a regression test that **fails against the
   pre-change code** — verified by mutation, not by inspection.
 - LSP diagnostics clean across all source files.
@@ -657,6 +780,6 @@ Rationale for the order:
 ---
 
 *Every issue in this file was verified by reading the current source on
-2026-11-17. The `r`-key spam was additionally reproduced in a headless
-Neovim. Nothing here is copied forward from the notes without re-checking
-it against the code.*
+2026-11-17, and Batch 4 was verified by running it against the installed
+copy on 2026-11-18. Nothing here is copied forward from the notes without
+re-checking it against the code.*

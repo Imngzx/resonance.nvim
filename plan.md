@@ -7,7 +7,7 @@
 > **verified against the code** — and Batch 4 against the **installed copy** —
 > not copied from the notes.
 >
-> **Status:** items 0–19 are **resolved**. Batch 4 items 20–23 are **open**.
+> **Status:** items 0–20 are **resolved**. Batch 4 items 21–23 are **open**.
 
 ---
 
@@ -712,7 +712,7 @@ once.
 
 **Mutation-verified:** removing the release fails both release tests.
 
-### 20. **`test/behavior_ui_spec.lua` asserts `#name_to_line == 0`, which is always true** — LOW
+### 20. **RESOLVED** — **`test/behavior_ui_spec.lua` asserts `#name_to_line == 0`, which is always true** — LOW
 
 - **File:** `test/behavior_ui_spec.lua`
 - **Problem:** `helpers.count(t)` is `#t`. `name_to_line` is keyed by plugin name
@@ -727,6 +727,21 @@ once.
   sparse integer table is not the length either.
 - **Fix:** assert with `next(st.name_to_line) ~= nil` before the close and
   `next(st.name_to_line) == nil` after. Same for `line_to_name`.
+
+#### Resolution
+
+A `map_count` helper was added to `test/helpers.lua`: it walks the table instead of
+using the length operator, so it counts the entries whatever the keys are.
+
+The test now asserts on both maps with it, and the "the UI rendered no rows" guard
+covers `name_to_line` too — before, that map was never checked for being populated,
+so the test would have passed against a UI that rendered no names at all.
+
+**Verified against the old assertion:** with 49 entries in `name_to_line`,
+`count(st.name_to_line) == 0` was still **true** — the assertion could never fail.
+
+**Mutation-verified:** removing the close-time cleanup in `render.clear()` now fails
+the test (`Expected: 0, Actual: 49`). It passed before the fix.
 
 ### 21. **`utils.normalize_events()` drops a table `pattern`** — LOW
 
@@ -802,8 +817,8 @@ These rows are **no longer accurate** and should be corrected when
 2. Batch 1  items 2, 3, 4, 7           ← DONE
 3. Batch 2  items 8, 9, 11, 12         ← DONE
 4. Batch 3  items 10, 13, 14, 15, 16   ← DONE
-5. Batch 4  items 17, 18, 19           ← DONE; 17 broke a shortcut, 18 crashed the load, 19 leaked
-6.          items 20, 21, 22, 23       ← OPEN; small losses
+5. Batch 4  items 17, 18, 19, 20       ← DONE; shortcut, crash, leak, vacuous assertion
+6.          items 21, 22, 23           ← OPEN; small losses
 ```
 
 Rationale for the order:

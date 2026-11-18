@@ -13,7 +13,7 @@ local capture_and_wait = h.capture_and_wait
 local noticed = h.noticed
 local scratch_group = h.scratch_group
 local recorder = h.recorder
-local count = h.count
+local map_count = h.map_count
 local make_git_repo = h.make_git_repo
 
 test.run_suite('resonance.behavior.ui', {
@@ -744,16 +744,21 @@ test.run_suite('resonance.behavior.ui', {
       vim.wait(300)
 
       local st = l.state.state
-      test.assert_true(count(st.line_to_name) > 0,
+      test.assert_true(map_count(st.line_to_name) > 0,
         'the UI rendered no rows, so this test proves nothing')
+      test.assert_true(map_count(st.name_to_line) > 0,
+        'the UI rendered no names, so this test proves nothing')
 
       local ui_buf = st.buf
       api.nvim_buf_delete(ui_buf, { force = true })
       vim.wait(300)
 
-      test.assert_eq(count(st.line_to_name), 0,
+      -- The maps are keyed by name and by line number, so the length
+      -- operator cannot count them: it reports 0 for a string-keyed table
+      -- whatever the table holds. The entries have to be walked.
+      test.assert_eq(map_count(st.line_to_name), 0,
         'the rendered row map was not released when the UI closed')
-      test.assert_eq(count(st.name_to_line), 0,
+      test.assert_eq(map_count(st.name_to_line), 0,
         'the rendered name map was not released when the UI closed')
     end,
   },

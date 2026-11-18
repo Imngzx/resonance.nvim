@@ -566,7 +566,7 @@ not re-run its setup.
 **Mutation-verified:** removing the release fails both release tests
 (`the setup closure is still reachable after the load`).
 
-### 20. **`test/behavior_ui_spec.lua` asserts `#name_to_line == 0`, which is always true** — LOW
+### 20. **FIXED** — **`test/behavior_ui_spec.lua` asserts `#name_to_line == 0`, which is always true** — LOW
 
 - **File:** `test/behavior_ui_spec.lua`
 - **Problem:** `helpers.count(t)` is `#t`. `name_to_line` is keyed by plugin name
@@ -581,6 +581,22 @@ not re-run its setup.
   sparse integer table is not the length either.
 - **Fix:** assert with `next(st.name_to_line) ~= nil` before the close and
   `next(st.name_to_line) == nil` after. Same for `line_to_name`.
+
+#### Status: fixed
+
+A `map_count` helper was added to `test/helpers.lua`: it walks the table instead of
+using the length operator, so it counts the entries whatever the keys are.
+
+The test now asserts on both maps with it, and the "the UI rendered no rows" guard
+covers `name_to_line` too — before, that map was never checked for being populated,
+so the test would have passed against a UI that rendered no names at all.
+
+**Verified against the old assertion:** with 49 entries in `name_to_line`,
+`count(st.name_to_line) == 0` was still **true** — the assertion could never fail.
+The new assertion reports the entries.
+
+**Mutation-verified:** removing the close-time cleanup in `render.clear()` now fails
+the test (`Expected: 0, Actual: 49`). It passed before the fix.
 
 ### 21. **`utils.normalize_events()` drops a table `pattern`** — LOW
 
@@ -624,6 +640,6 @@ not re-run its setup.
 1. **Batch 1 (Tests & P0 bugs) — DONE:** Items `2, 3, 4, 4b, 5, 7`. Item 4b is the user-reported `r`-key notification spam.
 2. **Batch 2 (Performance, Triggers & GC) — DONE:** Items `8, 9, 11, 12`
 3. **Batch 3 (Architecture, Build State & Docs) — DONE:** Items `10, 13, 14, 15, 16`
-4. **Batch 4 (Newly verified) — OPEN:** Items `20`–`23`. Items `17` (broke a user's shortcut),
-   `18` (crashed the whole load on a valid config) and `19` (retained a closure) are **fixed**.
-   The rest are a vacuous assertion and three small losses.
+4. **Batch 4 (Newly verified) — OPEN:** Items `21`–`23`. Items `17` (broke a user's shortcut),
+   `18` (crashed the whole load on a valid config), `19` (retained a closure) and `20` (a
+   vacuous assertion) are **fixed**. The rest are three small losses.

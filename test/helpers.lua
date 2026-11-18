@@ -90,6 +90,19 @@ function M.count(seen)
   return #seen
 end
 
+-- The number of entries in a map, whatever the keys are.
+--
+-- The length operator only counts the array part, so it reports 0 for a
+-- table whose keys are all strings, and the wrong number for a sparse
+-- integer-keyed table. A map needs to be walked.
+function M.map_count(map)
+  local n = 0
+  for _ in pairs(map or {}) do
+    n = n + 1
+  end
+  return n
+end
+
 -- A throwaway git repository with one commit. check_updates_network runs a
 -- real `git fetch`, which only completes against a real repository.
 function M.make_git_repo()

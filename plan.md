@@ -849,7 +849,7 @@ These rows are **no longer accurate** and should be corrected when
 | P1 "UI 状态陈旧" — `check_updates_network` does not clear `updates` | **Fixed.** `updates = {}` is cleared (`actions.lua:64`), and `pending_count` is now reset too (item 5). |
 | P1 "UI 状态陈旧" — `pack_details` / `expanded` not reset in `open()` | **Fixed** (item 24). `ui.open()` now resets both, so a reopened UI shows no expanded row and fetches the details again instead of showing the stale branches and tags of the previous session. |
 | P1 "`_plugin_dir_cache` 永不失效" | **Fixed** (item 13, commit `24160c7`) — the cache moved to `registry.plugin_dirs` and is invalidated on `PackChanged`. |
-| P2 "零测试、零 CI、无格式化/静态检查配置" | **Partly stale.** There are now 13 test files and 201 passing tests. Still no CI, no `stylua`/`luacheck` config, and no `:checkhealth`. |
+| P2 "零测试、零 CI、无格式化/静态检查配置" | **Partly stale.** There are now 19 test files and 265 passing tests. Still no CI, no `stylua`/`luacheck` config, and no `:checkhealth`. |
 | P1 "无 trigger 的 spec 永远不加载也不安装" | **Fixed** (item 3, commit `be50123`) — triggerless specs load eagerly on `VimEnter`. |
 | P1 "`BufEnter` 对已存在的文件从不被重放" | **Fixed** (commit `be80437`). |
 | P2 "文档漂移" — README uses `Vim.fn` / `Vim.uv` / `Vim.notify` / `Vim.system` | **Stale.** Verified: zero matches in the current README. |

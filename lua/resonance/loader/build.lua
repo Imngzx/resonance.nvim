@@ -26,6 +26,9 @@ local build_semaphore = nil
 -- its PID. The SystemObj is what carries both.
 local running_objects = {}
 
+-- How often a build waiting on another session's lock checks it again.
+M.LOCK_POLL_MS = 500
+
 -- vim.async costs ~1.4 ms to load: it pulls in seven submodules. The
 -- loader requires this module at setup time, but a build only runs for
 -- a plugin that has a build hook and whose hash changed -- rarely, and
@@ -218,7 +221,8 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
   -- also overwrite the state of a newer build of the same plugin.
   local settled = false
 
-  local function finish(ok, err, output_tail)
+  ---@param quiet? boolean settle without a notification
+  local function finish(ok, err, output_tail, quiet)
     if settled then return end
     settled = true
 
@@ -234,11 +238,17 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
     -- this build is done. It is also disarmed: a build that is over must
     -- not be killed by a timer that is still armed.
     builds.disarm_hard_timeout(name)
-    builds.release_lock(name)
+    -- Only a lock this session holds is released. A build that gave up
+    -- waiting on another session's lock must not delete that lock.
+    if builds.holds_lock(name) then builds.release_lock(name) end
     running_objects[name] = nil
 
     if ok then
       M.mark_build_success(name, curr_hash)
+      if quiet then
+        if on_done then on_done(ok, err) end
+        return
+      end
       schedule(function()
         utils.notify('Build succeeded for ' .. name, vim.log.levels.INFO)
       end)
@@ -273,11 +283,28 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
       -- starts, so a second session can tell that the build is alive.
       local locked = builds.acquire_lock(name, nil)
       if not locked then
-        -- Another session is building this plugin right now. The build is
-        -- skipped: two builds of the same plugin write into the same
-        -- directory.
-        builds.finish(name, true, nil)
-        return
+        -- Another session is building this plugin right now. Two builds of
+        -- the same plugin must not write into the same directory, so this
+        -- one waits for the lock -- and stays "running" meanwhile.
+        --
+        -- It used to report the build as succeeded straight away. The
+        -- loader took that as "the build is done" and ran setup() against
+        -- the tree the other session was still building.
+        local async = get_async()
+        local deadline = uv.hrtime() + builds.HARD_TIMEOUT_MS * 1e6
+        while not locked do
+          if uv.hrtime() >= deadline then
+            error('another Neovim session is still building ' .. name, 0)
+          end
+          async.sleep(M.LOCK_POLL_MS)
+          locked = builds.acquire_lock(name, nil)
+        end
+        -- The other session may have finished the same build. The marker
+        -- directory is shared, so its marker says whether it did.
+        if read_marker(name) == curr_hash then
+          finish(true, nil, nil, true)
+          return
+        end
       end
 
       -- The hard timeout kills the build if it runs too long. A build that

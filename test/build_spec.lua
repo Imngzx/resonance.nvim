@@ -717,6 +717,90 @@ test.run_suite('resonance.loader.build', {
       vim.fn.delete(dir, 'rf')
     end,
   },
+
+  {
+    name = 'run_build: a build locked by another session waits instead of reporting success',
+    fn = function()
+      -- When another Neovim session held the lock, the build was reported
+      -- as succeeded straight away. The loader took that as "done" and ran
+      -- setup() against the tree the other session was still building.
+      local builds = require('resonance.builds')
+      local name = 'locked-build-' .. os.time()
+      local dir = '/tmp/test_build_locked_' .. os.time()
+      uv.fs_mkdir(dir, 493)
+
+      -- A lock held by a live process that is not this session's build.
+      local lock_dir = vim.fn.stdpath('state') .. '/resonance/locks'
+      vim.fn.mkdir(lock_dir, 'p')
+      local lock_file = lock_dir .. '/' .. name
+      vim.fn.writefile({ tostring(uv.os_getpid()) }, lock_file)
+
+      local orig_poll = build.LOCK_POLL_MS
+      build.LOCK_POLL_MS = 50
+
+      local built = false
+      local result = nil
+      build.run_build(name, dir, function() built = true end, 'hash1',
+        function(ok) result = ok end)
+      vim.wait(400)
+
+      test.assert_false(built, 'the build ran while another session held the lock')
+      test.assert_nil(result, 'the build settled while another session held the lock')
+      test.assert_eq(builds.status(name).state, 'running')
+      test.assert_not_nil(uv.fs_stat(lock_file), "the other session's lock was removed")
+
+      -- The other session is done and released the lock without a marker
+      -- for this commit, so this session builds.
+      uv.fs_unlink(lock_file)
+      vim.wait(1500, function() return result ~= nil end)
+      build.LOCK_POLL_MS = orig_poll
+
+      test.assert_true(built, 'the build never ran once the lock was free')
+      test.assert_true(result, 'the build did not succeed')
+      test.assert_eq(builds.status(name).state, 'ok')
+
+      clear_marker(name)
+      uv.fs_rmdir(dir)
+    end,
+  },
+
+  {
+    name = 'run_build: a build the other session finished is not run again',
+    fn = function()
+      local builds = require('resonance.builds')
+      local name = 'locked-done-' .. os.time()
+      local dir = '/tmp/test_build_lockdone_' .. os.time()
+      uv.fs_mkdir(dir, 493)
+
+      local lock_dir = vim.fn.stdpath('state') .. '/resonance/locks'
+      vim.fn.mkdir(lock_dir, 'p')
+      local lock_file = lock_dir .. '/' .. name
+      vim.fn.writefile({ tostring(uv.os_getpid()) }, lock_file)
+
+      local orig_poll = build.LOCK_POLL_MS
+      build.LOCK_POLL_MS = 50
+
+      local built = false
+      local result = nil
+      build.run_build(name, dir, function() built = true end, 'hash1',
+        function(ok) result = ok end)
+      vim.wait(200)
+
+      -- The other session builds this commit, writes the marker, and
+      -- releases the lock.
+      build.mark_build_success(name, 'hash1')
+      uv.fs_unlink(lock_file)
+      vim.wait(1500, function() return result ~= nil end)
+      build.LOCK_POLL_MS = orig_poll
+
+      test.assert_false(built, 'the build ran again after the other session finished it')
+      test.assert_true(result, 'the build was not reported as done')
+      test.assert_eq(builds.status(name).state, 'ok')
+
+      clear_marker(name)
+      uv.fs_rmdir(dir)
+    end,
+  },
 })
 
 test.print_summary()

@@ -200,6 +200,24 @@ nvim --headless -c "luafile lua/resonance/init.lua" \
 
 No regression allowed on either.
 
+**Resonate (`r`)** — `test/bench_resonate.sh`. It needs no network: N local
+repos are installed through vim.pack in throwaway XDG dirs, each gets a
+pending commit, and every `git fetch` goes through git's `ext::` transport
+behind a sleep that stands in for the round trip. It times the phases
+(fetch / blocking `pack.get` / `git log` / total) and exits non-zero if a
+check misses a pending update.
+
+```bash
+test/bench_resonate.sh                                  # 49 plugins, 500 ms latency, 3 runs
+RESONANCE_BENCH_CONCURRENCY=5 test/bench_resonate.sh    # compare a setting
+```
+
+Knobs: `RESONANCE_BENCH_PLUGINS`, `_LATENCY_MS`, `_RUNS`, `_CONCURRENCY`.
+Reference (2026-11-19, 8 threads): concurrency 16 → ~2.5 s total
+(fetch ~2.1 s, `pack.get` ~0.4 s); concurrency 5 → ~5.7 s.
+A change to the Resonate path must not raise the total or the `pack.get`
+time.
+
 ---
 
 ## 5. Common tasks

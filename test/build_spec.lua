@@ -881,12 +881,17 @@ test.run_suite('resonance.loader.build', {
   },
 
   {
-    name = 'build: a build reports its progress, and closes it with the verdict',
+    name = 'build: builds report one counted progress message, closed with a summary',
     fn = function()
-      -- One progress message per build, under one id: running while it
-      -- works, then success or failed. A message left on running is a
-      -- spinner that never stops.
-      local function progress_of(name, task, opts)
+      -- All builds in flight share one progress message, "Building (1/3)
+      -- name", like vim.pack's install report. It ends on a summary of the
+      -- batch -- done, failed, or failed partially -- and the notifications
+      -- name the plugins. The last update must carry a final status, or the
+      -- spinner never stops.
+      -- Reset once, for builds an earlier test left unsettled. Each batch
+      -- after this one has to start its own count: that is under test.
+      build._reset_batch()
+      local function batch_of(tasks, opts)
         build.configure(opts or {})
         local seen = {}
         local group = vim.api.nvim_create_augroup('ResonanceBuildProgressTest', { clear = true })
@@ -894,46 +899,64 @@ test.run_suite('resonance.loader.build', {
           group = group,
           callback = function(ev)
             local d = ev.data or {}
-            if d.source == 'resonance' and d.data and d.data.plugin == name then
-              seen[#seen + 1] = { id = d.id, status = d.status }
+            if d.source == 'resonance' then
+              seen[#seen + 1] = {
+                id = d.id, status = d.status, percent = d.percent,
+                text = d.text and d.text[1] or '', total = d.data and d.data.total,
+              }
             end
           end,
         })
-        local dir = vim.fn.tempname()
-        vim.fn.mkdir(dir, 'p')
-        local done = false
-        build.run_build(name, dir, task, 'hash1', function() done = true end)
-        vim.wait(3000, function() return done end)
+        local root = vim.fn.tempname()
+        vim.fn.mkdir(root, 'p')
+        local names, done = {}, 0
+        local t = uv.hrtime()
+        for i = 1, #tasks do
+          names[i] = ('progress-%d-%d'):format(i, t)
+          build.run_build(names[i], root, tasks[i], 'hash1', function() done = done + 1 end)
+        end
+        vim.wait(5000, function() return done == #tasks end)
         vim.wait(50)
         vim.api.nvim_del_augroup_by_id(group)
-        clear_marker(name)
-        vim.fn.delete(dir, 'rf')
+        for i = 1, #names do clear_marker(names[i]) end
+        vim.fn.delete(root, 'rf')
         build.configure({})
         return seen
       end
 
-      local function check(seen, name, verdict)
-        test.assert_true(#seen >= 2, name .. ': expected a running and a final message, got ' .. vim.inspect(seen))
-        test.assert_eq(seen[1].status, 'running', name .. ': the first message is not running')
-        test.assert_eq(seen[#seen].status, verdict, name .. ': the last message is not ' .. verdict)
+      local function check(seen, label, n, status, text)
+        test.assert_true(#seen >= 2, label .. ': expected updates, got ' .. vim.inspect(seen))
+        test.assert_eq(seen[1].status, 'running', label .. ': the first update is not running')
+        local last = seen[#seen]
+        test.assert_eq(last.status, status, label .. ': wrong final status')
+        test.assert_eq(last.text, text, label .. ': wrong final text')
+        test.assert_eq(last.percent, 100, label .. ': the final update is not at 100%')
+        -- The total grows as builds join the running batch; it never
+        -- restarts within one, and it ends at the number of builds.
+        test.assert_eq(last.total, n, label .. ': the builds were not counted in one batch')
         for i = 1, #seen do
-          test.assert_eq(seen[i].id, 'resonance.build.' .. name, name .. ': a message used another id')
+          test.assert_eq(seen[i].id, 'resonance.build', label .. ': an update used another id')
+          if i > 1 then
+            test.assert_true(seen[i].total >= seen[i - 1].total, label .. ': the batch restarted mid-way')
+          end
         end
       end
 
-      local t = uv.hrtime()
-      local ok_cmd = 'progress-ok-cmd-' .. t
-      check(progress_of(ok_cmd, 'true'), ok_cmd, 'success')
-      local fail_cmd = 'progress-fail-cmd-' .. t
-      check(progress_of(fail_cmd, 'exit 3'), fail_cmd, 'failed')
-      local ok_fn = 'progress-ok-fn-' .. t
-      check(progress_of(ok_fn, function() end), ok_fn, 'success')
-      local fail_fn = 'progress-fail-fn-' .. t
-      check(progress_of(fail_fn, function() error('no') end), fail_fn, 'failed')
+      local fail_fn = function() error('no') end
+      -- Started together and slow enough to overlap, so they are one batch.
+      check(batch_of({ 'sleep 0.2', 'sleep 0.2', function() end }),
+        'all ok', 3, 'success', 'Build done')
+      check(batch_of({ 'sleep 0.2; exit 3', 'sleep 0.2; exit 3', fail_fn }),
+        'all failed', 3, 'failed', 'Build failed')
+      check(batch_of({ 'sleep 0.2', 'sleep 0.2; exit 3', fail_fn }),
+        'some failed', 3, 'failed', 'Build failed partially')
 
-      local quiet = 'progress-off-' .. t
-      local seen = progress_of(quiet, 'true', { progress = false })
-      test.assert_eq(#seen, 0, 'progress = false still sent progress messages')
+      -- A batch that settled is closed: the next build starts a new count.
+      local seen = batch_of({ 'true' })
+      test.assert_eq(seen[1].text:sub(1, 14), 'Building (0/1)', 'a new batch did not start its count over')
+
+      test.assert_eq(#batch_of({ 'true' }, { progress = false }), 0,
+        'progress = false still sent progress messages')
     end,
   },
 })

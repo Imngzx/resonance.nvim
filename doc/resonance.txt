@@ -293,12 +293,24 @@ counted: they run in the editor, and the work they start is their own. It
 must be a positive integer, otherwise the default is used and you are
 warned. A new value applies to the builds that start after it is set.
 
-With `progress` on, every build is reported as a |progress-message|: one
-message per plugin that moves from "running" to "success" or "failed".
-Neovim shows it in the message area, and any plugin that listens to the
-|Progress| event (filter on `ev.data.source == 'resonance'`) can show it
-too; `ev.data.data.plugin` is the plugin's name. The final success or
-failure notification is sent either way.
+With `progress` on, the builds in flight are reported as one
+|progress-message|, counted the way vim.pack counts an install: >
+
+    Resonance:   0% Building (0/3) blink.cmp
+    Resonance:  66% Building (2/3)
+    Resonance: 100% Build done
+<
+The last update sums the batch up: "Build done", "Build failed" (every
+build failed) or "Build failed partially". Which plugin built or failed,
+and why, is in the notification sent for each build, which is sent
+whether `progress` is on or not. A build that starts after a batch ended
+starts a new count.
+
+Neovim shows the message in the message area, and any plugin that listens
+to the |Progress| event can show it too: filter on
+`ev.data.source == 'resonance'`. `ev.data.status` is "running", then
+"success" or "failed" (any build failed); `ev.data.data` holds `done`,
+`total`, `failed`, and `plugin` on the update that starts a build.
 
 4.4 Version Pinning                                *resonance-version*
 

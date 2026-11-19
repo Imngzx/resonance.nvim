@@ -89,31 +89,78 @@ function M.concurrency()
   return concurrency
 end
 
--- Report a build's state as a progress message (|progress-message|).
+-- The builds in flight, reported as one progress message
+-- (|progress-message|) with a count, the way vim.pack reports an install:
+-- "Building (1/3) blink.cmp". A batch is every build that starts while
+-- another is still running; the first build after a batch settles starts
+-- a new one, and the count starts over.
 --
--- Every update of one plugin's build uses the same id, so a frontend shows
--- one entry that changes state rather than a new message per step: Neovim's
--- own message area, or any plugin that listens to the Progress event.
---
+-- The message says only what is happening. The result -- which plugin
+-- built, which failed and why -- is the notification's job; repeating it
+-- here would show it twice. The last update still carries a final status,
+-- because a progress message left on "running" is a spinner that never
+-- stops. Its text only sums the batch up: "Build done", "Build failed", or
+-- "Build failed partially"; the notifications name the plugins.
+local batch = { total = 0, done = 0, failed = 0 }
+
 -- Scheduled: the build task runs in a fast-event context, where nvim_echo
 -- is not allowed. The schedule queue is FIFO, so the updates arrive in the
 -- order they were sent. pcall, because the progress fields are recent and
 -- a nightly that predates them raises on them.
----@param name string
 ---@param status 'running'|'success'|'failed'
 ---@param text string
-local function progress(name, status, text)
+local function report(status, text, name)
   if not progress_enabled then return end
+  local total, done, failed = batch.total, batch.done, batch.failed
   schedule(function()
     pcall(nvim_echo, { { text } }, false, {
-      id = 'resonance.build.' .. name,
+      id = 'resonance.build',
       kind = 'progress',
       status = status,
+      percent = math_floor(done / total * 100),
       title = 'Resonance',
       source = 'resonance',
-      data = { plugin = name },
+      data = { plugin = name, done = done, total = total, failed = failed },
     })
   end)
+end
+
+-- For tests: a build an earlier test left unsettled would hold its batch
+-- open, and the next test's count would include it.
+function M._reset_batch()
+  batch.total, batch.done, batch.failed = 0, 0, 0
+end
+
+local function count()
+  return '(' .. batch.done .. '/' .. batch.total .. ')'
+end
+
+-- A build has started: it joins the running batch, or opens a new one.
+---@param name string
+local function batch_start(name)
+  if batch.done == batch.total then
+    batch.total, batch.done, batch.failed = 0, 0, 0
+  end
+  batch.total = batch.total + 1
+  report('running', 'Building ' .. count() .. ' ' .. name, name)
+end
+
+-- A build has settled. The last one of the batch closes the message.
+---@param ok boolean
+local function batch_settle(ok)
+  batch.done = batch.done + 1
+  if not ok then batch.failed = batch.failed + 1 end
+  if batch.done < batch.total then
+    report('running', 'Building ' .. count())
+    return
+  end
+  if batch.failed == 0 then
+    report('success', 'Build done')
+  elseif batch.failed == batch.total then
+    report('failed', 'Build failed')
+  else
+    report('failed', 'Build failed partially')
+  end
 end
 
 --- Run a command, and wait for it without blocking the editor.
@@ -312,13 +359,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
 
     -- `started` is false for a build that never got past builds.start():
     -- it sent no running message, so there is nothing to close.
-    if started then
-      if ok then
-        progress(name, 'success', 'Built ' .. name)
-      else
-        progress(name, 'failed', 'Build failed for ' .. name)
-      end
-    end
+    if started then batch_settle(ok) end
 
     if ok then
       M.mark_build_success(name, curr_hash)
@@ -350,6 +391,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
       -- start a second build.
       if not builds.start(name) then return end
       started = true
+      batch_start(name)
 
       -- The lock keeps a second Neovim session from building the same
       -- plugin at the same time. The PID is the child process, so a
@@ -368,7 +410,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
         -- It used to report the build as succeeded straight away. The
         -- loader took that as "the build is done" and ran setup() against
         -- the tree the other session was still building.
-        progress(name, 'running', name .. ': waiting for another Neovim session')
+        report('running', 'Building ' .. count() .. ' ' .. name .. ': waiting for another Neovim session', name)
         local async = get_async()
         local deadline = uv.hrtime() + builds.HARD_TIMEOUT_MS * 1e6
         while not locked do
@@ -398,7 +440,6 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
       end)
 
       if type(build_task) == 'function' then
-        progress(name, 'running', 'Building ' .. name)
         -- A Lua build hook may be synchronous, or it may hand back an
         -- object for work it started itself. Marking the build as
         -- successful before that work finishes would make the next check
@@ -430,11 +471,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
           end
         end
       else
-        -- Queued until a slot frees up: with more builds than slots, the
-        -- message says why nothing is happening yet.
-        progress(name, 'running', name .. ': waiting for a build slot')
         local obj = get_semaphore():with(function()
-          progress(name, 'running', 'Building ' .. name)
           return run_command({ 'sh', '-c', build_task }, { cwd = dir, text = true }, function(handle)
             -- The handle is kept so the hard timeout can kill the child,
             -- and the PID is recorded as soon as the child exists, so the

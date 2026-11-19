@@ -35,7 +35,7 @@ local type = type
 local tostring = tostring
 local tonumber = tonumber
 local fn_stdpath = vim.fn.stdpath
-local fn_mkdir = vim.fn.mkdir
+local mkdir_p = require('resonance.utils').mkdir_p
 
 -- How long a build may run before it is killed. A build that runs for ten
 -- minutes is stuck, not slow: the dependencies are not going to arrive.
@@ -497,7 +497,9 @@ function M.acquire_lock(name, pid)
   end
 
   local dir = get_lock_dir()
-  if not fs_stat(dir) then fn_mkdir(dir, 'p') end
+  -- Not vim.fn.mkdir: a build waiting on another session's lock retries
+  -- from async.sleep(), a fast context, where vim.fn raises.
+  mkdir_p(dir)
 
   -- The lock names a live process from the moment it exists. Before the
   -- child process starts -- and for the whole of a Lua build hook, which

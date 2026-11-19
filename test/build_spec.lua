@@ -985,6 +985,50 @@ test.run_suite('resonance.loader.build', {
         'progress = false still sent progress messages')
     end,
   },
+
+  {
+    name = 'a build with no marker directory yet writes its marker and notifies',
+    fn = function()
+      -- The build settles in the vim.system callback, a fast context.
+      -- mark_build_success() created the marker directory with
+      -- vim.fn.mkdir, which raises there: on a machine where the directory
+      -- did not exist yet, no marker was ever written, the "Build
+      -- succeeded" notification was skipped, and the plugin was rebuilt
+      -- -- with its progress message -- on every startup.
+      --
+      -- A child Neovim with its own state directory: the marker directory
+      -- is cached per process, and this one must not exist yet.
+      local root = vim.fn.tempname()
+      vim.fn.mkdir(root, 'p')
+      local repo = make_git_repo()
+      local script = root .. '/child.lua'
+      local child = ([[
+        vim.opt.runtimepath:append(%q)
+        local build = require('resonance.loader.build')
+        local msgs = {}
+        require('resonance.utils').notify = function(m) msgs[#msgs + 1] = m end
+        build.configure({ progress = false })
+        build.check_and_build('plug', %q, 'true')
+        vim.wait(5000, function() return #msgs > 0 end)
+        local marker = vim.fn.stdpath('state') .. '/resonance/builds/plug'
+        print('MARKER:' .. tostring(vim.uv.fs_stat(marker) ~= nil))
+        print('NOTIFY:' .. table.concat(msgs, '|'))
+      ]]):format(vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim', repo)
+      vim.fn.writefile(vim.split(child, '\n', { plain = true }), script)
+
+      local out = vim.system({
+        'nvim', '--headless', '-u', 'NONE', '-c', 'luafile ' .. script, '-c', 'qall',
+      }, { env = { XDG_STATE_HOME = root .. '/state' }, text = true }):wait()
+      local text = (out.stdout or '') .. (out.stderr or '')
+      vim.fn.delete(root, 'rf')
+      vim.fn.delete(repo, 'rf')
+
+      test.assert_eq(text:match('MARKER:(%a+)'), 'true',
+        'no marker was written, so the next startup rebuilds:\n' .. text)
+      test.assert_eq(text:match('NOTIFY:([^\r\n]*)'), 'Build succeeded for plug',
+        'the success notification was skipped:\n' .. text)
+    end,
+  },
 })
 
 test.print_summary()

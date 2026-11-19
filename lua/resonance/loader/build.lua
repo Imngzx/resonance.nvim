@@ -8,7 +8,6 @@ local fs_fstat = uv.fs_fstat
 local fs_read = uv.fs_read
 local fs_write = uv.fs_write
 local fs_close = uv.fs_close
-local fs_stat = uv.fs_stat
 local fs_unlink = uv.fs_unlink
 local system = vim.system
 local schedule = vim.schedule
@@ -238,10 +237,9 @@ end
 ---@param name string Plugin name.
 ---@param hash string
 function M.mark_build_success(name, hash)
-  local dir = get_marker_dir()
-  if not fs_stat(dir) then
-    vim.fn.mkdir(dir, 'p')
-  end
+  -- Called from finish(), which runs in the vim.system callback: a fast
+  -- context, where vim.fn.mkdir raises. See utils.mkdir_p().
+  utils.mkdir_p(get_marker_dir())
   local fd = fs_open(marker_path(name), 'w', 438)
   if fd then
     fs_write(fd, hash, 0)
@@ -362,7 +360,17 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
     if started then batch_settle(ok) end
 
     if ok then
-      M.mark_build_success(name, curr_hash)
+      -- pcall: finish() has already settled, so an error here was silently
+      -- swallowed -- and it took the success notification and on_done with
+      -- it. A marker that cannot be written costs a rebuild next startup;
+      -- it must not hide the result of this one.
+      local wrote, write_err = pcall(M.mark_build_success, name, curr_hash)
+      if not wrote then
+        schedule(function()
+          utils.notify('Could not write the build marker for ' .. name .. ': ' ..
+            tostring(write_err), vim.log.levels.WARN)
+        end)
+      end
       if quiet then
         if on_done then on_done(ok, err) end
         return

@@ -14,11 +14,30 @@ local uv_fs_open = uv.fs_open
 local uv_fs_fstat = uv.fs_fstat
 local uv_fs_read = uv.fs_read
 local uv_fs_close = uv.fs_close
+local uv_fs_stat = uv.fs_stat
+local uv_fs_mkdir = uv.fs_mkdir
 
 local _snacks_checked = false
 local _snacks_notifier = nil
 
 M.is_windows = function() return jit.os == 'Windows' end
+
+--- Create a directory and its missing parents, like `mkdir -p`.
+---
+--- Safe in a fast-event context, unlike `vim.fn.mkdir`, which raises there.
+--- A build settles in the `vim.system` callback, so its marker directory is
+--- created from a fast context: with `vim.fn.mkdir` the write raised, no
+--- marker was ever written, and the plugin was rebuilt on every startup.
+---@param path string
+---@return boolean ok
+function M.mkdir_p(path)
+  if uv_fs_stat(path) then return true end
+  local parent = string_match(path, '^(.+)/[^/]+/*$')
+  if parent and not uv_fs_stat(parent) then M.mkdir_p(parent) end
+  -- EEXIST is a win: another session created it in between.
+  local ok, err = uv_fs_mkdir(path, 493)
+  return ok and true or (type(err) == 'string' and string_find(err, 'EEXIST', 1, true) ~= nil)
+end
 
 M.fast_normalize = function(path)
   if not path then return path end

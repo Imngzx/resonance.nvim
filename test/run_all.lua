@@ -24,6 +24,7 @@ dofile('test/behavior_stats_spec.lua')
 dofile('test/behavior_arch_spec.lua')
 dofile('test/behavior_ui_spec.lua')
 dofile('test/gc_spec.lua')
+dofile('test/docs_spec.lua')
 dofile('test/pack_integration_spec.lua')
 
 test.print_summary()

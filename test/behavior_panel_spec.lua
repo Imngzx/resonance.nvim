@@ -105,22 +105,17 @@ test.run_suite('resonance.behavior.panel', {
           end,
         }
       end
-      local orig_system = vim.system
-      vim.system = function(cmd, opts, cb)
-        if cb then cb({ code = 0, stdout = '', stderr = '' }) end
-        return { wait = function() return { code = 0, stdout = '', stderr = '' } end, kill = function() end }
-      end
-      package.loaded['resonance.ui.actions'] = nil
-      local l2 = live()
-      l2.state.state.info = { total = 1, loaded = 0, plugins = { name = { 'pinned-plugin' }, path = { '/tmp' } } }
-      l2.state.state.checking = false
-      l2.actions.check_updates_network()
-      vim.wait(1000, function() return not l2.state.state.checking end, 20)
-      vim.system = orig_system
+      local entry
+      local ok, err = pcall(h.with_system, nil, function(l2)
+        l2.state.state.info = { total = 1, loaded = 0, plugins = { name = { 'pinned-plugin' }, path = { '/tmp' } } }
+        l2.state.state.checking = false
+        l2.actions.check_updates_network()
+        vim.wait(1000, function() return not l2.state.state.checking end, 20)
+        entry = l2.state.state.updates['pinned-plugin']
+        l2.state.state.checking = false
+      end)
       l.utils.get_pack = orig_get_pack
-      package.loaded['resonance.ui.actions'] = nil
-      local entry = l2.state.state.updates['pinned-plugin']
-      l2.state.state.checking = false
+      if not ok then error(err, 0) end
       test.assert_not_nil(entry, 'the update was left out of the list')
       test.assert_contains(entry[1], 'aaaaaaa -> bbbbbbb')
     end,

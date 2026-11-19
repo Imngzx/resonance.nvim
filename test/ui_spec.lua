@@ -7,30 +7,13 @@ local actions = require('resonance.ui.actions')
 local render = require('resonance.ui.render')
 local utils = require('resonance.utils')
 
--- The runner clears package.loaded between tests, so module tables captured at
--- file scope can be a different generation than the one under test. Always
--- re-require inside a test when touching module state.
-local function live()
-  return {
-    state = require('resonance.ui.state'),
-    actions = require('resonance.ui.actions'),
-    utils = require('resonance.utils'),
-  }
-end
+local h = dofile('test/helpers.lua')
+-- Re-require inside a test: the runner clears package.loaded between tests.
+local live = h.live
 
--- Capture notifications emitted by the module under test.
+-- The notifications reported while fn runs.
 local function with_capture(fn)
-  local u = live().utils
-  local notices = {}
-  local orig_notify = u.notify
-  u.notify = function(msg, ...)
-    table.insert(notices, msg)
-    return orig_notify(msg, ...)
-  end
-  local ok, err = pcall(fn)
-  u.notify = orig_notify
-  if not ok then error(err) end
-  return notices
+  return h.capture_and_wait(fn, 0)
 end
 
 test.run_suite('resonance.ui', {
@@ -426,70 +409,66 @@ test.run_suite('resonance.ui', {
       -- still in flight. That is the real scenario: the network check takes
       -- seconds, and the user can press `r` again in the meantime.
       --
-      -- The spawner is stubbed to never call back, so the fetch never
-      -- completes and the check stays in flight.
-      local orig_system = vim.system
-      vim.system = function(cmd, opts, cb)
-        return { wait = function() return { code = 0 } end }
-      end
-      package.loaded['resonance.ui.actions'] = nil
-      package.loaded['resonance.ui'] = nil
+      -- The spawner never calls back, so the fetch never completes and the
+      -- check stays in flight.
+      local hold = function() end
+      h.with_system(hold, function(l)
+        local ok, err = pcall(function()
+          require('resonance.ui').open({
+            border = 'rounded',
+            title = 'test',
+            width = 0.5,
+            height = 0.5,
+            backdrop = 0,
+          })
+          vim.wait(100)
 
-      local l = live()
-      local ui_mod = require('resonance.ui')
-      ui_mod.open({
-        border = 'rounded',
-        title = 'test',
-        width = 0.5,
-        height = 0.5,
-        backdrop = 0,
-      })
-      vim.wait(100)
+          -- One plugin with a path, so a fetch is actually started.
+          l.state.state.info = {
+            total = 1,
+            loaded = 0,
+            plugins = {
+              name = { 'some-plugin' },
+              type = { 'opt' },
+              path = { '/tmp' },
+              loaded = { true },
+              trigger = { 'event' },
+            },
+          }
+          l.state.state.checking = false
 
-      -- One plugin with a path, so a fetch is actually started.
-      l.state.state.info = {
-        total = 1,
-        loaded = 0,
-        plugins = {
-          name = { 'some-plugin' },
-          type = { 'opt' },
-          path = { '/tmp' },
-          loaded = { true },
-          trigger = { 'event' },
-        },
-      }
-      l.state.state.checking = false
+          local notices = with_capture(function()
+            -- Drive the keymap the way the user does. The keymap is
+            -- buffer-local, so feed the key to the UI buffer.
+            local buf = l.state.state.buf
+            test.assert_not_nil(buf)
+            vim.api.nvim_buf_call(buf, function()
+              vim.api.nvim_feedkeys('r', 'x', false)
+            end)
+            vim.wait(200)
+            test.assert_true(l.state.state.checking, 'the check must still be running')
+            -- A second press while the check runs must not notify again.
+            vim.api.nvim_buf_call(buf, function()
+              vim.api.nvim_feedkeys('r', 'x', false)
+            end)
+            vim.wait(200)
+          end)
 
-      local notices = with_capture(function()
-        -- Drive the keymap the way the user does. The keymap is
-        -- buffer-local, so feed the key to the UI buffer.
-        local buf = l.state.state.buf
-        test.assert_not_nil(buf)
-        vim.api.nvim_buf_call(buf, function()
-          vim.api.nvim_feedkeys('r', 'x', false)
+          local resonating = 0
+          for i = 1, #notices do
+            if notices[i]:find('Resonating', 1, true) then resonating = resonating + 1 end
+          end
+          test.assert_eq(resonating, 1, 'the r key must notify exactly once per check')
         end)
-        vim.wait(200)
-        test.assert_true(l.state.state.checking, 'the check must still be running')
-        -- A second press while the check runs must not notify again.
-        vim.api.nvim_buf_call(buf, function()
-          vim.api.nvim_feedkeys('r', 'x', false)
-        end)
-        vim.wait(200)
+
+        if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
+          vim.api.nvim_win_close(l.state.state.win, true)
+        end
+        l.state.state.win = nil
+        l.state.state.buf = nil
+        l.state.state.checking = false
+        if not ok then error(err, 0) end
       end)
-
-      local resonating = 0
-      for i = 1, #notices do
-        if notices[i]:find('Resonating', 1, true) then resonating = resonating + 1 end
-      end
-      test.assert_eq(resonating, 1, 'the r key must notify exactly once per check')
-
-      vim.system = orig_system
-      if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
-        vim.api.nvim_win_close(l.state.state.win, true)
-      end
-      l.state.state.win = nil
-      l.state.state.buf = nil
-      l.state.state.checking = false
     end,
   },
 
@@ -516,62 +495,40 @@ test.run_suite('resonance.ui', {
     fn = function()
       -- A plugin disabled via `cond = false` has no directory on disk. The
       -- check must not spawn `git fetch` with an empty cwd for it.
-      local l = live()
-      l.state.state.info = {
-        total = 2,
-        loaded = 0,
-        plugins = {
-          name = { 'disabled-plugin', 'real-plugin' },
-          path = { '', '/tmp' },
-        },
-      }
-      l.state.state.checking = false
-      l.state.state.pending_count = 0
-
       local fetch_cwds = {}
-      local orig_get_pack = l.utils.get_pack
-      l.utils.get_pack = function()
+      local u = live().utils
+      local orig_get_pack = u.get_pack
+      u.get_pack = function()
         return { get = function() return {} end }
       end
 
-      -- Stub the process spawner so no real git runs. actions.lua captures
-      -- vim.system at module load, so the stub has to be installed before
-      -- the module is required.
-      local orig_system = vim.system
-      vim.system = function(cmd, opts, cb)
+      local ok, err = pcall(h.with_system, function(cmd, opts, cb)
         if cmd[1] == 'git' and cmd[2] == 'fetch' then
           fetch_cwds[#fetch_cwds + 1] = opts.cwd
         end
-        if cb then cb({ code = 0, stdout = '', stderr = '' }) end
-        return { wait = function() return { code = 0 } end }
-      end
-      package.loaded['resonance.ui.actions'] = nil
-      local l2 = live()
+        if cb then cb(h.completed(0)) end
+      end, function(l)
+        l.state.state.info = {
+          total = 2,
+          loaded = 0,
+          plugins = {
+            name = { 'disabled-plugin', 'real-plugin' },
+            path = { '', '/tmp' },
+          },
+        }
+        l.state.state.checking = false
+        l.state.state.pending_count = 0
 
-      l2.state.state.info = {
-        total = 2,
-        loaded = 0,
-        plugins = {
-          name = { 'disabled-plugin', 'real-plugin' },
-          path = { '', '/tmp' },
-        },
-      }
-      l2.state.state.checking = false
-      l2.state.state.pending_count = 0
-
-      l2.actions.check_updates_network()
-      vim.wait(500)
-
-      vim.system = orig_system
-      l.utils.get_pack = orig_get_pack
+        l.actions.check_updates_network()
+        vim.wait(500)
+        l.state.state.checking = false
+      end)
+      u.get_pack = orig_get_pack
+      if not ok then error(err, 0) end
 
       -- Only the plugin with a real path may be fetched.
       test.assert_eq(#fetch_cwds, 1)
-      if #fetch_cwds == 1 then
-        test.assert_eq(fetch_cwds[1], '/tmp')
-      end
-
-      l2.state.state.checking = false
+      test.assert_eq(fetch_cwds[1], '/tmp')
     end,
   },
 
@@ -581,23 +538,19 @@ test.run_suite('resonance.ui', {
       -- The fetches are held open: the stub keeps each callback and only
       -- releases it on demand, so the number in flight can be counted.
       local held = {}
-      local orig_system = vim.system
-      vim.system = function(cmd, opts, cb)
-        if cmd[1] == 'git' and cmd[2] == 'fetch' then
-          held[#held + 1] = cb
-        elseif cb then
-          cb({ code = 0, stdout = '', stderr = '' })
-        end
-        return { wait = function() return { code = 0 } end }
-      end
-      package.loaded['resonance.ui.actions'] = nil
-      local l = live()
-      local orig_get_pack = l.utils.get_pack
-      l.utils.get_pack = function()
+      local u = live().utils
+      local orig_get_pack = u.get_pack
+      u.get_pack = function()
         return { get = function() return {} end }
       end
 
-      local ok, err = pcall(function()
+      local ok, err = pcall(h.with_system, function(cmd, opts, cb)
+        if cmd[1] == 'git' and cmd[2] == 'fetch' then
+          held[#held + 1] = cb
+        elseif cb then
+          cb(h.completed(0))
+        end
+      end, function(l)
         local n = 8
         local names, paths = {}, {}
         for i = 1, n do
@@ -613,7 +566,7 @@ test.run_suite('resonance.ui', {
         test.assert_eq(#held, 3, 'the fetches in flight must stop at the limit')
 
         -- One fetch finishing frees exactly one slot.
-        held[1]({ code = 0, stdout = '', stderr = '' })
+        held[1](h.completed(0))
         vim.wait(100)
         test.assert_eq(#held, 4, 'a finished fetch must let the next one start')
 
@@ -622,18 +575,31 @@ test.run_suite('resonance.ui', {
         test.assert_true(vim.wait(1000, function()
           while released < #held do
             released = released + 1
-            held[released]({ code = 0, stdout = '', stderr = '' })
+            held[released](h.completed(0))
           end
           return not l.state.state.checking
         end, 10), 'the check did not complete')
         test.assert_eq(#held, n, 'every plugin must be fetched')
+        l.state.state.checking = false
       end)
-
-      vim.system = orig_system
-      l.utils.get_pack = orig_get_pack
-      l.actions.configure({})
-      l.state.state.checking = false
+      u.get_pack = orig_get_pack
+      live().actions.configure({})
       if not ok then error(err, 0) end
+    end,
+  },
+
+  {
+    name = 'helpers: with_system restores vim.system when the test body fails',
+    fn = function()
+      local real = vim.system
+      local ok = pcall(h.with_system, nil, function()
+        test.assert_true(vim.system ~= real, 'the stub was not installed')
+        error('the body failed')
+      end)
+      test.assert_false(ok, 'the failure was swallowed')
+      test.assert_true(vim.system == real, 'vim.system was left stubbed')
+      test.assert_nil(package.loaded['resonance.ui.actions'],
+        'a module built against the stub was left in package.loaded')
     end,
   },
 

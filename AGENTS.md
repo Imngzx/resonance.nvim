@@ -136,6 +136,14 @@ test/dev_env.sh test test/gc_spec.lua      # one or more spec files
 
 A spec that fails to load exits non-zero; it no longer passes silently.
 
+To fake processes, use `h.with_system(handler, fn)` from `test/helpers.lua`
+rather than assigning `vim.system`: `ui/actions.lua` copies `vim.system` into
+a local when it loads, so the helper rebuilds it against the stub, and it puts
+the real function back even when the test fails.
+
+`test/docs_spec.lua` fails on a broken `|link|` in the help file or a stale
+`doc/tags`.
+
 `test/pack_integration_spec.lua` installs real plugins into its own temp
 `XDG_DATA_HOME` per test.
 

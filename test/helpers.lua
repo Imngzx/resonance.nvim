@@ -70,6 +70,60 @@ function M.with_capture(fn)
   return notices, restore
 end
 
+-- The modules that copy vim.system into a local when they load. A stub
+-- installed after they loaded is never seen, so with_system() drops them
+-- from package.loaded and the next require builds them against the stub.
+-- `resonance.ui` is listed because it requires the actions at load time.
+M.SYSTEM_USERS = { 'resonance.ui.actions', 'resonance.ui' }
+
+-- A finished process, shaped like vim.SystemCompleted.
+function M.completed(code, stdout, stderr)
+  return { code = code or 0, signal = 0, stdout = stdout or '', stderr = stderr or '' }
+end
+
+-- Run fn with vim.system replaced by a stub, and always restore it.
+--
+-- handler(cmd, opts, cb) sees every spawn. It decides what happens to
+-- the callback: call it to finish the process, keep it to hold the
+-- process open, or ignore it. With no handler, every command succeeds at
+-- once with empty output. The stub returns a SystemObj whose wait()
+-- reports success.
+--
+-- fn receives live() modules built against the stub. The real vim.system
+-- is put back even when fn raises -- a test that fails half-way used to
+-- leave the stub in place for every later test -- and the modules that
+-- captured the stub are dropped again so later requires get the real one.
+--
+--   h.with_system(function(cmd, opts, cb)
+--     if cmd[2] == 'fetch' then held[#held + 1] = cb return end
+--     cb(h.completed(0))
+--   end, function(l)
+--     l.actions.check_updates_network()
+--   end)
+function M.with_system(handler, fn)
+  local orig = vim.system
+  vim.system = function(cmd, opts, cb)
+    if handler then
+      handler(cmd, opts, cb)
+    elseif cb then
+      cb(M.completed(0))
+    end
+    return {
+      pid = 0,
+      wait = function() return M.completed(0) end,
+      kill = function() end,
+      is_closing = function() return false end,
+    }
+  end
+  for i = 1, #M.SYSTEM_USERS do package.loaded[M.SYSTEM_USERS[i]] = nil end
+
+  local ok, err = pcall(fn, M.live())
+
+  vim.system = orig
+  for i = 1, #M.SYSTEM_USERS do package.loaded[M.SYSTEM_USERS[i]] = nil end
+  if not ok then error(err, 0) end
+end
+
 -- Wait for scheduled notifications to arrive, then release the capture.
 function M.capture_and_wait(fn, ms)
   local notices, release = M.with_capture(fn)

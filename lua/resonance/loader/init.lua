@@ -1037,7 +1037,7 @@ function M.load(config)
   -- before the plugin is loaded, and everything else, which is torn down
   -- once it has loaded.
   trigger_teardown_before_setup, trigger_teardown =
-    triggers.register_all(config, load_now, triggers.trigger_group(group_name))
+    triggers.register_all(config, load_now, triggers.trigger_group(group_name), group_name)
 end
 
 ---@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, table<string, string[]>

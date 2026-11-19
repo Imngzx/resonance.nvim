@@ -19,6 +19,7 @@ local type = type
 local pcall = pcall
 local tostring = tostring
 local gsub = string.gsub
+local table_concat = table.concat
 
 local vim_log_levels = vim.log.levels
 
@@ -43,42 +44,85 @@ end
 
 M.trigger_group = trigger_group
 
+-- The key a native event's pattern is grouped by. The pattern may be nil,
+-- a string, or a list of strings: nil is not a valid table key, and two
+-- equal lists are two different keys, so the key is built from the value.
+---@param pattern string|string[]|nil
+---@return string
+local function pattern_key(pattern)
+  if pattern == nil then return '' end
+  if type(pattern) == 'table' then return 't:' .. table_concat(pattern, '\0') end
+  return 's:' .. tostring(pattern)
+end
+
 -- Register event trigger autocmds
 ---@param config table
 ---@param load_now function
 ---@param group integer|nil augroup for the trigger autocmds
+---@param name? string the plugin, for error messages
 ---@return function[] teardown callbacks that remove the registered triggers
-function M.register_event(config, load_now, group)
+function M.register_event(config, load_now, group, name)
   local teardown = {}
   if not config.event then return teardown end
 
   local events = utils.normalize_events(config.event)
   if #events == 0 then return teardown end
 
-  -- A User event carries its own pattern, so it needs its own autocmd. The
-  -- native event names in the list share one autocmd.
-  local native = utils.native_event_names(events)
-  if #native > 0 then
+  local plugin = name or 'plugin'
+
+  -- A bad event name is reported, not raised. nvim_create_autocmd raises on
+  -- an unknown event, and the raise used to abort the whole load() -- every
+  -- spec after the typo in a list was never registered.
+  --
+  -- Neovim rejects a list of events as a whole, so when the list fails the
+  -- events are retried one at a time: the valid ones still register, and
+  -- the error names the event that is actually wrong.
+  local function create(event_names, pattern)
     local opts = { once = true, callback = load_now }
     if group then opts.group = group end
-    local pattern
-    for i = 1, #events do
-      if not events[i].user and events[i].pattern then
-        pattern = events[i].pattern
-        break
+    if pattern ~= nil then opts.pattern = pattern end
+    local ok, err = pcall(create_autocmd, event_names, opts)
+    if ok then return end
+    if type(event_names) == 'table' and #event_names > 1 then
+      for i = 1, #event_names do
+        create(event_names[i], pattern)
       end
+      return
     end
-    if pattern then opts.pattern = pattern end
-    create_autocmd(native, opts)
+    local bad = type(event_names) == 'table' and event_names[1] or event_names
+    utils.notify("Invalid event '" .. tostring(bad) .. "' for " .. plugin .. ': ' .. tostring(err),
+      vim_log_levels.ERROR)
   end
 
+  -- Native events share one autocmd per pattern. A pattern belongs to the
+  -- event it was written on: { 'InsertEnter', { event = 'BufEnter',
+  -- pattern = '*.md' } } used to scope InsertEnter to markdown as well.
+  -- The groups keep the order the events were written in.
+  local native_groups = {}
+  local group_by_key = {}
+  for i = 1, #events do
+    local e = events[i]
+    if not e.user then
+      local key = pattern_key(e.pattern)
+      local g = group_by_key[key]
+      if not g then
+        g = { pattern = e.pattern, names = {} }
+        group_by_key[key] = g
+        native_groups[#native_groups + 1] = g
+      end
+      g.names[#g.names + 1] = e.event
+    end
+  end
+  for i = 1, #native_groups do
+    local g = native_groups[i]
+    create(g.names, g.pattern)
+  end
+
+  -- A User event carries its own pattern, so it needs its own autocmd.
   for i = 1, #events do
     local e = events[i]
     if e.user then
-      local opts = { once = true, callback = load_now }
-      if group then opts.group = group end
-      if e.pattern then opts.pattern = e.pattern end
-      create_autocmd('User', opts)
+      create('User', e.pattern)
     end
   end
 
@@ -324,10 +368,11 @@ end
 ---@param config table
 ---@param load_now function
 ---@param group integer|nil augroup for the trigger autocmds
+---@param name? string the plugin, for error messages
 ---@return function[] before_setup teardown callbacks that must run before the
 ---   plugin's setup, because they hold a name the plugin wants to define
 ---@return function[] teardown callbacks that remove every registered trigger
-function M.register_all(config, load_now, group)
+function M.register_all(config, load_now, group, name)
   local before_setup = {}
   local teardown = {}
 
@@ -343,7 +388,7 @@ function M.register_all(config, load_now, group)
   -- would be gone once the stub was torn down.
   collect(M.register_cmd(config, load_now, before_setup))
 
-  collect(M.register_event(config, load_now, group))
+  collect(M.register_event(config, load_now, group, name))
   collect(M.register_keys(config, load_now))
   collect(M.register_ft(config, load_now, group))
 

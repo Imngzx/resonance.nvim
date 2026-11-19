@@ -192,6 +192,27 @@ function M.normalize_pack_spec(plugin)
   }
 end
 
+--- Parse one event written as a string.
+---
+---   'BufReadPost'  -> a native event
+---   'VeryLazy'     -> the User event VeryLazy (the lazy.nvim spelling)
+---   'User Foo'     -> the User event Foo
+---
+--- 'VeryLazy' is not a Neovim event, so passing it through as one made
+--- nvim_create_autocmd raise "Invalid 'event'" and abort the whole load().
+---@param s string
+---@return ResonanceEventSpec
+local function parse_event_string(s)
+  if s == 'VeryLazy' then
+    return { event = 'User', pattern = 'VeryLazy', user = true }
+  end
+  local user_pattern = s:match('^User%s+(%S+)$')
+  if user_pattern then
+    return { event = 'User', pattern = user_pattern, user = true }
+  end
+  return { event = s }
+end
+
 ---@class ResonanceEventSpec
 ---@field event string The event name.
 ---@field pattern? string The pattern, for a User event.
@@ -203,6 +224,9 @@ end
 ---   'BufReadPost'                          -- one native event
 ---   { 'BufReadPost', 'BufNewFile' }        -- several native events
 ---   { 'User', pattern = 'VeryLazy' }       -- one User event
+---   'VeryLazy' / 'User Foo'                -- User events as strings
+---   { event = 'BufEnter', pattern = '*.md' } -- one descriptor
+---   { 'InsertEnter', { 'User', pattern = 'X' } } -- any of these, nested
 ---
 --- A User event carries its own pattern, so it cannot be represented as a
 --- bare string in a list of event names. Keeping the pattern in a separate
@@ -223,10 +247,16 @@ function M.normalize_events(event)
   if event == nil then return out end
 
   if type(event) == 'string' then
-    return { { event = event } }
+    return { parse_event_string(event) }
   end
 
   if type(event) ~= 'table' then return out end
+
+  -- One descriptor on its own: { event = 'BufEnter', pattern = '*.md' }.
+  -- It has no list part, so the list handling below would turn it into {}.
+  if type(event.event) == 'string' then
+    return { event }
+  end
 
   -- Already normalized: a list of descriptors. Every entry is a table with
   -- an `event` field. The check has to scan the whole list, because a
@@ -261,19 +291,28 @@ function M.normalize_events(event)
   for i = 1, #event do
     local name = event[i]
     if type(name) == 'string' then
-      out[#out + 1] = { event = name }
-    elseif type(name) == 'table' and type(name.event) == 'string' then
-      -- A descriptor mixed into a raw list. Keep it as it is, so a list
-      -- that is partly normalized does not lose entries.
-      out[#out + 1] = name
+      out[#out + 1] = parse_event_string(name)
+    elseif type(name) == 'table' then
+      -- A nested entry -- a descriptor, { 'User', pattern = 'X' }, or a
+      -- list -- goes through the same rules as a top-level one. It used to
+      -- be kept only when it already had an `event` field, so a User event
+      -- written inside a list was silently dropped.
+      local nested = M.normalize_events(name)
+      for n = 1, #nested do
+        out[#out + 1] = nested[n]
+      end
     end
   end
 
   -- A pattern on the list itself applies to the native events in it.
-  -- Neovim accepts a list of patterns, so a table is kept as it is.
+  -- Neovim accepts a list of patterns, so a table is kept as it is. A User
+  -- event keeps its own pattern: that pattern is the event's name.
   if type(event.pattern) == 'string' or type(event.pattern) == 'table' then
     for i = 1, #out do
-      out[i].pattern = event.pattern
+      -- A copy, not a write: a nested descriptor is the user's own table.
+      if not out[i].user then
+        out[i] = { event = out[i].event, pattern = event.pattern }
+      end
     end
   end
 

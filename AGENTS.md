@@ -31,10 +31,13 @@ into the read-only panel.
 both over `grep` and `find`. `nvim` for headless testing, `lua-language-server`
 for diagnostics.
 
-Installed copy (what users actually run, and what the test suite exercises):
+Development happens in an isolated env (`test/dev_env.sh`): every XDG
+directory points into the git-ignored `.dev/`, so the tests and any manual
+session never touch the real `~/.local`, `~/.config`, or the plugin copy the
+editor actually runs. The installed copy the test suite exercises:
 
 ```text
-~/.local/share/nvim/site/pack/core/opt/resonance.nvim/
+.dev/data/nvim/site/pack/core/opt/resonance.nvim/   # test/dev_env.sh path
 ```
 
 **Open issues live in GitHub Issues.** History is `git log`; the *why* of
@@ -105,38 +108,51 @@ working plan in a local, untracked file (for example via
 
 ## 4. Development loop
 
-### Sync (the suite tests the **installed** copy, not the repo)
+### Isolated env
 
 ```bash
-I=~/.local/share/nvim/site/pack/core/opt/resonance.nvim
-cp lua/resonance/*.lua        $I/lua/resonance/
-cp lua/resonance/loader/*.lua $I/lua/resonance/loader/
-cp lua/resonance/ui/*.lua     $I/lua/resonance/ui/
-cp test/*.lua                 $I/test/
-cp doc/resonance.txt README.md AGENTS.md $I/
+test/dev_env.sh bootstrap   # create .dev: installs resonance + 3 fixture plugins via vim.pack
+test/dev_env.sh sync        # copy the working tree over the installed copy
+test/dev_env.sh nvim        # an isolated Neovim for manual testing
+test/dev_env.sh shell       # a shell with the isolated XDG env exported
+rm -rf .dev                 # start over; the next command bootstraps again
 ```
 
-`test/runner.lua` fails loudly if the installed copy is stale. Sync before
-every test run.
+The suite tests the **installed** copy, not the repo. `test/dev_env.sh test`
+syncs before every run, and `test/runner.lua` fails loudly if the copy is
+stale. The runner also refuses to run outside the isolated env
+(`RESONANCE_TEST_ALLOW_REAL_ENV=1` overrides it — don't).
+
+The isolated env has no user config: no `mapleader`, no snacks, no
+personal plugins. A test that needs one of them must set it up itself.
 
 ### Test
 
 ```bash
-./test/run_all.sh
-# or: nvim --headless -c "luafile test/run_all.lua" -c "qall"
+./test/run_all.sh                          # the whole suite, isolated
+test/dev_env.sh test test/gc_spec.lua      # one or more spec files
 ```
 
-`test/pack_integration_spec.lua` installs real plugins — it must run with
-`XDG_DATA_HOME` pointed at a temp dir, never against the user's real
-plugin directory.
+A spec that fails to load exits non-zero; it no longer passes silently.
+
+`test/pack_integration_spec.lua` installs real plugins into its own temp
+`XDG_DATA_HOME` per test.
+
+`test/gc_spec.lua` holds the memory regressions. Prefer an exact count
+(buffers, windows, autocmds, live Lua registry refs, table keys) over a
+heap bound. Neovim's own runtime retains memory per buffer and per window
+in headless mode — matchparen's pending `SafeState` autocmds, for one — so
+switch such sources off or count around them, and drain the event loop
+(`vim.wait`) between cycles.
 
 **Mutation-check new regression tests.** A test that passes against broken
 code is worse than no test. Revert the fix in the *installed* copy only and
-confirm the test fails:
+confirm the test fails, then sync to restore it:
 
 ```bash
-RESONANCE_TEST_ALLOW_STALE=1 nvim --headless \
-  -c "luafile test/runner.lua" -c "luafile test/behavior_spec.lua" -c "qall"
+$EDITOR "$(test/dev_env.sh path)/lua/resonance/loader/init.lua"   # break it
+RESONANCE_TEST_ALLOW_STALE=1 test/dev_env.sh test test/gc_spec.lua
+test/dev_env.sh sync
 ```
 
 ### Diagnose
@@ -157,7 +173,7 @@ lua-language-server --check=lua/resonance/loader/init.lua   # and the other modu
 # directory is not on the runtimepath, so `require('resonance')` fails
 # with "module not found" and the benchmark measures a failed require
 # instead of the plugin.
-I=$HOME/.local/share/nvim/site/pack/core/opt/resonance.nvim
+I=$(test/dev_env.sh path)   # the synced copy; the real one is not kept in sync
 vim-startuptime -vimpath nvim -count 10 -warmup 3 -- \
   -u NONE --cmd "set rtp+=$I" \
   -c "lua require('resonance').setup()" -c "qall"

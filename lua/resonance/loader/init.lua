@@ -450,6 +450,11 @@ M._internal = {
   plugin_state = plugin_state,
   force_load_fns = force_load_fns,
   disabled_plugins = disabled_plugins,
+  -- Keyed by buffer id. The GC suite checks that a wiped buffer leaves no
+  -- key behind: the heap cannot tell, because Neovim's own runtime retains
+  -- more per buffer than these tables do.
+  fired_events = fired_events,
+  fired_groups = fired_groups,
 }
 
 

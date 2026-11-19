@@ -11,6 +11,7 @@ CONTENTS                                                 *resonance-contents*
    4.2 Dependencies                      |resonance-dependencies|
    4.3 Build Commands                    |resonance-build|
    4.4 Version Pinning                   |resonance-version|
+   4.5 Importing a Folder                |resonance-import|
 5. User Interface                        |resonance-ui|
    5.1 Key Mappings                      |resonance-ui-keys|
    5.2 Plugin Details                    |resonance-ui-details|
@@ -34,6 +35,7 @@ native |vim.pack| API with lazy-loading capabilities and a Terminal UI.
 Key features:
 - Native |vim.pack| integration (no external dependencies)
 - Lazy loading via triggers: events, commands, filetypes, keymaps
+- Optional lazy.nvim-style import of a folder of spec files
 - Automatic dependency resolution
 - Build hooks with hash-based caching
 - Terminal UI for plugin management (install, update, checkout, uninstall)
@@ -135,6 +137,8 @@ Common fields:
     lazy (boolean)      false = eager (VimEnter), true = VeryLazy default
     cond (boolean|function) Conditional loading: a false result skips the
                         plugin (a function returning nil too)
+    priority (number)   Registration order within one |resonance.import()|
+                        call, highest first (default 0). Ignored by load()
 
 Multiple plugins are registered with one `resonance.load()` call, as a
 list:
@@ -329,6 +333,45 @@ In a spec with several plugins, pin each one in its own table:
 
 A spec must name a plugin (`src`, `url`, or a URL as its first element).
 One without is reported and skipped.
+
+4.5 Importing a Folder                             *resonance-import*
+
+Optional. Instead of one big `load()` call, keep one spec per file and
+import the folder (lazy.nvim style). Nothing is scanned unless you call
+|resonance.import()|, so a config that only uses load() pays nothing.
+
+    -- lua/plugins/jisho.lua
+    return {
+      'https://github.com/Imngzx/jisho.nvim',
+      cmd = 'Jisho',
+      config = function() require('jisho').setup() end,
+    }
+
+    -- init.lua, after resonance.setup()
+    resonance.import('plugins.core')    -- theme, core UI: now
+    vim.api.nvim_create_autocmd('User', {
+      pattern = 'VeryLazy',
+      callback = function() resonance.import('plugins') end,
+    })
+
+Rules:
+- A file returns one spec or a list of specs. Any other return value (a
+  helper table, nothing) is ignored, so a file may still call load().
+- Only the top level is scanned: `*.lua` files, and folders that have an
+  `init.lua`. Helper files inside a folder are never imported on their
+  own. Files are required in name order.
+- A folder imported on its own ("plugins.core") is skipped by a later
+  import of its parent ("plugins"), so its specs register once.
+- `priority` orders the specs within one import() call, highest first
+  (default 0, ties in name order); give your colorscheme 1000. It is
+  stripped before load().
+- A file that fails to load, or a spec that fails to register, is
+  reported and skipped; the rest still load. Pass `on_error` to handle it
+  yourself, e.g. to make it fatal in a test run:
+
+    resonance.import('plugins', {
+      on_error = function(mod, err) error(mod .. ': ' .. tostring(err)) end,
+    })
 
 ==============================================================================
 5. User Interface                                  *resonance-ui*

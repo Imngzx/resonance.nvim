@@ -12,6 +12,7 @@ resonance-contents	resonance.txt	/*resonance-contents*
 resonance-dependencies	resonance.txt	/*resonance-dependencies*
 resonance-events	resonance.txt	/*resonance-events*
 resonance-fallback	resonance.txt	/*resonance-fallback*
+resonance-import	resonance.txt	/*resonance-import*
 resonance-installation	resonance.txt	/*resonance-installation*
 resonance-introduction	resonance.txt	/*resonance-introduction*
 resonance-performance	resonance.txt	/*resonance-performance*

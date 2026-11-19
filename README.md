@@ -12,6 +12,7 @@
 - **Pretty UI:** Gracefully upgrades its UI and search capabilities if `snacks.nvim` or `nui.nvim` are detected.
 - **Advanced Lazy Loading:** Load plugins on `Event`, `Cmd`, `Keys`, or `FileType`.
 - **Automatic Build Hooks:** Intercepts `PackChanged` events to automatically run `make`, `cargo`, or custom Lua functions when a plugin is installed or updated.
+- **Optional Folder Import:** Keep one spec per file in `lua/plugins/` and register them all with `resonance.import('plugins')`, lazy.nvim style, ordered by `priority`. Opt-in: nothing is scanned unless you call it.
 - **Native Update Discovery:** Checks pending updates with `vim.pack.get()` and displays the commits from the installed revision to the resolved target revision.
 - **Reported Failures:** A failed install is reported with the plugin name and the underlying error, instead of leaving a plugin that silently never loads.
 - **Fast:** Built entirely on Neovim's native `vim.pack`, `vim.async`, and modern `vim.system` APIs.
@@ -249,6 +250,8 @@ resonance.load({
   { -- another plugin...},
 })
 ```
+
+To register specs from one file per plugin instead of a single `load()` call, see [Importing a Plugins Folder](#-importing-a-plugins-folder-optional).
 
 [Complex example](https://github.com/Imngzx/nvim-config-rice-.ver-/blob/nvim-native/lua/config/resonance.lua).
 

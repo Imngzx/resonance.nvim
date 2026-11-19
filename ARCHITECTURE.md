@@ -8,7 +8,7 @@ is the final authority.
 
 ```text
 init.lua (public API)
-   │ setup() / load()                       open_ui()
+   │ setup() / load() / import()            open_ui()
    ▼                                           ▼
 loader/  ── control plane ──┐            ui/  ── read-only panel
   init     load, load_now,  │              init    window, keymaps
@@ -161,6 +161,21 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
 - **Rendering:** `render()` rebuilds the whole buffer from module-level
   tables that are reused across renders (`table.clear`). The spinner
   rewrites only its own line every 100 ms.
+
+## Flow 6: `import(mod)` (opt-in)
+
+- `init.import()` requires `scandir.lua` on first call; `setup()` and
+  `load()` never do.
+- `scan()` lists the top level of `<root>/<mod>/` with `fs_scandir`: `*.lua`
+  files, plus folders with an `init.lua` that were not passed to
+  `import()` themselves. The list is sorted, since scandir order depends
+  on the filesystem.
+- Every module is `require`d under `pcall` first; the returned specs are
+  collected, sorted by `priority` (stable on file order), copied without
+  `priority`, and passed one by one to the public `load()` under `pcall`.
+  Failures go to `opts.on_error` or `utils.notify`.
+- It touches no loader internals, so the registry/loader split is
+  unchanged: `import()` is just a loop over `load()`.
 
 ## Things that bite
 

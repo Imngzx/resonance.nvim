@@ -11,7 +11,6 @@ local set_keymap = vim.keymap.set
 local del_keymap = vim.keymap.del
 local replace_termcodes = api.nvim_replace_termcodes
 local feedkeys = api.nvim_feedkeys
-local parse_cmd = api.nvim_parse_cmd
 local get_keymap = api.nvim_get_keymap
 local buf_get_keymap = api.nvim_buf_get_keymap
 
@@ -180,13 +179,31 @@ function M.register_cmd(config, load_now, before_setup)
     end
 
     if cmd then
-      create_user_command(cmd, function(args)
+      local function stub(args)
         del_user_command(cmd)
-        load_now(nil)
-        local run_opts = { cmd = cmd, args = args.fargs, bang = args.bang }
-        if args.mods and args.mods ~= '' then
-          run_opts.mods = parse_cmd(args.mods .. ' ' .. cmd, {}).mods
+
+        -- A failed load (an install error) leaves nothing to run. The stub
+        -- is put back so the command can be tried again: deleting it for
+        -- good meant the command was gone until Neovim was restarted.
+        if load_now(nil) == false then
+          create_user_command(cmd, stub, cmd_opts)
+          return
         end
+
+        -- The load worked but the command is not there: the plugin's setup
+        -- is waiting for its build, or the plugin does not define it.
+        -- Running it would only raise "E492: Not an editor command".
+        if vim.fn.exists(':' .. cmd) ~= 2 then
+          utils.notify(':' .. cmd .. ' is not defined after loading the plugin. ' ..
+            'If the plugin is still building, run it again once the build finishes.',
+            vim_log_levels.WARN)
+          return
+        end
+
+        -- smods is the structured form of the modifiers (:vertical, :tab,
+        -- ...), which is what nvim_cmd takes. Re-parsing them from text used
+        -- to name the command, and raised E492 when it did not exist.
+        local run_opts = { cmd = cmd, args = args.fargs, bang = args.bang, mods = args.smods }
         if args.range == 1 then
           run_opts.range = { args.line1 }
         elseif args.range == 2 then
@@ -198,7 +215,8 @@ function M.register_cmd(config, load_now, before_setup)
         if not ok then
           utils.notify('Execution failed: ' .. tostring(err), vim_log_levels.ERROR)
         end
-      end, cmd_opts)
+      end
+      create_user_command(cmd, stub, cmd_opts)
 
       -- The stub owns the command name, so it has to go before the
       -- plugin's setup runs -- otherwise the plugin's own

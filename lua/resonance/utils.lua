@@ -400,7 +400,13 @@ function M.parse_trigger(config)
     return '󱐋 ' .. tostring(config.event)
   end
   if config.cmd then
-    local cmds = type(config.cmd) == 'string' and { config.cmd } or config.cmd
+    local cmds = config.cmd
+    -- A string, or one command spec table ({ name = 'X', opts = ... }), is
+    -- a single command. parse_config wraps it, but a spec rejected by `cond`
+    -- is shown before that, and an unwrapped table has no [1].
+    if type(cmds) == 'string' or (type(cmds) == 'table' and cmds[1] == nil) then
+      cmds = { cmds }
+    end
     local parts = {}
     for i = 1, #cmds do
       local c = cmds[i]

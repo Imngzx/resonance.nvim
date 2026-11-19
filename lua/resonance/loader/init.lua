@@ -461,12 +461,7 @@ function M.load(config)
   ensure_autocmds()
   ensure_event_tracker()
 
-  local is_plugin_list = type(config[1]) == 'table'
-    and not config.plugin and not config.url and not config.src
-    and not config.event and not config.cmd and not config.keys
-    and not config.ft and not config.config and not config.setup
-
-  if is_plugin_list then
+  if spec.is_plugin_list(config) then
     for i = 1, #config do
       if type(config[i]) == 'table' then
         M.load(config[i])
@@ -507,6 +502,16 @@ function M.load(config)
   local parsed_deps = utils.parse_dependencies(config)
   local trig_str = utils.parse_trigger(config)
   local parsed_names, pack_plugins = spec.extract_names(plugins)
+
+  -- A spec with no plugin in it -- { event = ..., setup = fn } -- has nothing
+  -- to load. Its trigger used to be registered anyway, and crashed with
+  -- "table index is nil" when it fired; even without the crash, a spec with
+  -- no members counts as loaded, so its setup never ran.
+  if #parsed_names == 0 then
+    utils.notify('Spec has no plugin (src, url or a URL as [1]), skipped: ' ..
+      (utils.parse_trigger(config) or 'no trigger'), vim_log_levels.ERROR)
+    return
+  end
 
   for i = 1, #parsed_names do
     local name = parsed_names[i]
@@ -751,7 +756,12 @@ function M.load(config)
     -- later attempt can try again, and the error is reported: a silent
     -- failure leaves a plugin that never loads and never loads again.
     local function fail_install(message)
-      state.loaded = false
+      -- `state` is the first member's. It was already loaded before this
+      -- call -- another spec loaded it -- then it stays loaded: the failure
+      -- belongs to the other members.
+      if not member_loaded[1] then
+        state.loaded = false
+      end
       if current_name then
         visiting_path[current_name] = nil
         if path_order[#path_order] == current_name then

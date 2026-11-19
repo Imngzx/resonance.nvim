@@ -1,6 +1,34 @@
 local M = {}
 local utils = require('resonance.utils')
 
+local type = type
+local pairs = pairs
+
+---@param t table
+---@return boolean
+local function has_string_key(t)
+  for k in pairs(t) do
+    if type(k) ~= 'number' then return true end
+  end
+  return false
+end
+
+--- Whether a table given to load() is a list of specs rather than one spec.
+---
+--- A list has specs in its array part and nothing else. Any named field --
+--- lazy, dependencies, cond, build, version, ... -- makes it a single spec
+--- whose plugin is written as its first element. The old check looked for
+--- a fixed handful of keys, so { { 'url' }, lazy = false, dependencies =
+--- { ... } } was split into specs and its options were silently dropped.
+---
+--- Shared by the loader and parse_config, so the two cannot disagree.
+---@param config table
+---@return boolean
+function M.is_plugin_list(config)
+  return type(config) == 'table' and type(config[1]) == 'table'
+    and not has_string_key(config)
+end
+
 -- Parse and normalize plugin configuration
 --
 -- The caller's table is never modified. A spec is the user's own table,
@@ -10,12 +38,7 @@ local utils = require('resonance.utils')
 ---@param config table
 ---@return table|nil
 function M.parse_config(config)
-  local is_plugin_list = type(config[1]) == 'table'
-    and not config.plugin and not config.url and not config.src
-    and not config.event and not config.cmd and not config.keys
-    and not config.ft and not config.config and not config.setup
-
-  if is_plugin_list then
+  if M.is_plugin_list(config) then
     return nil -- handled by caller
   end
 
@@ -133,6 +156,18 @@ function M.parse_config(config)
   elseif type(plugins) == 'table' then
     if plugins[1] == nil and (plugins.src or plugins.url or plugins.name) then
       plugins = { plugins }
+    elseif type(plugins[1]) == 'string' and has_string_key(plugins) then
+      -- { 'url', version = 'v1.0.0' } is one plugin with its options, not a
+      -- list of plugins: it was read as a list, and the version, name and
+      -- build were silently dropped. A list of URLs -- { 'url1', 'url2' } --
+      -- has no named fields and stays a list.
+      if #plugins == 1 then
+        plugins = { plugins }
+      else
+        utils.notify('Plugin options such as version or name apply to one plugin. ' ..
+          "Write each plugin as its own table: { { 'url1', version = ... }, 'url2' }",
+          vim.log.levels.WARN)
+      end
     end
   end
   config.plugin = plugins or {}

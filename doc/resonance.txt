@@ -429,6 +429,25 @@ actually has.
         Supports all config fields including lazy, cond, keys as function.
         Returns: nothing
 
+    resonance.import(mod, [opts])                     *resonance.import()*
+        Optional, lazy.nvim-style import of a folder of spec modules.
+        Requires every top-level module under <root>/<mod>/ -- `*.lua`
+        files and folders with an init.lua -- in name order, then
+        registers the spec or list of specs each one returns through
+        load(), highest `priority` first (default 0, ties in name order).
+        `priority` is stripped before load(). Any other return value is
+        ignored. Nothing is scanned unless this is called.
+        A folder imported on its own (e.g. "plugins.core") is skipped by
+        a later import of its parent ("plugins").
+        mod: module path, e.g. "plugins" for lua/plugins/
+        opts: optional table:
+            root      the lua/ directory to scan
+                      (default: stdpath("config") .. "/lua")
+            on_error  fun(mod, err): called when a module fails to load
+                      or its spec fails to register. Default: notify.
+                      One failure never stops the other modules.
+        Returns: nothing
+
     resonance.stats()
         Plugin statistics.
         Returns: {count, loaded, startuptime, times}

@@ -30,6 +30,11 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
   install the loader's autocmds.
 - `builds.lua` only holds state: it runs no processes and requires nothing
   from the loader. `loader/build.lua` runs the commands and reports into it.
+- `scandir.lua` backs the opt-in `import()`. It is required only when the
+  user calls it, and it registers specs through the public `load()`, so it
+  adds nothing to the loader or to startup for configs that list specs by
+  hand. Not to be confused with `scanner.lua`, which lists *installed*
+  plugins for the panel.
 - The loader installs its autocmds the first time it is used (`setup()` or
   `load()`), never at require time.
 

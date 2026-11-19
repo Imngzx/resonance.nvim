@@ -254,6 +254,48 @@ resonance.load({
 
 [Simple example](https://github.com/Imngzx/resonance-demo-nvim-config).
 
+## 📂 Importing a Plugins Folder (optional)
+
+Instead of calling `resonance.load()` for every spec, you can keep one spec
+per file and import the whole folder, lazy.nvim style. It is opt-in: nothing
+is scanned unless you call `import()`.
+
+```lua
+-- lua/plugins/jisho.lua
+return {
+  'https://github.com/Imngzx/jisho.nvim',
+  cmd = 'Jisho',
+  config = function() require('jisho').setup() end,
+}
+```
+
+```lua
+-- init.lua, after resonance.setup()
+local resonance = require('resonance')
+resonance.import('plugins.core')   -- lua/plugins/core/: theme, core UI
+vim.api.nvim_create_autocmd('User', {
+  pattern = 'VeryLazy',
+  callback = function() resonance.import('plugins') end,  -- lua/plugins/
+})
+```
+
+- A file returns one spec or a list of specs. Anything else it returns
+  (a helper table, nothing) is ignored, so a file may still call
+  `resonance.load()` itself.
+- Only the top level is scanned: `*.lua` files and folders with an
+  `init.lua` (`lua/plugins/heirline/init.lua`). Helper files inside a folder
+  are never imported on their own. Files are required in name order.
+- A folder you import on its own (`plugins.core`) is skipped by the
+  parent import (`plugins`), so its specs are not registered twice.
+- `priority = 1000` registers a spec before the others in the same
+  `import()` call (default 0) — put it on your colorscheme. It is stripped
+  before `load()`.
+- A file that fails to load is reported and skipped; the rest still load.
+  Pass `on_error = function(mod, err) ... end` to handle it yourself (for
+  example, raise in a strict test run).
+- `root` changes the scanned `lua/` directory (default
+  `stdpath('config') .. '/lua'`).
+
 ## 📊 Dashboard Resonance.stats integration
 
 ![Preview Image](https://github.com/user-attachments/assets/7b09a0be-6c3d-40a5-900a-ac0e116d7731)

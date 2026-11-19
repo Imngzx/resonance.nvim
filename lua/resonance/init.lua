@@ -77,6 +77,7 @@ end
 ---@field setup? function Callback executed immediately after the plugin is loaded via `vim.pack`
 ---@field config? function Alias for `setup`, perfectly compatible with lazy.nvim
 ---@field restore_keys? boolean Restore the original key mapping after lazy loading (default: true)
+---@field priority? integer Registration order within one import() call, highest first (default 0). Used by import() only
 
 M.config = {
   ui = {
@@ -213,6 +214,19 @@ function M.load(spec)
     loader_mod = require('resonance.loader')
   end
   loader_mod.load(spec)
+end
+
+--- Import a folder of spec modules (optional, lazy.nvim style).
+---
+--- Requires every top-level module under <root>/<mod>/ -- `*.lua` files and
+--- folders with an init.lua -- and registers the spec or list of specs each
+--- one returns, highest `priority` first. Nothing is scanned unless this is
+--- called, so listing specs by hand with load() costs nothing extra.
+---@param mod string module path, e.g. 'plugins' for lua/plugins/
+---@param opts? ResonanceImportOpts
+function M.import(mod, opts)
+  arm_verylazy()
+  require('resonance.scandir').import(mod, opts)
 end
 
 --- Whether an event has already fired for a buffer.

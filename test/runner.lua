@@ -297,6 +297,7 @@ local function reset_state()
   package.loaded['resonance.ui.render'] = nil
   package.loaded['resonance.ui.actions'] = nil
   package.loaded['resonance.scanner'] = nil
+  package.loaded['resonance.scandir'] = nil
   package.loaded['resonance.utils'] = nil
   -- The registry holds the shared state, so it has to start empty. The
   -- loader's _reset() clears most of it, but the load times live there

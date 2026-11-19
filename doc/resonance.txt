@@ -284,6 +284,17 @@ Pin to specific tag, branch, or commit:
     version = 'main'        -- Branch
     version = 'abc1234'     -- Commit hash
 
+In a spec with several plugins, pin each one in its own table:
+    plugin = {
+      { 'https://github.com/user/a', version = 'v1.0.0' },
+      'https://github.com/user/b',
+    }
+    plugin = { 'https://github.com/user/a', version = 'v1.0.0' }  -- one plugin
+    plugin = { 'https://github.com/user/a', 'https://github.com/user/b' }  -- two
+
+A spec must name a plugin (`src`, `url`, or a URL as its first element).
+One without is reported and skipped.
+
 ==============================================================================
 5. User Interface                                  *resonance-ui*
 

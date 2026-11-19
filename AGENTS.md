@@ -158,13 +158,13 @@ lua-language-server --check=lua/resonance/loader/init.lua   # and the other modu
 # with "module not found" and the benchmark measures a failed require
 # instead of the plugin.
 I=$HOME/.local/share/nvim/site/pack/core/opt/resonance.nvim
-vim-startuptime -vimpath "$(which nvim)" -count 10 -warmup 3 -- \
+vim-startuptime -vimpath nvim -count 10 -warmup 3 -- \
   -u NONE --cmd "set rtp+=$I" \
   -c "lua require('resonance').setup()" -c "qall"
 
 # Baseline, to get the plugin's own cost. Run it too: the startup total
 # is mostly Neovim itself.
-vim-startuptime -vimpath "$(which nvim)" -count 10 -warmup 3 -- \
+vim-startuptime -vimpath nvim -count 10 -warmup 3 -- \
   -u NONE -c "qall"
 
 # UI open time

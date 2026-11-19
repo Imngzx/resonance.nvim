@@ -6,6 +6,7 @@
 local M = {}
 
 local utils = require('resonance.utils')
+local is_plugin_list = require('resonance.loader.spec').is_plugin_list
 
 local uv = vim.uv
 local uv_fs_scandir = uv.fs_scandir
@@ -24,12 +25,17 @@ local function default_root()
   return vim.fn.stdpath('config') .. '/lua'
 end
 
--- A single spec: a URL as [1], or an explicit src/url/plugin field.
+-- A single spec: a URL as [1], an explicit src/url/plugin field, or the
+-- plugin written as a table in [1] with the options beside it
+-- ({ { 'url' }, lazy = false }). A list of specs is told apart by
+-- is_plugin_list() first, the same check load() uses, so the two cannot
+-- disagree about which shape is which.
 local function is_spec(t)
   if type(t) ~= 'table' then return false end
   local first = t[1]
-  return (type(first) == 'string' and first:find('://', 1, true) ~= nil)
-    or type(t.src) == 'string' or type(t.url) == 'string'
+  if type(first) == 'string' then return first:find('://', 1, true) ~= nil end
+  if type(first) == 'table' then return is_spec(first) end
+  return type(t.src) == 'string' or type(t.url) == 'string'
     or t.plugin ~= nil
 end
 
@@ -62,8 +68,11 @@ function M.scan(mod, root)
     local name, kind = uv_fs_scandir_next(handle)
     if not name then break end
 
+    -- init.lua is the folder's own module, '<mod>' itself, and import()
+    -- requires it under that name. Listed here it would be required as
+    -- '<mod>.init': a second run of the same file under another name.
     local entry
-    if kind == 'file' or kind == 'link' then
+    if (kind == 'file' or kind == 'link') and name ~= 'init.lua' then
       entry = name:match('^(.+)%.lua$')
     end
     if not entry and (kind == 'directory' or kind == 'link')
@@ -107,27 +116,60 @@ function M.import(mod, opts)
   opts = opts or {}
   local root = opts.root or default_root()
   local on_error = opts.on_error
-  imported[root .. '/' .. mod:gsub('%.', '/')] = true
+  local dir = root .. '/' .. mod:gsub('%.', '/')
+  imported[dir] = true
 
   local names = M.scan(mod, root)
   local entries, n = {}, 0
+  -- A bad entry is reported and skipped here, before the sort: a
+  -- non-table entry or a non-numeric priority would otherwise raise
+  -- outside any pcall and abort the whole import.
   local function add(name, spec)
+    if not is_spec(spec) then
+      report(name, 'not a plugin spec: ' .. vim.inspect(spec), on_error)
+      return
+    end
+    local priority = spec.priority
+    if priority ~= nil and type(priority) ~= 'number' then
+      report(name, 'priority must be a number, got ' .. type(priority), on_error)
+      priority = 0
+    end
     n = n + 1
-    entries[n] = { name = name, spec = spec, priority = spec.priority or 0, order = n }
+    entries[n] = { name = name, spec = spec, priority = priority or 0, order = n }
+  end
+
+  local function take(name, ok, ret)
+    if ok == nil then ok, ret = pcall(require, name) end
+    if not ok then
+      report(name, ret, on_error)
+    elseif is_plugin_list(ret) then
+      if is_spec(ret[1]) then
+        for j = 1, #ret do
+          add(name, ret[j])
+        end
+      end
+    elseif is_spec(ret) then
+      add(name, ret)
+    end
+  end
+
+  -- The folder's own init.lua first, as the module '<mod>'. Already in
+  -- package.loaded, its value is used as it is: either what it returned,
+  -- or -- while it is still running, because it is the file that called
+  -- import('<mod>') -- require()'s in-progress marker, which is not a
+  -- table and so is ignored. Requiring it then would only raise "loop or
+  -- previous error loading module".
+  if uv_fs_stat(dir .. '/init.lua') then
+    local cur = package.loaded[mod]
+    if cur ~= nil then
+      take(mod, true, cur)
+    else
+      take(mod)
+    end
   end
 
   for i = 1, #names do
-    local name = mod .. '.' .. names[i]
-    local ok, ret = pcall(require, name)
-    if not ok then
-      report(name, ret, on_error)
-    elseif is_spec(ret) then
-      add(name, ret)
-    elseif type(ret) == 'table' and is_spec(ret[1]) then
-      for j = 1, #ret do
-        add(name, ret[j])
-      end
-    end
+    take(mod .. '.' .. names[i])
   end
 
   table_sort(entries, by_priority)

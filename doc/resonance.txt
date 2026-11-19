@@ -360,11 +360,15 @@ Rules:
 - Only the top level is scanned: `*.lua` files, and folders that have an
   `init.lua`. Helper files inside a folder are never imported on their
   own. Files are required in name order.
+- The folder's own `init.lua` (lua/plugins/init.lua) is the module
+  "plugins" itself: its specs are read first, and it is never required a
+  second time as "plugins.init". It may call import('plugins') itself;
+  its own return value is then not imported.
 - A folder imported on its own ("plugins.core") is skipped by a later
   import of its parent ("plugins"), so its specs register once.
 - `priority` orders the specs within one import() call, highest first
   (default 0, ties in name order); give your colorscheme 1000. It is
-  stripped before load().
+  stripped before load(). A non-number is reported and counts as 0.
 - A file that fails to load, or a spec that fails to register, is
   reported and skipped; the rest still load. Pass `on_error` to handle it
   yourself, e.g. to make it fatal in a test run:
@@ -461,6 +465,8 @@ actually has.
             replay  replay the read events for the open files right after
                     VeryLazy (default: true). Read when VeryLazy fires, so
                     it can be set after load() has already been called.
+            build   the build options: `concurrency`, `progress` (see
+                    |resonance-build-config|)
         Returns: nothing
 
     resonance.open_ui()

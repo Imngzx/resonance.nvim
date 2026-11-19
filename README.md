@@ -288,11 +288,15 @@ vim.api.nvim_create_autocmd('User', {
 - Only the top level is scanned: `*.lua` files and folders with an
   `init.lua` (`lua/plugins/heirline/init.lua`). Helper files inside a folder
   are never imported on their own. Files are required in name order.
+- The folder's own `lua/plugins/init.lua` is the `plugins` module itself:
+  its specs are read first, and it is never required a second time as
+  `plugins.init`. It may call `import('plugins')` itself; its own return
+  value is then not imported.
 - A folder you import on its own (`plugins.core`) is skipped by the
   parent import (`plugins`), so its specs are not registered twice.
 - `priority = 1000` registers a spec before the others in the same
   `import()` call (default 0) — put it on your colorscheme. It is stripped
-  before `load()`.
+  before `load()`. A non-number is reported and counts as 0.
 - A file that fails to load is reported and skipped; the rest still load.
   Pass `on_error = function(mod, err) ... end` to handle it yourself (for
   example, raise in a strict test run).

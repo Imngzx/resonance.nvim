@@ -151,6 +151,86 @@ test.run_suite('resonance.import', {
   },
 
   {
+    name = 'import: a spec written as { { url }, opts } keeps its options',
+    fn = function()
+      -- is_spec() used to look at [1] only, took this for a list of specs,
+      -- and registered { url } alone: lazy and cmd were dropped.
+      local loaded = import(modname(), {
+        ['MOD/a.lua'] = "return { { 'https://x.invalid/a' }, name = 'a', lazy = true, cmd = 'ACmd' }",
+        ['MOD/b.lua'] = "return { { 'https://x.invalid/b1', name = 'b1' }, { 'https://x.invalid/b2', name = 'b2' } }",
+      })
+      test.assert_eq(names(loaded), 'a,b1,b2')
+      test.assert_eq(loaded[1].lazy, true)
+      test.assert_eq(loaded[1].cmd, 'ACmd')
+      test.assert_eq(loaded[1][1][1], 'https://x.invalid/a')
+    end,
+  },
+
+  {
+    name = 'import: a folder init.lua that imports its own folder runs once',
+    fn = function()
+      local mod = modname()
+      local root, base = make_root(mod, {
+        ['MOD/init.lua'] = table.concat({
+          "_G.RS_INIT_RUNS = (_G.RS_INIT_RUNS or 0) + 1",
+          "require('resonance').import(..., { root = _G.RS_IMPORT_ROOT, on_error = _G.RS_ON_ERROR })",
+          "return { 'https://x.invalid/init', name = 'init' }",
+        }, '\n'),
+        ['MOD/a.lua'] = "return { 'https://x.invalid/a', name = 'a' }",
+      })
+      local errors = {}
+      _G.RS_INIT_RUNS, _G.RS_IMPORT_ROOT = 0, root
+      _G.RS_ON_ERROR = function(name, err) errors[#errors + 1] = name .. ':' .. tostring(err) end
+      local resonance = require('resonance')
+      local orig = resonance.load
+      local loaded = {}
+      resonance.load = function(spec) loaded[#loaded + 1] = spec end
+      local ok, err = pcall(require, mod)
+      resonance.load = orig
+      local runs = _G.RS_INIT_RUNS
+      _G.RS_INIT_RUNS, _G.RS_IMPORT_ROOT, _G.RS_ON_ERROR = nil, nil, nil
+      cleanup(base, mod)
+      if not ok then error(err) end
+      -- Required as '<mod>.init' it ran twice, hit require's loop error,
+      -- and the nested import registered 'a' a second time.
+      test.assert_eq(runs, 1)
+      test.assert_eq(#errors, 0, table.concat(errors, '; '))
+      test.assert_eq(names(loaded), 'a')
+    end,
+  },
+
+  {
+    name = 'import: a non-table entry in a list is reported, the rest still register',
+    fn = function()
+      local errors = {}
+      local loaded = import(modname(), {
+        ['MOD/a.lua'] = "return { { 'https://x.invalid/a1', name = 'a1' }, 42, { 'https://x.invalid/a2', name = 'a2' } }",
+        ['MOD/b.lua'] = "return { 'https://x.invalid/b', name = 'b' }",
+      }, { on_error = function(name, err) errors[#errors + 1] = name .. ':' .. tostring(err) end })
+      test.assert_eq(names(loaded), 'a1,a2,b')
+      test.assert_eq(#errors, 1)
+      test.assert_contains(errors[1], 'not a plugin spec')
+    end,
+  },
+
+  {
+    name = 'import: a non-numeric priority is reported and counts as 0',
+    fn = function()
+      -- Compared as-is, 'high' > 10 raised inside table.sort, outside any
+      -- pcall, and aborted the whole import.
+      local errors = {}
+      local loaded = import(modname(), {
+        ['MOD/a.lua'] = "return { 'https://x.invalid/a', name = 'a', priority = 'high' }",
+        ['MOD/b.lua'] = "return { 'https://x.invalid/b', name = 'b', priority = 10 }",
+        ['MOD/c.lua'] = "return { 'https://x.invalid/c', name = 'c' }",
+      }, { on_error = function(name, err) errors[#errors + 1] = name .. ':' .. tostring(err) end })
+      test.assert_eq(names(loaded), 'b,a,c')
+      test.assert_eq(#errors, 1)
+      test.assert_contains(errors[1], 'priority must be a number')
+    end,
+  },
+
+  {
     name = 'import: a missing folder notifies instead of raising',
     fn = function()
       local notices = helpers.capture_and_wait(function()

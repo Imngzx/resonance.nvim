@@ -89,6 +89,7 @@ end
 -- tests silently validate old code, so fail loudly instead.
 local MODULE_FILES = {
   'init.lua', 'scanner.lua', 'utils.lua', 'registry.lua', 'builds.lua',
+  'scandir.lua',
   'loader/init.lua', 'loader/spec.lua', 'loader/triggers.lua',
   'loader/build.lua', 'loader/dag.lua', 'loader/replay.lua',
   'ui/init.lua', 'ui/state.lua', 'ui/render.lua', 'ui/actions.lua',

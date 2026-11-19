@@ -243,6 +243,43 @@ test.run_suite('resonance.behavior.verylazy', {
     end,
   },
 
+  {
+    name = 'verylazy: loaded after startup, VeryLazy fires once and latches the startup time',
+    fn = function()
+      -- The suite runs inside -c, before VimEnter, so the path taken when
+      -- Resonance is loaded after startup cannot be reached in this
+      -- process. A child Neovim calls setup() from its own VimEnter, where
+      -- v:vim_did_enter is already 1.
+      --
+      -- The startup time used to be latched only by the UIEnter/VimEnter
+      -- callbacks, which never run on that path.
+      local root = vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim'
+      local script = vim.fn.tempname() .. '.lua'
+      vim.fn.writefile({
+        "local r = require('resonance')",
+        "local n = 0",
+        "vim.api.nvim_create_autocmd('User', { pattern = 'VeryLazy', callback = function() n = n + 1 end })",
+        "local did_enter = vim.v.vim_did_enter",
+        "r.setup()",
+        "r.trigger_verylazy()",
+        "vim.defer_fn(function()",
+        "  io.stdout:write('DID_ENTER=' .. did_enter .. ' FIRED=' .. n .. ' LATCHED=' .. tostring(r._end_time ~= nil) .. '\\n')",
+        "  vim.cmd('qall!')",
+        "end, 300)",
+      }, script)
+      local out = vim.system({
+        'nvim', '--headless', '--clean',
+        '--cmd', 'set rtp^=' .. root,
+        '--cmd', 'autocmd VimEnter * ++once lua dofile(' .. vim.inspect(script) .. ')',
+      }, { text = true }):wait(15000)
+      vim.fn.delete(script)
+      local text = (out.stdout or '') .. (out.stderr or '')
+      test.assert_contains(text, 'DID_ENTER=1', 'the child did not reach the late-load path: ' .. text)
+      test.assert_contains(text, 'FIRED=1', 'VeryLazy did not fire exactly once when loaded late: ' .. text)
+      test.assert_contains(text, 'LATCHED=true', 'the startup time was not latched when VeryLazy fired: ' .. text)
+    end,
+  },
+
   -- Event spellings ----------------------------------------------------------
 
   {
@@ -305,6 +342,37 @@ test.run_suite('resonance.behavior.verylazy', {
       local got = trigger_autocmds(name)
       test.assert_true(has(got, 'InsertEnter:*'), 'InsertEnter took the *.md pattern: ' .. vim.inspect(got))
       test.assert_true(has(got, 'BufEnter:*.md'), 'BufEnter *.md is missing: ' .. vim.inspect(got))
+    end,
+  },
+
+  {
+    name = "events: { event = 'User', pattern = 'X' } is a User event",
+    fn = function()
+      -- Written by analogy with { event = 'BufEnter', pattern = '*.md' }. It
+      -- has no internal `user` flag, so it was read as a native event: the
+      -- list's own pattern overwrote X, and the trigger showed a bare "User".
+      test.stub_pack()
+      local name = fresh('ev-user-descriptor')
+      local spec_event = { 'InsertEnter', { event = 'User', pattern = 'X' }, pattern = '*.lua' }
+      _G.resonance.load({ src = 'https://github.com/test/' .. name, event = spec_event })
+      local got = trigger_autocmds(name)
+      test.assert_true(has(got, 'User:X'), 'the User pattern was overwritten: ' .. vim.inspect(got))
+      test.assert_true(has(got, 'InsertEnter:*.lua'), 'the list pattern was lost: ' .. vim.inspect(got))
+      test.assert_contains(_G.utils.parse_trigger({ event = { { event = 'User', pattern = 'X' } } }), 'User(X)',
+        'the trigger is not shown with its pattern')
+      test.assert_nil(spec_event[2].user, "the user's own descriptor table was modified")
+    end,
+  },
+
+  {
+    name = "events: surrounding whitespace in 'User Foo ' is ignored",
+    fn = function()
+      test.stub_pack()
+      local name = fresh('ev-user-trailing')
+      _G.resonance.load({ src = 'https://github.com/test/' .. name, event = { 'User Foo ', ' BufReadPost' } })
+      local got = trigger_autocmds(name)
+      test.assert_true(has(got, 'User:Foo'), "'User Foo ' did not register User Foo: " .. vim.inspect(got))
+      test.assert_true(has(got, 'BufReadPost:*'), "' BufReadPost' did not register: " .. vim.inspect(got))
     end,
   },
 

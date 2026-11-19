@@ -203,14 +203,41 @@ end
 ---@param s string
 ---@return ResonanceEventSpec
 local function parse_event_string(s)
+  -- Surrounding whitespace is not part of the name: 'User Foo ' used to
+  -- fall through as the native event "User Foo ", which does not exist.
+  s = string_match(s, '^%s*(.-)%s*$')
   if s == 'VeryLazy' then
     return { event = 'User', pattern = 'VeryLazy', user = true }
   end
-  local user_pattern = s:match('^User%s+(%S+)$')
+  local user_pattern = string_match(s, '^User%s+(.+)$')
   if user_pattern then
     return { event = 'User', pattern = user_pattern, user = true }
   end
   return { event = s }
+end
+
+--- Normalize one descriptor: { event = ..., pattern = ... }.
+---
+--- A User event written as a descriptor, { event = 'User', pattern = 'X' },
+--- has no `user` flag -- the flag is internal, and nobody writes it by hand.
+--- Without it the descriptor was read as a native event: a list's outer
+--- pattern overwrote its own, and the trigger was shown as a bare "User".
+---
+--- A copy is returned rather than a write, because the descriptor is the
+--- user's own table.
+---@param d ResonanceEventSpec
+---@return ResonanceEventSpec
+local function normalize_descriptor(d)
+  if d.user then return d end
+  if d.event == 'User' then
+    return { event = 'User', pattern = d.pattern, user = true }
+  end
+  local parsed = parse_event_string(d.event)
+  if parsed.user then return parsed end
+  if parsed.event ~= d.event then
+    return { event = parsed.event, pattern = d.pattern }
+  end
+  return d
 end
 
 ---@class ResonanceEventSpec
@@ -255,7 +282,7 @@ function M.normalize_events(event)
   -- One descriptor on its own: { event = 'BufEnter', pattern = '*.md' }.
   -- It has no list part, so the list handling below would turn it into {}.
   if type(event.event) == 'string' then
-    return { event }
+    return { normalize_descriptor(event) }
   end
 
   -- Already normalized: a list of descriptors. Every entry is a table with
@@ -272,7 +299,7 @@ function M.normalize_events(event)
   end
   if all_descriptors then
     for i = 1, #event do
-      out[#out + 1] = event[i]
+      out[#out + 1] = normalize_descriptor(event[i])
     end
     return out
   end

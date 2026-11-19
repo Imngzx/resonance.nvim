@@ -116,6 +116,11 @@ local function fire_verylazy(generation)
   if generation ~= verylazy_generation or verylazy_fired then return end
   verylazy_fired = true
 
+  -- The startup time is latched here as well as at UIEnter/VimEnter: when
+  -- Resonance is loaded after startup, those events never come, and the
+  -- time kept growing until the first stats() call.
+  M._end_time = M._end_time or hrtime()
+
   -- The exec is synchronous: every VeryLazy callback has registered its
   -- triggers by the time it returns, which is the one moment the replay
   -- can see them all. A scheduled replay runs after the `once` triggers

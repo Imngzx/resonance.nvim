@@ -738,6 +738,19 @@ test.run_suite('resonance.loader.build', {
       local orig_poll = build.LOCK_POLL_MS
       build.LOCK_POLL_MS = 50
 
+      -- The wait shows in the progress message, so a build that seems stuck
+      -- says what it is waiting on.
+      build._reset_batch()
+      local texts = {}
+      local group = vim.api.nvim_create_augroup('ResonanceBuildLockProgressTest', { clear = true })
+      vim.api.nvim_create_autocmd('Progress', {
+        group = group,
+        callback = function(ev)
+          local d = ev.data or {}
+          if d.source == 'resonance' then texts[#texts + 1] = d.status .. ' ' .. d.text[1] end
+        end,
+      })
+
       local built = false
       local result = nil
       build.run_build(name, dir, function() built = true end, 'hash1',
@@ -758,6 +771,16 @@ test.run_suite('resonance.loader.build', {
       test.assert_true(built, 'the build never ran once the lock was free')
       test.assert_true(result, 'the build did not succeed')
       test.assert_eq(builds.status(name).state, 'ok')
+
+      vim.wait(50)
+      vim.api.nvim_del_augroup_by_id(group)
+      local want = {
+        'running Building (0/1) ' .. name,
+        'running Building (0/1) ' .. name .. ': waiting for another Neovim session',
+        'success Build done',
+      }
+      test.assert_true(vim.deep_equal(texts, want),
+        'wrong progress updates while waiting on the lock: ' .. vim.inspect(texts))
 
       clear_marker(name)
       uv.fs_rmdir(dir)
@@ -900,9 +923,11 @@ test.run_suite('resonance.loader.build', {
           callback = function(ev)
             local d = ev.data or {}
             if d.source == 'resonance' then
+              local x = d.data or {}
               seen[#seen + 1] = {
                 id = d.id, status = d.status, percent = d.percent,
-                text = d.text and d.text[1] or '', total = d.data and d.data.total,
+                text = d.text and d.text[1] or '',
+                done = x.done, total = x.total, failed = x.failed, plugin = x.plugin,
               }
             end
           end,
@@ -921,39 +946,40 @@ test.run_suite('resonance.loader.build', {
         for i = 1, #names do clear_marker(names[i]) end
         vim.fn.delete(root, 'rf')
         build.configure({})
-        return seen
+        return seen, names
       end
 
-      local function check(seen, label, n, status, text)
-        test.assert_true(#seen >= 2, label .. ': expected updates, got ' .. vim.inspect(seen))
-        test.assert_eq(seen[1].status, 'running', label .. ': the first update is not running')
-        local last = seen[#seen]
-        test.assert_eq(last.status, status, label .. ': wrong final status')
-        test.assert_eq(last.text, text, label .. ': wrong final text')
-        test.assert_eq(last.percent, 100, label .. ': the final update is not at 100%')
-        -- The total grows as builds join the running batch; it never
-        -- restarts within one, and it ends at the number of builds.
-        test.assert_eq(last.total, n, label .. ': the builds were not counted in one batch')
-        for i = 1, #seen do
-          test.assert_eq(seen[i].id, 'resonance.build', label .. ': an update used another id')
-          if i > 1 then
-            test.assert_true(seen[i].total >= seen[i - 1].total, label .. ': the batch restarted mid-way')
-          end
+      -- The whole sequence, update by update. Each build starts in its own
+      -- scheduled callback, so they join in order; the Lua hook is
+      -- synchronous and settles right after it joins, and the two commands
+      -- settle in the order of their run times.
+      local function check(label, seen, names, final_status, final_text, failed)
+        local function u(status, text, done, total, nfailed, plugin)
+          return {
+            id = 'resonance.build', status = status, text = text,
+            percent = math.floor(done / total * 100),
+            done = done, total = total, failed = nfailed, plugin = plugin,
+          }
         end
+        local want = {
+          u('running', 'Building (0/1) ' .. names[1], 0, 1, 0, names[1]),
+          u('running', 'Building (0/2) ' .. names[2], 0, 2, 0, names[2]),
+          u('running', 'Building (0/3) ' .. names[3], 0, 3, 0, names[3]),
+          u('running', 'Building (1/3)', 1, 3, failed[1]),
+          u('running', 'Building (2/3)', 2, 3, failed[2]),
+          u(final_status, final_text, 3, 3, failed[3]),
+        }
+        test.assert_true(vim.deep_equal(seen, want),
+          label .. ': wrong progress updates\nwant ' .. vim.inspect(want) .. '\ngot  ' .. vim.inspect(seen))
       end
 
       local fail_fn = function() error('no') end
-      -- Started together and slow enough to overlap, so they are one batch.
-      check(batch_of({ 'sleep 0.2', 'sleep 0.2', function() end }),
-        'all ok', 3, 'success', 'Build done')
-      check(batch_of({ 'sleep 0.2; exit 3', 'sleep 0.2; exit 3', fail_fn }),
-        'all failed', 3, 'failed', 'Build failed')
-      check(batch_of({ 'sleep 0.2', 'sleep 0.2; exit 3', fail_fn }),
-        'some failed', 3, 'failed', 'Build failed partially')
-
-      -- A batch that settled is closed: the next build starts a new count.
-      local seen = batch_of({ 'true' })
-      test.assert_eq(seen[1].text:sub(1, 14), 'Building (0/1)', 'a new batch did not start its count over')
+      local seen, names = batch_of({ 'sleep 0.1', 'sleep 0.4', function() end })
+      check('all ok', seen, names, 'success', 'Build done', { 0, 0, 0 })
+      seen, names = batch_of({ 'sleep 0.1; exit 3', 'sleep 0.4; exit 3', fail_fn })
+      check('all failed', seen, names, 'failed', 'Build failed', { 1, 2, 3 })
+      seen, names = batch_of({ 'sleep 0.1', 'sleep 0.4; exit 3', fail_fn })
+      check('some failed', seen, names, 'failed', 'Build failed partially', { 1, 1, 2 })
 
       test.assert_eq(#batch_of({ 'true' }, { progress = false }), 0,
         'progress = false still sent progress messages')

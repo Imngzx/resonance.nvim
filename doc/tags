@@ -5,6 +5,7 @@ resonance-api-main	resonance.txt	/*resonance-api-main*
 resonance-api-scanner	resonance.txt	/*resonance-api-scanner*
 resonance-api-ui	resonance.txt	/*resonance-api-ui*
 resonance-build	resonance.txt	/*resonance-build*
+resonance-build-config	resonance.txt	/*resonance-build-config*
 resonance-build-order	resonance.txt	/*resonance-build-order*
 resonance-configuration	resonance.txt	/*resonance-configuration*
 resonance-contents	resonance.txt	/*resonance-contents*

@@ -156,30 +156,163 @@ test.run_suite('resonance.behavior.replay', {
   },
 
   {
-    name = 'replay: a successor event that already fired for this buffer is replayed once',
+    name = 'replay: a handler that already ran for the buffer is not run again by a later load',
     fn = function()
+      -- The replay used to fire every group on a successor event that had
+      -- already run for the buffer, so loading one plugin re-ran every
+      -- other plugin's BufReadPost handler: an `:e!` ran them twice.
       test.stub_pack()
-      local l = live()
       local buf = api.nvim_create_buf(false, true)
       local seen = recorder('BufReadPost', { group_name = 'ResonanceReplayFired', buffer = buf })
+      local setup_ran = false
 
-      -- Mark the read as done for this buffer.
       api.nvim_exec_autocmds('BufReadPost', { buffer = buf, modeline = false })
       test.assert_eq(count(seen), 1)
 
       _G.resonance.load({
         src = 'https://github.com/test/replay-fired',
-        event = 'BufNewFile',
-        setup = function() end,
+        event = 'FileType',
+        setup = function() setup_ran = true end,
       })
 
-      api.nvim_exec_autocmds('BufNewFile', { buffer = buf, modeline = false })
+      -- A FileType load replays BufReadPost, which already ran here.
+      api.nvim_exec_autocmds('FileType', { buffer = buf, modeline = false })
       vim.wait(100)
 
-      -- BufNewFile's chain reaches BufReadPost, which already ran for this
-      -- buffer, so it is replayed. Exactly once: the origin event is never
-      -- replayed, and an alias must not double the count.
-      test.assert_eq(count(seen), 2)
+      test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
+      test.assert_eq(count(seen), 1, 'a handler that already ran was run again')
+    end,
+  },
+
+  {
+    name = 'replay: a plugin loaded on FileType sees the read that loaded it',
+    fn = function()
+      -- Neovim does not run an autocmd added while its event is firing, so
+      -- the handlers a plugin registers in setup() missed the very event
+      -- that loaded it: a FileType plugin did not attach to the first file
+      -- until it was reopened.
+      --
+      -- BufReadPost is still running when FileType fires (filetype
+      -- detection is a BufReadPost handler), so it has to be replayed too.
+      test.stub_pack()
+      local file = vim.fn.tempname() .. '.lua'
+      vim.fn.writefile({ 'x = 1' }, file)
+      local hits = {}
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-own-filetype',
+        event = { 'FileType', pattern = 'lua' },
+        setup = function()
+          local group = scratch_group('ResonanceReplayOwnFt')
+          api.nvim_create_autocmd('FileType', {
+            group = group, pattern = 'lua',
+            callback = function(a) hits[#hits + 1] = 'FileType ' .. a.buf end,
+          })
+          api.nvim_create_autocmd('BufReadPost', {
+            group = group,
+            callback = function(a) hits[#hits + 1] = 'BufReadPost ' .. a.buf end,
+          })
+        end,
+      })
+
+      vim.cmd.edit(file)
+      local buf = api.nvim_get_current_buf()
+      vim.wait(100)
+      vim.cmd('bwipeout!')
+
+      test.assert_true(vim.deep_equal(hits, { 'BufReadPost ' .. buf, 'FileType ' .. buf }),
+        'the plugin\'s own handlers saw ' .. vim.inspect(hits))
+    end,
+  },
+
+  {
+    name = 'replay: a plugin loaded on ft sees the FileType that loaded it',
+    fn = function()
+      test.stub_pack()
+      local file = vim.fn.tempname() .. '.lua'
+      vim.fn.writefile({ 'x = 1' }, file)
+      local hits = 0
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-own-ft',
+        ft = 'lua',
+        setup = function()
+          api.nvim_create_autocmd('FileType', {
+            group = scratch_group('ResonanceReplayOwnFtKey'), pattern = 'lua',
+            callback = function() hits = hits + 1 end,
+          })
+        end,
+      })
+
+      vim.cmd.edit(file)
+      vim.wait(100)
+      vim.cmd('bwipeout!')
+
+      test.assert_eq(hits, 1, 'the plugin\'s FileType handler ran ' .. hits .. ' times')
+    end,
+  },
+
+  {
+    name = 'replay: a plugin loaded on a User event sees the event that loaded it',
+    fn = function()
+      -- A User event is matched by pattern, not by buffer: firing it for a
+      -- buffer would never reach a `User Foo` handler.
+      test.stub_pack()
+      local hits = 0
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-own-user',
+        event = { 'User', pattern = 'ResonanceReplayOwnUser' },
+        setup = function()
+          api.nvim_create_autocmd('User', {
+            group = scratch_group('ResonanceReplayOwnUserGroup'),
+            pattern = 'ResonanceReplayOwnUser',
+            callback = function() hits = hits + 1 end,
+          })
+        end,
+      })
+
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceReplayOwnUser', modeline = false })
+      vim.wait(100)
+
+      test.assert_eq(hits, 1, 'the plugin\'s User handler ran ' .. hits .. ' times')
+    end,
+  },
+
+  {
+    name = 'replay: a plugin loaded on BufReadPre does not get the rest of the read twice',
+    fn = function()
+      -- BufReadPost and FileType are still to come when BufReadPre loads
+      -- the plugin. They reach its handlers naturally, so replaying them
+      -- as well would run each one twice.
+      test.stub_pack()
+      local file = vim.fn.tempname() .. '.lua'
+      vim.fn.writefile({ 'x = 1' }, file)
+      local hits = {}
+
+      _G.resonance.load({
+        src = 'https://github.com/test/replay-own-pre',
+        event = 'BufReadPre',
+        setup = function()
+          local group = scratch_group('ResonanceReplayOwnPre')
+          api.nvim_create_autocmd('BufReadPost', {
+            group = group, callback = function() hits[#hits + 1] = 'BufReadPost' end,
+          })
+          api.nvim_create_autocmd('FileType', {
+            group = group, pattern = 'lua', callback = function() hits[#hits + 1] = 'FileType' end,
+          })
+        end,
+      })
+
+      vim.cmd.edit(file)
+      vim.wait(100)
+      vim.cmd('bwipeout!')
+
+      -- Each exactly once. The order is Neovim's own: filetype detection
+      -- is a BufReadPost handler that runs before the plugin's.
+      table.sort(hits)
+      test.assert_true(vim.deep_equal(hits, { 'BufReadPost', 'FileType' }),
+        'the plugin\'s handlers saw ' .. vim.inspect(hits))
     end,
   },
 

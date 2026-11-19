@@ -137,12 +137,13 @@ test.run_suite('resonance.loader.deep', {
   },
 
   {
-    name = 'replay: re-fires an event that already happened',
+    name = 'replay: a plugin\'s own BufRead handler is replayed once, others are not',
     fn = function()
       test.stub_pack()
       -- BufRead and BufReadPost are aliases in Neovim, so a handler registered
-      -- for either runs for both. A plugin loaded on BufNewFile has that
-      -- event already behind it, so the chain must replay it exactly once.
+      -- for either runs for both. A plugin loaded on FileType has the read
+      -- already behind it: its own BufRead handler gets the read exactly
+      -- once, and a handler that already saw the read does not see it again.
       local group = vim.api.nvim_create_augroup('ResonanceReplayFired', { clear = true })
       local read_count = 0
       vim.api.nvim_create_autocmd('BufRead', {
@@ -154,17 +155,23 @@ test.run_suite('resonance.loader.deep', {
       vim.api.nvim_exec_autocmds('BufRead', { modeline = false })
       test.assert_eq(read_count, 1)
 
+      local own_count = 0
       _G.resonance.load({
         src = 'https://github.com/test/replay-fired',
-        event = 'BufNewFile',
-        setup = function() end,
+        event = 'FileType',
+        setup = function()
+          vim.api.nvim_create_autocmd('BufRead', {
+            group = vim.api.nvim_create_augroup('ResonanceReplayOwnRead', { clear = true }),
+            callback = function() own_count = own_count + 1 end,
+          })
+        end,
       })
 
-      vim.api.nvim_exec_autocmds('BufNewFile', { modeline = false })
+      vim.api.nvim_exec_autocmds('FileType', { modeline = false })
       vim.wait(100)
 
-      -- Fired twice: once originally, once replayed.
-      test.assert_eq(read_count, 2)
+      test.assert_eq(own_count, 1, 'the plugin\'s own BufRead handler')
+      test.assert_eq(read_count, 1, 'a handler that already saw the read')
     end,
   },
 

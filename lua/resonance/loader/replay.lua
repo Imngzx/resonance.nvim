@@ -225,66 +225,136 @@ function M.replay_for_buffer(buf)
   return fired
 end
 
--- Re-fire, for the buffer of the event that just loaded a plugin, the
--- events of its chain that already fired, so the freshly loaded plugin's
--- own handlers get to see them.
+-- The events a load triggered by `event` has to replay, in the order Neovim
+-- fires them: the read events that already ran for the buffer before the
+-- trigger, then the trigger itself. A plugin loaded on FileType registers
+-- its BufReadPost handlers too late for the read that loaded it.
+--
+-- BufNewFile has no predecessor: a new file has no read events.
+local PREDECESSORS = {
+  BufReadPost = { 'BufReadPre' },
+  FileType = { 'BufReadPre', 'BufNewFile', 'BufReadPost' },
+  BufEnter = { 'BufReadPre', 'BufNewFile', 'BufReadPost', 'FileType' },
+}
+local NO_PREDECESSORS = {}
+
+-- Events matched by a literal pattern rather than by buffer: they have to
+-- be fired with `pattern = <match>`, or a `User Foo` handler never matches.
+local PATTERN_EVENTS = {
+  User = true, Signal = true, OptionSet = true, CmdUndefined = true,
+  ColorScheme = true, ColorSchemePre = true, RemoteReply = true,
+  ChanInfo = true, ChanOpen = true, MenuPopup = true, SourcePre = true,
+  SourcePost = true, SourceCmd = true, TermResponse = true,
+  ModeChanged = true, DirChanged = true, DirChangedPre = true,
+  CmdlineEnter = true, CmdlineLeave = true, CmdlineChanged = true,
+  RecordingEnter = true, RecordingLeave = true, QuickFixCmdPre = true,
+  QuickFixCmdPost = true,
+}
+
+-- The augroups that exist on each event the load may replay, taken before
+-- the plugin loads. After the load, the groups that are not in it are the
+-- ones the load added: the plugin's own handlers, which have not seen the
+-- event. Every other group already ran, and firing it again would run its
+-- handler twice for the same read.
+---@param event string the event that triggered the load
+---@return table<string, table<integer, true>>
+function M.snapshot(event)
+  local origin = event_fired_key(event)
+  local preds = PREDECESSORS[origin] or NO_PREDECESSORS
+  local snap = {}
+  for i = 1, #preds + 1 do
+    local name = preds[i] or origin
+    local existing = {}
+    local autocmds = get_autocmds({ event = name })
+    for a = 1, #autocmds do
+      local group = autocmds[a].group
+      if group then existing[group] = true end
+    end
+    snap[name] = existing
+  end
+  return snap
+end
+
+-- Whether a predecessor of the trigger ran for the buffer, or is running.
+--
+-- Filetype detection is itself a BufReadPost (or BufNewFile) handler, so a
+-- FileType trigger fires in the middle of that event, before the tracker's
+-- own handler has recorded it. The read is under way all the same: the
+-- plugin's handlers for it were added too late to run, and nothing else
+-- will run them.
+local function predecessor_ran(name, buf)
+  if has_fired(name, buf) then return true end
+  if name == 'BufReadPost' then return has_fired('BufReadPre', buf) end
+  if name == 'BufNewFile' then
+    if has_fired('BufReadPre', buf) then return false end
+    local file = api.nvim_buf_get_name(buf)
+    return file ~= '' and uv.fs_stat(file) == nil
+  end
+  return false
+end
+
+-- Fire `event` once per group the load added, scoped to that group.
+-- Ungrouped autocmds cannot be addressed individually, and firing the whole
+-- event would re-run every handler that already saw it, so they are skipped.
+local function fire_new_groups(event, target, data, existing, buf)
+  local autocmds = get_autocmds({ event = event })
+  local done = {}
+  for a = 1, #autocmds do
+    local autocmd = autocmds[a]
+    local group = autocmd.group
+    -- get_autocmds matches BufRead and BufReadPost together, so filter to
+    -- the event actually being replayed.
+    if group and autocmd.event == event and not existing[group] and not done[group] then
+      done[group] = true
+      if buf then mark_group_fired(autocmd.group_name, buf) end
+      target.group = group
+      target.data = data
+      target.modeline = false
+      exec_autocmds(event, target)
+    end
+  end
+end
+
+-- Fire, for the event that just loaded a plugin, the handlers the load
+-- registered: Neovim does not run an autocmd added while its event is
+-- already firing, so without this the plugin misses the very event that
+-- loaded it. The read events that already ran for the buffer are replayed
+-- the same way, so a plugin loaded on FileType still sees BufReadPost.
 ---@param ev table the event that triggered the load
-function M.after_load(ev)
+---@param snap table the snapshot taken before the load
+function M.after_load(ev, snap)
   -- A replay re-fires autocmds, which can re-enter load_now. Bound the
   -- nesting so a plugin whose handler triggers the same event cannot
   -- recurse until Neovim aborts with E218.
   if replay_depth >= MAX_REPLAY_DEPTH then return end
 
-  -- Only replay events that have already fired for this buffer. When a
-  -- plugin loads from BufReadPre, Neovim still has BufRead and BufReadPost
-  -- to fire for this same read; replaying them here would run them twice,
-  -- and a handler that opens a file (snacks picker, for one) would recurse
-  -- until Neovim aborts with E218.
-  --
-  -- The check is per buffer: a mark left by an earlier read must not
-  -- suppress the events still pending for the current one.
-  local origin_event = event_fired_key(ev.event)
-  if not has_fired(ev.event, ev.buf) then
-    -- The trigger is the first event of its group, so nothing has fired
-    -- yet and there is nothing to replay.
-    return
-  end
-
-  -- Required here, not at the top: the DAG module is not needed on the
-  -- startup path, and this runs only after a triggered load.
-  local chain = ev.event ~= 'User' and
-    require('resonance.loader.dag')._get_event_chain_internal(ev.event, ev.buf, ev.data) or {}
+  local origin = event_fired_key(ev.event)
+  local preds = PREDECESSORS[origin] or NO_PREDECESSORS
+  local buf = ev.buf
   replay_depth = replay_depth + 1
-  local replay_ok, replay_err = pcall(function()
-    for c = 1, #chain do
-      local c_opts = chain[c]
-      -- Skip the origin event: it is the one currently being handled.
-      -- Skip events that have not fired for this buffer yet: they will
-      -- fire naturally.
-      if event_fired_key(c_opts.event) ~= origin_event and has_fired(c_opts.event, ev.buf) then
-        local autocmds = get_autocmds({ event = c_opts.event })
-        local done = {}
-        for a = 1, #autocmds do
-          local autocmd = autocmds[a]
-          -- get_autocmds matches BufRead and BufReadPost together, so
-          -- filter to the event actually being replayed.
-          if autocmd.event == c_opts.event then
-            local group_name = autocmd.group_name
-            -- Ungrouped autocmds cannot be selected individually, and
-            -- firing the whole event would re-run the autocmd we are
-            -- executing. Only grouped autocmds can be replayed safely.
-            if group_name and not c_opts.exclude[group_name] and not done[group_name] then
-              done[group_name] = true
-              exec_autocmds(c_opts.event,
-                { buf = c_opts.buf, group = group_name, modeline = false, data = c_opts.data })
-            end
+  local ok, err = pcall(function()
+    for i = 1, #preds + 1 do
+      local name = preds[i] or origin
+      local existing = snap[name]
+      if existing then
+        if name == origin then
+          if PATTERN_EVENTS[name] then
+            local pattern = (ev.match ~= nil and ev.match ~= '') and ev.match or '*'
+            fire_new_groups(name, { pattern = pattern }, ev.data, existing, nil)
+          elseif buf and api.nvim_buf_is_valid(buf) then
+            fire_new_groups(name, { buffer = buf }, ev.data, existing, buf)
           end
+        -- A predecessor is replayed only when it ran, or is running, for
+        -- this buffer. When a plugin loads from BufReadPre, BufReadPost is
+        -- still to come for this read and fires naturally.
+        elseif buf and api.nvim_buf_is_valid(buf) and predecessor_ran(name, buf) then
+          fire_new_groups(name, { buffer = buf }, nil, existing, buf)
         end
       end
     end
   end)
   replay_depth = replay_depth - 1
-  if not replay_ok then error(replay_err) end
+  if not ok then error(err, 0) end
 end
 
 -- Reset the fired state (for testing). The tracker autocmds stay installed:

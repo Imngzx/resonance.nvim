@@ -157,9 +157,8 @@ local spec_urls = registry.spec_urls
 -- The rest of the spec is copied as it is, because the spec table is
 -- readable state -- get_dag_data, get_replay_info and the build hooks all
 -- read from it.
--- The DAG and event-chain data are read by the panel and by the replay
--- after a triggered load, never on the startup path, so the module is
--- required on first use.
+-- The DAG and event-chain data are read by the panel, never on the
+-- startup path, so the module is required on first use.
 local function get_dag()
   return require('resonance.loader.dag')
 end
@@ -733,6 +732,15 @@ function M.load(config)
     if all_loaded then return true end
     state.loaded = true
 
+    -- The groups on the trigger event before anything of this spec loads,
+    -- so the replay can tell the plugin's own handlers from the ones that
+    -- already ran. Taken before the dependencies load: their handlers have
+    -- not seen the event either.
+    local snap
+    if ev and type(ev) == 'table' and ev.event and not state.replay_done then
+      snap = replay.snapshot(ev.event)
+    end
+
     -- Abort the load when an install fails. The plugin is left unloaded so a
     -- later attempt can try again, and the error is reported: a silent
     -- failure leaves a plugin that never loads and never loads again.
@@ -810,14 +818,14 @@ function M.load(config)
       registry.load_times[parsed_names[i]] = duration
     end
 
-    if ev and type(ev) == 'table' and ev.event and not state.replay_done then
+    if snap then
       state.replay_done = true
       -- The retained spec is a copy, so the replay flag is set on it.
       -- get_replay_info reads the copy; the user's own table is not
       -- touched.
       local retained = specs[current_name]
       if retained then retained._replay_done = true end
-      replay.after_load(ev)
+      replay.after_load(ev, snap)
     end
 
     return true

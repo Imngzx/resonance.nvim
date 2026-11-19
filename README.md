@@ -371,6 +371,11 @@ when Neovim is started with a file.
 Firing the events unconditionally instead makes every handler run twice,
 and a duplicated `FileType` can reach `E218`.
 
+The event that loads a plugin is also replayed to the handlers the plugin
+registers while it loads, once, so a plugin loaded on `FileType` still
+attaches to the file that loaded it. Handlers that existed before the load
+do not run again.
+
 For your own replays, `require('resonance').replay_for_buffer(buf)` runs
 the same replay for one buffer, and `require('resonance').has_fired(event, buf)`
 tells you whether an event has already run for it. Calling the replay again

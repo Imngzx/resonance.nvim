@@ -188,7 +188,7 @@ test.run_suite('resonance.pack_integration', {
   },
 
   {
-    name = 'vim.pack: a corrupted plugin directory is reported, not silently ignored',
+    name = 'vim.pack: a corrupted plugin directory does not break vim.pack.get',
     fn = function()
       local root = temp_root()
       local src = make_plugin_repo(root, 'resonance-brokenplug')

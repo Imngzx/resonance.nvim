@@ -38,7 +38,6 @@ end
 local nvim_cmd = api.nvim_cmd
 local get_autocmds = api.nvim_get_autocmds
 local exec_autocmds = api.nvim_exec_autocmds
-local next = next
 local table_concat = table.concat
 
 local fs_scandir = uv.fs_scandir

@@ -310,6 +310,9 @@ function M.register_keys(config, load_now)
       -- sidesteps the notation entirely.
       local function stub_is_installed()
         if not stub_callback then return false end
+        -- A buffer-local stub goes with its buffer: once the buffer is wiped
+        -- there is nothing left to remove.
+        if is_buffer and not api.nvim_buf_is_valid(target_buf) then return false end
         for i = 1, #modes do
           local maps = is_buffer and buf_get_keymap(target_buf, modes[i]) or get_keymap(modes[i])
           for m = 1, #maps do

@@ -13,7 +13,7 @@
 |---|---|
 | `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `stats()`, `open_ui()`, `has_fired()`, `replay_for_buffer()` |
 | `lua/resonance/registry.lua` | Shared pure data: specs, triggers, disabled plugins, load times, plugin dirs. No side effects. |
-| `lua/resonance/loader/` | Control plane: `init` (load/force-load), `spec` (normalize), `triggers` (autocmd/cmd/keymap/ft), `build` (build hooks), `dag` (dependency + event-chain data) |
+| `lua/resonance/loader/` | Control plane: `init` (load/force-load, install), `spec` (normalize), `triggers` (autocmd/cmd/keymap/ft), `replay` (fired-event tracker, `has_fired`, `replay_for_buffer`, post-load replay), `build` (build hooks), `dag` (dependency + event-chain data, required on first use) |
 | `lua/resonance/builds.lua` | Per-plugin build state: status, wait, `on_complete`, output tail, hard timeout, cross-session PID lock. Requires nothing from the loader. |
 | `lua/resonance/scanner.lua` | Read-only discovery of installed plugins (SoA: parallel arrays indexed `1..total`) |
 | `lua/resonance/ui/` | Panel: `init` (window + keymaps), `state` (singleton), `render`, `actions` |

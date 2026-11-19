@@ -88,9 +88,9 @@ end
 -- The suite exercises the installed copy, not this repo. A stale sync means the
 -- tests silently validate old code, so fail loudly instead.
 local MODULE_FILES = {
-  'init.lua', 'scanner.lua', 'utils.lua', 'registry.lua',
+  'init.lua', 'scanner.lua', 'utils.lua', 'registry.lua', 'builds.lua',
   'loader/init.lua', 'loader/spec.lua', 'loader/triggers.lua',
-  'loader/build.lua', 'loader/dag.lua',
+  'loader/build.lua', 'loader/dag.lua', 'loader/replay.lua',
   'ui/init.lua', 'ui/state.lua', 'ui/render.lua', 'ui/actions.lua',
 }
 
@@ -109,7 +109,11 @@ local function assert_trees_in_sync()
     local rel = MODULE_FILES[i]
     local repo_file = repo_root .. '/lua/resonance/' .. rel
     local inst_file = inst_root .. '/lua/resonance/' .. rel
-    if vim.uv.fs_stat(repo_file) and vim.uv.fs_stat(inst_file) then
+    -- A module missing from the installed copy is as stale as one that
+    -- differs: the suite would load whatever else is on the runtimepath.
+    if vim.uv.fs_stat(repo_file) and not vim.uv.fs_stat(inst_file) then
+      stale[#stale + 1] = rel .. ' (missing)'
+    elseif vim.uv.fs_stat(repo_file) then
       local a = table.concat(vim.fn.readfile(repo_file, 'b'), '\n')
       local b = table.concat(vim.fn.readfile(inst_file, 'b'), '\n')
       if a ~= b then stale[#stale + 1] = rel end
@@ -284,6 +288,10 @@ local function reset_state()
   if state._reset then state._reset() end
   package.loaded['resonance'] = nil
   package.loaded['resonance.loader'] = nil
+  -- The loader's state lives partly in the replay module, which holds the
+  -- fired state. Kept across tests, it would keep the fired state after
+  -- the reset.
+  package.loaded['resonance.loader.replay'] = nil
   package.loaded['resonance.ui'] = nil
   package.loaded['resonance.ui.state'] = nil
   package.loaded['resonance.ui.render'] = nil

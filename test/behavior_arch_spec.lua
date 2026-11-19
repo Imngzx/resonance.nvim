@@ -31,6 +31,7 @@ local function unload_control_plane()
   package.loaded['resonance.loader.triggers'] = nil
   package.loaded['resonance.loader.build'] = nil
   package.loaded['resonance.loader.dag'] = nil
+  package.loaded['resonance.loader.replay'] = nil
   package.loaded['resonance.scanner'] = nil
   package.loaded['resonance.registry'] = nil
 end

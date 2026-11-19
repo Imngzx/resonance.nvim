@@ -216,6 +216,33 @@ automatic load defers until every build of the spec settles); a failed
 build still gets its plugin set up; background builds never block the
 editor. See `:h resonance-build-order`.
 
+**Add a `setup()` option** — follow `build.concurrency` and
+`resonate.concurrency`:
+
+1. `init.lua`: the default in `M.config` and a `---@field` on the
+   matching `Resonance*Config` class. A default that depends on the
+   machine stays out of `M.config` and lives in the owning module.
+2. The owning module: `M.configure(opts)` validates the value; an invalid
+   one is reported through `utils.notify` (naming the option, e.g.
+   `build.concurrency`) and falls back to the default. Add a getter so
+   tests can read the applied value.
+3. Call `configure()` where the module is first needed, not
+   unconditionally from `setup()`: requiring a module there adds its
+   load cost to every startup. `build` is applied in `setup()` because the
+   loader already requires it; `resonate` is applied in `open_ui()`.
+4. `doc/resonance.txt`: a `*resonance-<name>-config*` section and a line
+   in the `resonance.setup()` reference; then regenerate the tags (below).
+   `README.md`: add the option to the setup example.
+5. Tests: the default, each invalid value warns and falls back, and the
+   `setup()` → module wiring.
+
+**Edit the help file** — after adding or renaming a `*tag*` in
+`doc/resonance.txt`, regenerate `doc/tags` and commit it with the doc:
+
+```bash
+nvim --headless -c 'helptags doc' -c q
+```
+
 **A trigger pattern may be a list** — `normalize_events()` keeps a table
 pattern as a table, because Neovim accepts a list of patterns on an
 autocmd. Anything that renders a pattern for display has to join it
@@ -227,12 +254,17 @@ takes the whole load down.
 
 ## 6. Committing
 
-Use the session's `commit` namespace, not raw `git add` / `git commit`:
+Stage only your own changes, never `git add -A` / `git add .`: other
+agents or the user may have uncommitted work in the tree. Check
+`git status` first and add files by path. If a file mixes your changes
+with someone else's, do not commit it; ask the user.
+
+Some agent harnesses provide a `commit` namespace that selects your
+changed lines for you:
 
 ```lua
 d = await commit.draft()
 await d.commit("subject", ["- body"])
 ```
 
-It selects only your own changed lines and leaves other agents' and the
-user's work untouched. Use raw git only if that namespace is unavailable.
+Use it when it is available; otherwise plain `git` with the rule above.

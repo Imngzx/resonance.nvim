@@ -415,6 +415,22 @@ In the Resonance UI buffer:
     A            Toggle DAG view (dependency graph)
     q / <Esc>    Close UI
 
+                                                    *resonance-resonate-config*
+`r` (Resonate) runs one `git fetch` per plugin. A fetch is mostly waiting
+on the network, so how many run at once sets how long the check takes.
+The limit goes in the `resonate` section of |resonance.setup()|: >lua
+
+    require('resonance').setup({
+      resonate = {
+        concurrency = 16,  -- `git fetch` that run at once
+      },
+    })
+<
+The default is twice the number of CPU threads, the same limit vim.pack
+uses for its own update. It must be a positive integer, otherwise the
+default is used and you are warned. The value is read when the UI opens
+and applies to the next check.
+
 5.2 Plugin Details                                 *resonance-ui-details*
 
 Press <CR> on a plugin to expand details showing:
@@ -467,6 +483,8 @@ actually has.
                     it can be set after load() has already been called.
             build   the build options: `concurrency`, `progress` (see
                     |resonance-build-config|)
+            resonate  the update check options: `concurrency` (see
+                    |resonance-resonate-config|)
         Returns: nothing
 
     resonance.open_ui()

@@ -576,6 +576,122 @@ test.run_suite('resonance.ui', {
   },
 
   {
+    name = 'actions: resonate.concurrency limits the fetches in flight',
+    fn = function()
+      -- The fetches are held open: the stub keeps each callback and only
+      -- releases it on demand, so the number in flight can be counted.
+      local held = {}
+      local orig_system = vim.system
+      vim.system = function(cmd, opts, cb)
+        if cmd[1] == 'git' and cmd[2] == 'fetch' then
+          held[#held + 1] = cb
+        elseif cb then
+          cb({ code = 0, stdout = '', stderr = '' })
+        end
+        return { wait = function() return { code = 0 } end }
+      end
+      package.loaded['resonance.ui.actions'] = nil
+      local l = live()
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return { get = function() return {} end }
+      end
+
+      local ok, err = pcall(function()
+        local n = 8
+        local names, paths = {}, {}
+        for i = 1, n do
+          names[i] = 'plugin-' .. i
+          paths[i] = '/tmp'
+        end
+        l.actions.configure({ concurrency = 3 })
+        l.state.state.info = { total = n, loaded = 0, plugins = { name = names, path = paths } }
+        l.state.state.checking = false
+
+        l.actions.check_updates_network()
+        vim.wait(100)
+        test.assert_eq(#held, 3, 'the fetches in flight must stop at the limit')
+
+        -- One fetch finishing frees exactly one slot.
+        held[1]({ code = 0, stdout = '', stderr = '' })
+        vim.wait(100)
+        test.assert_eq(#held, 4, 'a finished fetch must let the next one start')
+
+        -- Release everything so the check completes.
+        local released = 1
+        test.assert_true(vim.wait(1000, function()
+          while released < #held do
+            released = released + 1
+            held[released]({ code = 0, stdout = '', stderr = '' })
+          end
+          return not l.state.state.checking
+        end, 10), 'the check did not complete')
+        test.assert_eq(#held, n, 'every plugin must be fetched')
+      end)
+
+      vim.system = orig_system
+      l.utils.get_pack = orig_get_pack
+      l.actions.configure({})
+      l.state.state.checking = false
+      if not ok then error(err, 0) end
+    end,
+  },
+
+  {
+    name = 'actions: the default fetch concurrency matches vim.pack',
+    fn = function()
+      local l = live()
+      l.actions.configure({})
+      test.assert_eq(l.actions.fetch_concurrency(),
+        2 * (vim.uv.available_parallelism() or 1))
+    end,
+  },
+
+  {
+    name = 'actions: an invalid resonate.concurrency warns and falls back to the default',
+    fn = function()
+      local l = live()
+      local default = 2 * (vim.uv.available_parallelism() or 1)
+      local bad = { 0, -1, 1.5, 'four', math.huge, 0 / 0 }
+      for i = 1, #bad do
+        l.actions.configure({ concurrency = 7 })
+        local notices = with_capture(function()
+          l.actions.configure({ concurrency = bad[i] })
+        end)
+        test.assert_eq(l.actions.fetch_concurrency(), default,
+          'concurrency ' .. tostring(bad[i]) .. ' was not replaced by the default')
+        local warned = false
+        for j = 1, #notices do
+          if notices[j]:find('resonate.concurrency', 1, true) then warned = true end
+        end
+        test.assert_true(warned, 'concurrency ' .. tostring(bad[i]) .. ' was accepted without a warning')
+      end
+      l.actions.configure({})
+    end,
+  },
+
+  {
+    name = 'ui: open_ui() applies the resonate config from setup()',
+    fn = function()
+      local r = require('resonance')
+      local l = live()
+      local ok, err = pcall(function()
+        r.setup({ resonate = { concurrency = 3 } })
+        r.open_ui()
+        test.assert_eq(l.actions.fetch_concurrency(), 3)
+      end)
+      if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
+        vim.api.nvim_win_close(l.state.state.win, true)
+      end
+      l.state.state.win = nil
+      l.state.state.buf = nil
+      r.config.resonate = {}
+      l.actions.configure({})
+      if not ok then error(err, 0) end
+    end,
+  },
+
+  {
     name = 'render: DAG view marks loaded nodes with the filled icon',
     fn = function()
       local l = live()

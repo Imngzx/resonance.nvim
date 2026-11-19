@@ -80,6 +80,10 @@ resonance.setup({
     concurrency = 2, -- build commands that run at once
     progress = true, -- report builds as progress messages (:h resonance-build-config)
   },
+  resonate = {
+    -- concurrency = 16, -- `git fetch` that run at once on Resonate
+    --                   -- (default: 2 x CPU threads, :h resonance-resonate-config)
+  },
 })
 
 resonance.load({

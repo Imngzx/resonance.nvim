@@ -13,16 +13,47 @@ local _system_async = async.wrap(3, system)
 local function system_async(cmd, opts)
   return _system_async(cmd, opts) --[[@as vim.SystemCompleted]]
 end
-local check_semaphore = async.semaphore(5)
 local pcall = pcall
 local type = type
 local tostring = tostring
+local math_floor = math.floor
+local math_huge = math.huge
 local table_concat = table.concat
 local uv_fs_stat = vim.uv.fs_stat
 local fn_confirm = vim.fn.confirm
 local ui_input = vim.ui.input
 local vim_log_levels = vim.log.levels
 local string_format = string.format
+
+-- How many `git fetch` run at once while Resonating. A fetch is almost all
+-- network round trip (~0.5 s to GitHub) and next to no CPU, so the limit,
+-- not the machine, sets the total time: at 5, 49 plugins took ten rounds.
+-- The default is the one vim.pack uses for its own update.
+local DEFAULT_FETCH_CONCURRENCY = 2 * (vim.uv.available_parallelism() or 1)
+local fetch_concurrency = DEFAULT_FETCH_CONCURRENCY
+
+--- Apply the `resonate` section of the user config.
+---
+--- A check builds its semaphore when it starts, so a new limit applies to
+--- the next check, never to one in flight.
+---@param opts? { concurrency?: integer }
+function M.configure(opts)
+  opts = opts or {}
+  local n = opts.concurrency
+  if n == nil then n = DEFAULT_FETCH_CONCURRENCY end
+  if type(n) ~= 'number' or n < 1 or n ~= math_floor(n) or n == math_huge then
+    utils.notify('resonate.concurrency must be a positive integer, got ' .. tostring(n) ..
+      '; using ' .. DEFAULT_FETCH_CONCURRENCY, vim_log_levels.WARN)
+    n = DEFAULT_FETCH_CONCURRENCY
+  end
+  fetch_concurrency = n
+end
+
+--- The number of `git fetch` allowed to run at once during a check.
+---@return integer
+function M.fetch_concurrency()
+  return fetch_concurrency
+end
 
 local spinner_timer = nil
 local function stop_spinner()
@@ -92,6 +123,7 @@ function M.check_updates_network()
   end
 
   local completed_fetches = 0
+  local check_semaphore = async.semaphore(fetch_concurrency)
 
   for i = 1, info.total do
     local path = paths[i]

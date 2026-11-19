@@ -42,9 +42,13 @@ end
 ---@field concurrency? integer How many build commands run at once (default: 2)
 ---@field progress? boolean Report builds as progress messages (default: true)
 
+---@class ResonanceResonateConfig
+---@field concurrency? integer How many `git fetch` run at once on Resonate (default: 2 x CPU threads, like vim.pack)
+
 ---@class ResonanceConfig
 ---@field ui? ResonanceUIConfig
 ---@field build? ResonanceBuildConfig
+---@field resonate? ResonanceResonateConfig
 ---@field replay? boolean Replay the read events for open buffers after VeryLazy (default: true)
 
 ---@class ResonanceKeyDef
@@ -92,6 +96,9 @@ M.config = {
     concurrency = 2,
     progress = true,
   },
+  -- `concurrency` is left unset on purpose: the default depends on the
+  -- machine (2 x CPU threads) and is filled in by ui/actions.lua.
+  resonate = {},
 }
 
 -- VeryLazy is armed by setup() and load() themselves. It used to need a
@@ -298,6 +305,9 @@ function M.trigger_verylazy()
 end
 
 function M.open_ui()
+  -- Applied here, not in setup(): the panel modules are not loaded at
+  -- startup, and the limit is only read when `r` starts a check.
+  require('resonance.ui.actions').configure(M.config.resonate)
   require('resonance.ui').open(M.config.ui)
 end
 

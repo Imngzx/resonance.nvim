@@ -17,7 +17,6 @@ local vim_defer_fn = vim.defer_fn
 local vim_o = vim.o
 local vbo = vim.bo
 local vwo = vim.wo
-local async = vim.async
 
 local nvim_win_is_valid = api.nvim_win_is_valid
 local nvim_set_current_win = api.nvim_set_current_win
@@ -86,7 +85,13 @@ local function bind_keys(win_close_fn)
     elseif ok_tele then
       tele.live_grep({ cwd = dir })
     else
-      vim_cmd('vimgrep /.*/j ' .. dir .. '/**/* | copen')
+      -- No picker: ask what to search for. `vimgrep /.*/` matched every line
+      -- of every plugin file and froze Neovim building the quickfix list.
+      vim.ui.input({ prompt = 'Search plugin sources: ' }, function(pattern)
+        if not pattern or pattern == '' then return end
+        vim_cmd('vimgrep /' .. vim.fn.escape(pattern, '/') .. '/j ' ..
+          vim.fn.fnameescape(dir) .. '/**/* | copen')
+      end)
     end
   end, 'Search Sources')
   map('D', function()
@@ -95,7 +100,7 @@ local function bind_keys(win_close_fn)
     if pcall(require, 'snacks') then
       require('snacks').explorer({ cwd = dir })
     else
-      vim_cmd('Explore ' .. dir)
+      vim_cmd('Explore ' .. vim.fn.fnameescape(dir))
     end
   end, 'Open Dir')
   map('C', function()

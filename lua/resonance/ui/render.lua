@@ -487,8 +487,11 @@ function M.schedule_render()
   if M.render_scheduled then return end
   M.render_scheduled = true
   vim_schedule(function()
-    M.render()
+    -- Cleared before the render, not after: a render that raised left the
+    -- flag set for the rest of the session, and every later
+    -- schedule_render() returned early -- the panel stopped updating.
     M.render_scheduled = false
+    M.render()
   end)
 end
 

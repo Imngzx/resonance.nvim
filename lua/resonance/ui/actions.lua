@@ -19,7 +19,6 @@ local type = type
 local tostring = tostring
 local table_concat = table.concat
 local uv_fs_stat = vim.uv.fs_stat
-local vim_trim = vim.trim
 local fn_confirm = vim.fn.confirm
 local ui_input = vim.ui.input
 local vim_log_levels = vim.log.levels
@@ -136,12 +135,20 @@ function M.check_updates_network()
                 -- Local git log is fast enough for standard callbacks
                 system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
                   { cwd = pk.path, text = true }, function(out)
-                    if out.code == 0 and out.stdout and vim_trim(out.stdout) ~= '' then
-                      local lines = {}
+                    local lines = {}
+                    if out.code == 0 and out.stdout then
                       for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
-                      st.state.updates[p_name] = lines
-                      schedule(function() render_mod.schedule_render() end)
                     end
+                    -- The revisions differ, so this is an update even when
+                    -- `rev..rev_to` lists no commit -- a downgrade, a pin, a
+                    -- force-pushed branch -- or the log failed. It used to be
+                    -- left out: counted in the spinner, missing from the list,
+                    -- and skipped by U.
+                    if #lines == 0 then
+                      lines[1] = string_format('%s -> %s', pk.rev:sub(1, 7), pk.rev_to:sub(1, 7))
+                    end
+                    st.state.updates[p_name] = lines
+                    schedule(function() render_mod.schedule_render() end)
 
                     logs_completed = logs_completed + 1
                     if logs_completed >= pending_logs then
@@ -263,44 +270,49 @@ function M.update_plugins(names)
       end
     end)
   else
-    utils.notify('Triggering plugin update for ' .. names[1], vim_log_levels.INFO)
+    -- It used to say "Triggering plugin update" and then do nothing.
+    utils.notify('Updating needs vim.pack; nothing was updated', vim_log_levels.WARN)
   end
 end
 
 function M.uninstall_plugin(name)
   if not name then return end
+  -- Checked before asking: without vim.pack the confirmation was asked
+  -- for, and then nothing was uninstalled.
+  local pack = utils.get_pack()
+  if not (pack and pack.del) then
+    utils.notify('Uninstalling needs vim.pack; ' .. name .. ' was left in place', vim_log_levels.WARN)
+    return
+  end
   local choice = fn_confirm('Uninstall ' .. name .. ' from disk?', '&Yes\n&No', 2)
   if choice ~= 1 then return end
 
-  local pack = utils.get_pack()
-  if pack and pack.del then
-    utils.notify('Uninstalling ' .. name .. '...', vim_log_levels.INFO)
-    local ok, err = pcall(pack.del, { name }, { force = true })
-    if ok then
-      utils.notify('Uninstalled ' .. name, vim_log_levels.INFO)
-      -- Forget that this plugin was built. The build artifacts live inside
-      -- the plugin directory, so uninstalling the plugin deleted them --
-      -- but the marker is in Resonance's own state directory and outlives
-      -- the plugin. A reinstall of the same version lands on the same
-      -- commit, so the marker still matched and the build was skipped. The
-      -- plugin came back without its artifacts.
-      require('resonance.loader.build').clear_build_marker(name)
-      -- Drop everything the UI cached for this plugin. Otherwise the
-      -- details of a plugin that is no longer on disk stay reachable for
-      -- the rest of the session.
-      st.state.pack_details[name] = nil
-      st.state.urls[name] = nil
-      st.state.commits[name] = nil
-      st.state.updates[name] = nil
-      st.state.expanded[name] = nil
-      local scanner = require('resonance.scanner')
-      scanner.load_times[name] = nil
-      st.state.info = scanner.get_info()
-    else
-      utils.notify('Uninstall failed: ' .. tostring(err), vim_log_levels.ERROR)
-    end
-    render_mod.schedule_render()
+  utils.notify('Uninstalling ' .. name .. '...', vim_log_levels.INFO)
+  local ok, err = pcall(pack.del, { name }, { force = true })
+  if ok then
+    utils.notify('Uninstalled ' .. name, vim_log_levels.INFO)
+    -- Forget that this plugin was built. The build artifacts live inside
+    -- the plugin directory, so uninstalling the plugin deleted them --
+    -- but the marker is in Resonance's own state directory and outlives
+    -- the plugin. A reinstall of the same version lands on the same
+    -- commit, so the marker still matched and the build was skipped. The
+    -- plugin came back without its artifacts.
+    require('resonance.loader.build').clear_build_marker(name)
+    -- Drop everything the UI cached for this plugin. Otherwise the
+    -- details of a plugin that is no longer on disk stay reachable for
+    -- the rest of the session.
+    st.state.pack_details[name] = nil
+    st.state.urls[name] = nil
+    st.state.commits[name] = nil
+    st.state.updates[name] = nil
+    st.state.expanded[name] = nil
+    local scanner = require('resonance.scanner')
+    scanner.load_times[name] = nil
+    st.state.info = scanner.get_info()
+  else
+    utils.notify('Uninstall failed: ' .. tostring(err), vim_log_levels.ERROR)
   end
+  render_mod.schedule_render()
 end
 
 function M.checkout_plugin(name)

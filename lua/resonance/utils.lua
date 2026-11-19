@@ -59,7 +59,9 @@ function M.get_local_hash(path)
       local packed = fast_read(git_dir .. '/packed-refs')
       if packed then
         local escaped_ref = string_gsub(ref, '[%-%.%+%[%]%(%)%$%^%%%?%*]', '%%%1')
-        local hash = string_match(packed, '(%x+)%s+' .. escaped_ref)
+        -- Anchored to a whole line: unanchored, refs/heads/main also
+        -- matched the line of refs/heads/main-wip, which can come first.
+        local hash = string_match('\n' .. packed .. '\n', '\n(%x+) ' .. escaped_ref .. '\r?\n')
         if hash then
           return string_sub(hash, 1, 7)
         end

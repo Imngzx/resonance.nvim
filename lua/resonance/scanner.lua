@@ -79,14 +79,16 @@ local function fallback_scan(plugin_triggers, disabled_plugins)
     while true do
       local group, group_type = fs_scandir_next(req)
       if not group then break end
-      if group_type == 'directory' then
+      -- A symlinked group or opt/start directory is followed, like the loader
+      -- does: the plugins behind it were missing from the fallback list.
+      if group_type == 'directory' or group_type == 'link' then
         local group_dir = pack_dir_base .. '/' .. group
         local group_req = fs_scandir(group_dir)
         if group_req then
           while true do
             local kind, kind_type = fs_scandir_next(group_req)
             if not kind then break end
-            if kind_type == 'directory' and (kind == 'opt' or kind == 'start') then
+            if (kind_type == 'directory' or kind_type == 'link') and (kind == 'opt' or kind == 'start') then
               local kind_dir = group_dir .. '/' .. kind
               local kind_req = fs_scandir(kind_dir)
               if kind_req then

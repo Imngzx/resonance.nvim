@@ -15,6 +15,7 @@ local SUITES = {
   'test/behavior_replay_spec.lua',
   'test/behavior_verylazy_spec.lua',
   'test/behavior_specs_spec.lua',
+  'test/behavior_panel_spec.lua',
   'test/behavior_stats_spec.lua',
   'test/behavior_triggers_spec.lua',
   'test/behavior_ui_spec.lua',

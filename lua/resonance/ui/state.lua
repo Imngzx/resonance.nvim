@@ -201,6 +201,9 @@ function M.plugin_at_cursor()
 end
 
 function M.get_src_url(path)
+  -- A disabled plugin has no directory; '' .. '/.git/config' read the
+  -- config of a repository at the filesystem root.
+  if not path or path == '' then return 'unknown' end
   local fd = uv_fs_open(path .. '/.git/config', 'r', 438)
   if not fd then return 'unknown' end
 

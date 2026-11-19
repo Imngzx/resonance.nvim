@@ -3,6 +3,7 @@ local M = {}
 local pcall = pcall
 local type = type
 local string_match = string.match
+local string_find = string.find
 local string_sub = string.sub
 local string_gsub = string.gsub
 local table_concat = table.concat
@@ -205,6 +206,15 @@ end
 ---@param s string
 ---@return ResonanceEventSpec
 local function parse_event_string(s)
+  -- The common case -- a bare event name -- has no whitespace, and needs
+  -- neither the trim nor the 'User X' match. This runs for every event of
+  -- every spec at startup, so the two pattern matches are skipped for it.
+  if not string_find(s, '%s') then
+    if s == 'VeryLazy' then
+      return { event = 'User', pattern = 'VeryLazy', user = true }
+    end
+    return { event = s }
+  end
   -- Surrounding whitespace is not part of the name: 'User Foo ' used to
   -- fall through as the native event "User Foo ", which does not exist.
   s = string_match(s, '^%s*(.-)%s*$')

@@ -54,6 +54,38 @@ local function pattern_key(pattern)
   return 's:' .. tostring(pattern)
 end
 
+-- Create one trigger autocmd, reporting a bad event name instead of raising.
+--
+-- nvim_create_autocmd raises on an unknown event, and the raise used to
+-- abort the whole load() -- every spec after the typo in a list was never
+-- registered. Neovim rejects a list of events as a whole, so when the list
+-- fails the events are retried one at a time: the valid ones still register,
+-- and the error names the event that is actually wrong.
+--
+-- A module-level function rather than a closure per spec: register_event
+-- runs for every spec at startup.
+---@param event_names string|string[]
+---@param pattern string|string[]|nil
+---@param load_now function
+---@param group integer|nil
+---@param plugin string
+local function create_trigger(event_names, pattern, load_now, group, plugin)
+  local opts = { once = true, callback = load_now }
+  if group then opts.group = group end
+  if pattern ~= nil then opts.pattern = pattern end
+  local ok, err = pcall(create_autocmd, event_names, opts)
+  if ok then return end
+  if type(event_names) == 'table' and #event_names > 1 then
+    for i = 1, #event_names do
+      create_trigger(event_names[i], pattern, load_now, group, plugin)
+    end
+    return
+  end
+  local bad = type(event_names) == 'table' and event_names[1] or event_names
+  utils.notify("Invalid event '" .. tostring(bad) .. "' for " .. plugin .. ': ' .. tostring(err),
+    vim_log_levels.ERROR)
+end
+
 -- Register event trigger autocmds
 ---@param config table
 ---@param load_now function
@@ -69,59 +101,52 @@ function M.register_event(config, load_now, group, name)
 
   local plugin = name or 'plugin'
 
-  -- A bad event name is reported, not raised. nvim_create_autocmd raises on
-  -- an unknown event, and the raise used to abort the whole load() -- every
-  -- spec after the typo in a list was never registered.
-  --
-  -- Neovim rejects a list of events as a whole, so when the list fails the
-  -- events are retried one at a time: the valid ones still register, and
-  -- the error names the event that is actually wrong.
-  local function create(event_names, pattern)
-    local opts = { once = true, callback = load_now }
-    if group then opts.group = group end
-    if pattern ~= nil then opts.pattern = pattern end
-    local ok, err = pcall(create_autocmd, event_names, opts)
-    if ok then return end
-    if type(event_names) == 'table' and #event_names > 1 then
-      for i = 1, #event_names do
-        create(event_names[i], pattern)
-      end
-      return
-    end
-    local bad = type(event_names) == 'table' and event_names[1] or event_names
-    utils.notify("Invalid event '" .. tostring(bad) .. "' for " .. plugin .. ': ' .. tostring(err),
-      vim_log_levels.ERROR)
-  end
-
   -- Native events share one autocmd per pattern. A pattern belongs to the
   -- event it was written on: { 'InsertEnter', { event = 'BufEnter',
   -- pattern = '*.md' } } used to scope InsertEnter to markdown as well.
-  -- The groups keep the order the events were written in.
-  local native_groups = {}
-  local group_by_key = {}
+  --
+  -- Most specs have no pattern at all, so the names are collected first and
+  -- the grouping is only done when some native event carries one.
+  local native = {}
+  local any_pattern = false
   for i = 1, #events do
     local e = events[i]
     if not e.user then
-      local key = pattern_key(e.pattern)
-      local g = group_by_key[key]
-      if not g then
-        g = { pattern = e.pattern, names = {} }
-        group_by_key[key] = g
-        native_groups[#native_groups + 1] = g
-      end
-      g.names[#g.names + 1] = e.event
+      native[#native + 1] = e.event
+      if e.pattern ~= nil then any_pattern = true end
     end
   end
-  for i = 1, #native_groups do
-    local g = native_groups[i]
-    create(g.names, g.pattern)
+
+  if not any_pattern then
+    if #native > 0 then create_trigger(native, nil, load_now, group, plugin) end
+  else
+    -- The groups keep the order the events were written in.
+    local native_groups = {}
+    local group_by_key = {}
+    for i = 1, #events do
+      local e = events[i]
+      if not e.user then
+        local key = pattern_key(e.pattern)
+        local g = group_by_key[key]
+        if not g then
+          g = { pattern = e.pattern, names = {} }
+          group_by_key[key] = g
+          native_groups[#native_groups + 1] = g
+        end
+        g.names[#g.names + 1] = e.event
+      end
+    end
+    for i = 1, #native_groups do
+      local g = native_groups[i]
+      create_trigger(g.names, g.pattern, load_now, group, plugin)
+    end
   end
 
   -- A User event carries its own pattern, so it needs its own autocmd.
   for i = 1, #events do
     local e = events[i]
     if e.user then
-      create('User', e.pattern)
+      create_trigger('User', e.pattern, load_now, group, plugin)
     end
   end
 

@@ -206,6 +206,80 @@ test.run_suite('resonance.builds', {
   },
 
   {
+    name = 'the lock: a lock taken before the child exists names this Neovim',
+    fn = function()
+      -- The lock is taken before the build's child process exists, and a Lua
+      -- build hook never has one. It used to be written empty, and every
+      -- other session read an empty lock as stale and took it over.
+      local name = fresh_name('lock-self')
+      test.assert_true(builds.acquire_lock(name, nil))
+      local path = vim.fn.stdpath('state') .. '/resonance/locks/' .. name
+      local content = table.concat(vim.fn.readfile(path), '')
+      builds.release_lock(name)
+      test.assert_eq(content, tostring(uv.os_getpid()), 'the lock does not name a live process')
+    end,
+  },
+
+  {
+    name = "the lock: another Neovim session's lock is not taken over",
+    fn = function()
+      -- A real second session: a child Neovim takes the lock the way a build
+      -- does -- with no child PID yet -- and holds it for a moment.
+      local name = fresh_name('lock-cross')
+      local path = vim.fn.stdpath('state') .. '/resonance/locks/' .. name
+      local root = vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim'
+      local child = vim.system({
+        'nvim', '--headless', '--clean', '--cmd', 'set rtp^=' .. root,
+        '-c', "lua require('resonance.builds').acquire_lock(" .. vim.inspect(name) .. ', nil)',
+        '-c', 'sleep 2', '-c', 'qall!',
+      })
+      local appeared = vim.wait(5000, function() return uv.fs_stat(path) ~= nil end, 20)
+      test.assert_true(appeared, 'the child never took the lock')
+
+      local taken = builds.acquire_lock(name, nil)
+      local locked = builds.is_locked(name)
+      child:wait(10000)
+      if taken then builds.release_lock(name) end
+      test.assert_false(taken, "this session took over the other session's lock")
+      test.assert_true(locked, "the other session's lock is not seen as held")
+    end,
+  },
+
+  {
+    name = 'the lock: an empty lock that is being written is not taken over',
+    fn = function()
+      -- 'wx' creates the file and the PID follows right after. A session that
+      -- reads in between sees an empty lock, which is held, not stale.
+      builds._reset()
+      local name = fresh_name('lock-fresh-empty')
+      local dir = vim.fn.stdpath('state') .. '/resonance/locks'
+      vim.fn.mkdir(dir, 'p')
+      local path = dir .. '/' .. name
+      vim.fn.writefile({}, path)
+      local taken = builds.acquire_lock(name, nil)
+      if taken then builds.release_lock(name) else vim.fn.delete(path) end
+      test.assert_false(taken, 'a lock being written was taken over')
+    end,
+  },
+
+  {
+    name = 'the lock: an empty lock left by a crash is taken over',
+    fn = function()
+      builds._reset()
+      local name = fresh_name('lock-old-empty')
+      local dir = vim.fn.stdpath('state') .. '/resonance/locks'
+      vim.fn.mkdir(dir, 'p')
+      local path = dir .. '/' .. name
+      vim.fn.writefile({}, path)
+      local old = os.time() - 60
+      uv.fs_utime(path, old, old)
+      local taken = builds.acquire_lock(name, nil)
+      if taken then builds.release_lock(name) else vim.fn.delete(path) end
+      test.assert_true(taken, 'a lock left empty by a crashed session blocks the build for good')
+    end,
+  },
+
+  {
     name = 'the lock: the PID can be written after the lock is taken',
     fn = function()
       -- The lock is taken before the child process exists, and the PID is

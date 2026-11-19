@@ -673,12 +673,10 @@ function M.load(config)
     deferred_setups = token
     local remaining = #deferred
 
-    local function settled(name, ok, err)
-      if not ok then
-        -- The build failed. The plugin is set up anyway -- the setup may
-        -- still work, and the build's failure is reported on its own.
-        utils.notify('Build failed for ' .. name .. ': ' .. tostring(err), vim_log_levels.ERROR)
-      end
+    local function settled()
+      -- A failed build is set up anyway -- the setup may still work. The
+      -- failure is reported by the build itself; reporting it here as well
+      -- showed the same "Build failed" twice.
       remaining = remaining - 1
       if remaining > 0 or deferred_setups ~= token then return end
       -- The setups run on the main loop: the build callback may fire from
@@ -694,8 +692,7 @@ function M.load(config)
     end
 
     for i = 1, #deferred do
-      local name = parsed_names[deferred[i]]
-      builds.on_complete(name, function(ok, err) settled(name, ok, err) end)
+      builds.on_complete(parsed_names[deferred[i]], settled)
     end
   end
 
@@ -868,7 +865,15 @@ function M.load(config)
         -- The build is started if it is not running already. A plugin
         -- that was just installed has no build running yet, and the
         -- setup must not race it.
-        build.check_and_build(plugin_name, get_plugin_dir(plugin_name), build_cmd)
+        --
+        -- A build that already failed in this session is not started again
+        -- here. It would fail the same way, and a cmd/keys load would block
+        -- for up to BUILD_WAIT_MS waiting for it. An install or update
+        -- (PackChanged) still retries it.
+        local status = builds.status(plugin_name)
+        if not (status and status.state == 'failed') then
+          build.check_and_build(plugin_name, get_plugin_dir(plugin_name), build_cmd)
+        end
         if build.is_building(plugin_name) then
           building[pi] = true
         end

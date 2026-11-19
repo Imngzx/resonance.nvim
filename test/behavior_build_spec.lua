@@ -304,6 +304,64 @@ test.run_suite('resonance.behavior.build', {
     end,
   },
 
+  {
+    name = 'build: a failed deferred build is reported once',
+    fn = function()
+      -- The deferred setup reported the failure again, on top of the build's
+      -- own report: the same "Build failed" twice.
+      reset_builds()
+      local stub = test.stub_pack()
+      local plugin = fresh_name('build-fail-once')
+      clear_marker(plugin)
+      local pattern = 'BuildFailOnce' .. tostring(vim.uv.hrtime()):sub(-5)
+      _G.resonance.load({
+        src = 'https://github.com/test/' .. plugin,
+        event = { 'User', pattern = pattern },
+        build = function() error('the build failed') end,
+        setup = function() end,
+      })
+      local notices = h.capture_and_wait(function()
+        api.nvim_exec_autocmds('User', { pattern = pattern })
+      end, 1500)
+      local n = 0
+      for i = 1, #notices do
+        if notices[i]:find('Build failed for ' .. plugin, 1, true) then n = n + 1 end
+      end
+      clear_marker(plugin)
+      test.assert_eq(n, 1, 'the build failure was not reported exactly once: ' .. vim.inspect(notices))
+    end,
+  },
+
+  {
+    name = 'build: a build that already failed is not re-run by the lazy load',
+    fn = function()
+      -- The load started the same failing build again, and a cmd/keys load
+      -- waited up to 30 s for it to fail a second time.
+      local builds = reset_builds()
+      test.stub_pack()
+      local plugin = fresh_name('build-failed-before')
+      clear_marker(plugin)
+      builds.start(plugin)
+      builds.finish(plugin, false, 'failed earlier in this session')
+      local calls = 0
+      local setup_ran = false
+      local cmd = 'BuildFailedBefore' .. tostring(vim.uv.hrtime()):sub(-5)
+      _G.resonance.load({
+        src = 'https://github.com/test/' .. plugin,
+        cmd = cmd,
+        build = function() calls = calls + 1 end,
+        setup = function() setup_ran = true end,
+      })
+      local t0 = vim.uv.hrtime()
+      h.capture_and_wait(function() pcall(vim.cmd, cmd) end, 300)
+      local waited_ms = (vim.uv.hrtime() - t0) / 1e6
+      clear_marker(plugin)
+      test.assert_eq(calls, 0, 'the failed build was started again by the lazy load')
+      test.assert_true(setup_ran, 'the plugin was not set up after its failed build')
+      test.assert_true(waited_ms < 2000, 'the load blocked on the failed build: ' .. waited_ms .. ' ms')
+    end,
+  },
+
 })
 
 test.print_summary()

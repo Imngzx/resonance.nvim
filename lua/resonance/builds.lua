@@ -22,8 +22,10 @@ local hrtime = uv.hrtime
 local fs_open = uv.fs_open
 local fs_write = uv.fs_write
 local fs_close = uv.fs_close
-local fs_mkdir = uv.fs_mkdir
 local fs_stat = uv.fs_stat
+local fs_fstat = uv.fs_fstat
+local fs_read = uv.fs_read
+local os_getpid = uv.os_getpid
 local fs_unlink = uv.fs_unlink
 local fs_scandir = uv.fs_scandir
 local fs_scandir_next = uv.fs_scandir_next
@@ -32,8 +34,8 @@ local schedule = vim.schedule
 local type = type
 local tostring = tostring
 local tonumber = tonumber
-local table_concat = table.concat
 local fn_stdpath = vim.fn.stdpath
+local fn_mkdir = vim.fn.mkdir
 
 -- How long a build may run before it is killed. A build that runs for ten
 -- minutes is stuck, not slow: the dependencies are not going to arrive.
@@ -442,6 +444,36 @@ function M.pid_is_alive(pid)
   return code == 'EPERM'
 end
 
+-- How long an empty lock file counts as being written rather than left
+-- behind. 'wx' creates the file and the PID is written right after, so a
+-- session can read it in between; an empty lock older than this was left
+-- by a session that died mid-write.
+local EMPTY_LOCK_GRACE_S = 5
+
+--- Whether a lock file names a build that is still running.
+---
+--- Shared by acquire_lock() and is_locked(), so the two cannot disagree --
+--- they used to: is_locked() called an empty lock live, while
+--- acquire_lock() called it stale and took it over.
+---@param path string
+---@return boolean live, number|nil pid
+local function lock_is_live(path)
+  local fd = fs_open(path, 'r', 438)
+  -- The file went away between the failed create and this read: the other
+  -- build just finished. Not live; the caller tries the create again.
+  if not fd then return false, nil end
+  local stat = fs_fstat(fd)
+  local content = stat and (fs_read(fd, stat.size, 0) or '') or ''
+  fs_close(fd)
+  local locked_pid = tonumber(content)
+  if locked_pid then
+    return M.pid_is_alive(locked_pid), locked_pid
+  end
+  -- No PID yet: being written right now, or left by a crash mid-write.
+  local age = stat and (os.time() - stat.mtime.sec) or math.huge
+  return age < EMPTY_LOCK_GRACE_S, nil
+end
+
 --- Take the build lock for a plugin.
 ---
 --- The lock holds the PID of the build's child process. A second Neovim
@@ -464,39 +496,39 @@ function M.acquire_lock(name, pid)
     return M.update_lock_pid(name, pid)
   end
 
-  -- The lock may be left over from another session.
-  local fd = fs_open(path, 'r', 438)
-  if fd then
-    local stat = uv.fs_fstat(fd)
-    local content = stat and (uv.fs_read(fd, stat.size, 0) or '') or ''
-    fs_close(fd)
-    local locked_pid = tonumber(content)
-    if locked_pid and M.pid_is_alive(locked_pid) then
+  local dir = get_lock_dir()
+  if not fs_stat(dir) then fn_mkdir(dir, 'p') end
+
+  -- The lock names a live process from the moment it exists. Before the
+  -- child process starts -- and for the whole of a Lua build hook, which
+  -- has no child at all -- that process is this Neovim. An empty lock used
+  -- to be read as stale by every other session, which took it over.
+  pid = pid or os_getpid()
+
+  -- 'wx' creates the file only if it does not exist, so two sessions
+  -- cannot both create it. When it exists, it is either live -- another
+  -- session's build -- or stale, and a stale one is removed and the create
+  -- tried once more.
+  for _ = 1, 2 do
+    local out = fs_open(path, 'wx', 438)
+    if out then
+      fs_write(out, tostring(pid), 0)
+      fs_close(out)
+      locks[name] = pid
+      held_locks[name] = true
+      return true
+    end
+    local live, locked_pid = lock_is_live(path)
+    if live then
       -- Another session is building this plugin right now.
-      locks[name] = locked_pid
+      locks[name] = locked_pid or false
       return false
     end
-    -- The lock is stale -- the process that held it is gone. It is
-    -- removed, and the build goes ahead: the orphaned build finished
-    -- without anyone to write its marker, so the next check has to
-    -- build again.
+    -- The process that held the lock is gone. Its orphaned build finished
+    -- without anyone to write its marker, so this build goes ahead.
     pcall(fs_unlink, path)
   end
-
-  local dir = get_lock_dir()
-  if not fs_stat(dir) then
-    local parent = fn_stdpath('state') .. '/resonance'
-    if not fs_stat(parent) then fs_mkdir(parent, 493) end
-    if not fs_stat(dir) then fs_mkdir(dir, 493) end
-  end
-
-  local out = fs_open(path, 'w', 438)
-  if not out then return false end
-  fs_write(out, tostring(pid or ''), 0)
-  fs_close(out)
-  locks[name] = pid or false
-  held_locks[name] = true
-  return true
+  return false
 end
 
 --- Release the build lock for a plugin.
@@ -520,11 +552,12 @@ function M.update_lock_pid(name, pid)
   -- session owns the build, and writing to it would steal it.
   if not held_locks[name] then return false end
   local path = lock_path(name)
+  pid = pid or os_getpid()
   local fd = fs_open(path, 'w', 438)
   if not fd then return false end
-  fs_write(fd, tostring(pid or ''), 0)
+  fs_write(fd, tostring(pid), 0)
   fs_close(fd)
-  locks[name] = pid or false
+  locks[name] = pid
   return true
 end
 
@@ -545,23 +578,12 @@ function M.is_locked(name)
   -- A lock this session holds is live by definition: the build is
   -- running, or is about to run.
   if held_locks[name] then return true end
-  local fd = fs_open(lock_path(name), 'r', 438)
-  if not fd then return false end
-  local stat = uv.fs_fstat(fd)
-  local content = stat and (uv.fs_read(fd, stat.size, 0) or '') or ''
-  fs_close(fd)
-  local locked_pid = tonumber(content)
-  if not locked_pid then
-    -- The lock has no PID yet: the build started but the child process
-    -- does not exist. It is live.
-    return content ~= ''
-  end
-  if not M.pid_is_alive(locked_pid) then
-    -- Stale: the process that held the lock is gone.
-    pcall(fs_unlink, lock_path(name))
-    return false
-  end
-  return true
+  local path = lock_path(name)
+  if not fs_stat(path) then return false end
+  if lock_is_live(path) then return true end
+  -- Stale: the process that held the lock is gone.
+  pcall(fs_unlink, path)
+  return false
 end
 
 --- List the lock files that are left over, for diagnostics.

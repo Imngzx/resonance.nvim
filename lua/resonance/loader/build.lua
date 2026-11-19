@@ -8,7 +8,6 @@ local fs_fstat = uv.fs_fstat
 local fs_read = uv.fs_read
 local fs_write = uv.fs_write
 local fs_close = uv.fs_close
-local fs_mkdir = uv.fs_mkdir
 local fs_stat = uv.fs_stat
 local fs_unlink = uv.fs_unlink
 local system = vim.system
@@ -124,10 +123,7 @@ end
 function M.mark_build_success(name, hash)
   local dir = get_marker_dir()
   if not fs_stat(dir) then
-    -- uv.fs_mkdir is not recursive, so the two levels are made in turn.
-    local parent = fn_stdpath('state') .. '/resonance'
-    if not fs_stat(parent) then fs_mkdir(parent, 493) end
-    if not fs_stat(dir) then fs_mkdir(dir, 493) end
+    vim.fn.mkdir(dir, 'p')
   end
   local fd = fs_open(marker_path(name), 'w', 438)
   if fd then

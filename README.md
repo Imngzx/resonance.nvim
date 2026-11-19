@@ -81,13 +81,14 @@ resonance.load({
   -- Every other plugin goes here, with its triggers.
   {
     'https://github.com/<author>/<plugin_name>',
-    event = { 'User', pattern = 'VeryLazy' },
+    event = 'VeryLazy',
   },
 })
-
--- NOTE: must put this at the end of your init.lua!
-resonance.trigger_verylazy()
 ```
+
+That is the whole setup. `VeryLazy` fires on its own once the UI is up,
+and the files you opened before it are replayed for the plugins that
+register their triggers then. See [Replaying Missed Events](#-replaying-missed-events).
 
 ### 🎨 Customizing Icons
 
@@ -149,17 +150,25 @@ event = { "InsertEnter", "CmdlineEnter" }
 
 ### 2. Custom (User) Events
 
-For ecosystem-specific events (like the famous `VeryLazy` triggered by `resonance.trigger_verylazy()`), you must use the strict Neovim native format for `User` autocmds:
+`VeryLazy` fires on its own once the UI is up. Any `User` event can be
+written as a string or in Neovim's native form, and mixed into a list:
 
 **Examples:**
 
 ```lua
 -- Trigger on VeryLazy
-event = { "User", pattern = "VeryLazy" }
+event = "VeryLazy"
 
--- Trigger on other custom patterns (e.g. Mason load)
+-- Other User events (e.g. Mason load) -- both spellings work
+event = "User MasonLoaded"
 event = { "User", pattern = "MasonLoaded" }
+
+-- Mixed with native events
+event = { "InsertEnter", "User MasonLoaded" }
 ```
+
+An unknown event name is reported with a notification and skipped; the
+rest of the spec, and every spec after it, still loads.
 
 ### Package Specs
 
@@ -205,7 +214,7 @@ resonance.load({
     },
 
     event = { "BufReadPre", "BufNewFile" },
-    -- For VeryLazy, use: event = { "User", pattern = "VeryLazy" }
+    -- For VeryLazy: event = "VeryLazy"
     config = function()
 
       local name = require('plugin1_name')
@@ -337,21 +346,19 @@ _G.start_time = vim.uv.hrtime()
 
 ## 🔁 Replaying Missed Events
 
-A lazy plugin that triggers on `BufReadPost` never sees the events for a
-file that was already open when Neovim started. A config can replay them at
-startup:
+`nvim <file>` reads the file before the UI is up. A plugin that registers
+its `BufReadPost` trigger during `VeryLazy` would never see that read, so no
+statusline, no treesitter, no LSP for the first file.
+
+Resonance handles this on its own: right after the `VeryLazy` handlers
+have run, it replays the read events for every open file. There is nothing
+to add to your config. To turn it off:
 
 ```lua
-vim.schedule(function()
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) ~= '' then
-      require('resonance').replay_for_buffer(buf)
-    end
-  end
-end)
+resonance.setup({ replay = false })
 ```
 
-`replay_for_buffer()` fires each read event once per **trigger group** that
+The replay fires each read event once per **trigger group** that
 has not yet run for the buffer. No handler runs twice for the same read,
 and a trigger registered after the event already fired still gets its
 chance to load — that is what makes the statusline and bufferline appear
@@ -360,8 +367,13 @@ when Neovim is started with a file.
 Firing the events unconditionally instead makes every handler run twice,
 and a duplicated `FileType` can reach `E218`.
 
-For finer control, `require('resonance').has_fired(event, buf)` tells you
-whether an event has already run for a buffer.
+For your own replays, `require('resonance').replay_for_buffer(buf)` runs
+the same replay for one buffer, and `require('resonance').has_fired(event, buf)`
+tells you whether an event has already run for it. Calling the replay again
+is safe: a group that already ran is not fired twice.
+
+`resonance.trigger_verylazy()` is no longer needed. It still works, and
+calling it as well as `setup()` fires `VeryLazy` only once.
 
 ## ⌨️ UI Keymaps
 

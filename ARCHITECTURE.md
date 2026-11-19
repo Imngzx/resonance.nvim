@@ -33,6 +33,22 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
 - The loader installs its autocmds the first time it is used (`setup()` or
   `load()`), never at require time.
 
+## Flow 0: startup and `VeryLazy`
+
+- `setup()` and `load()` arm `User VeryLazy` (guarded, so only once). It
+  fires at `UIEnter`, or at `VimEnter` when there is no UI, from autocmds in
+  the `ResonanceVeryLazy` augroup. If startup is already over when
+  Resonance is loaded, it fires on the next tick.
+- `fire_verylazy()` runs the VeryLazy handlers synchronously, then calls
+  `replay_for_buffer()` for every loaded buffer with a name (unless
+  `setup({ replay = false })`). Synchronous on purpose: by then every
+  handler has registered its triggers, and a scheduled replay would run
+  after the `once` triggers were consumed.
+- A `fired` flag keeps it to one fire even if both paths reach it. A
+  generation counter, bumped by `_reset()`, makes callbacks armed by an
+  older module instance do nothing (the test runner builds one per test).
+- `trigger_verylazy()` is the same guarded arm, kept for old configs.
+
 ## Flow 1: `load(spec)`
 
 1. `spec.parse_config` works on a copy of the spec. It normalizes
@@ -49,6 +65,13 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
    `Resonance_<first name>`. It returns two teardown lists: the command
    stubs, which are removed before `:packadd`, and everything else, which is
    removed after the load.
+   - Events go through `utils.normalize_events`: `'VeryLazy'` and
+     `'User Foo'` become User descriptors, and nested tables are normalized
+     recursively. A list's own `pattern` applies to its native events only.
+   - Native events are grouped by pattern, one autocmd per pattern. An
+     unknown event name is reported with `utils.notify` and skipped; when
+     Neovim rejects a list, the events are retried one by one so the valid
+     ones still register.
 
 ## Flow 2: `load_now(ev)` (a trigger fires)
 

@@ -78,7 +78,7 @@ Basic setup in your init.lua:
       },
       {
         src = 'https://github.com/folke/which-key.nvim',
-        event = {'User', pattern = 'VeryLazy'},  -- VeryLazy is a User pattern
+        event = 'VeryLazy',            -- Once the UI is up
       },
       {
         src = 'https://github.com/nvim-treesitter/nvim-treesitter',
@@ -108,11 +108,10 @@ Basic setup in your init.lua:
       resonance.open_ui()
     end)
 
-    -- Fires `User VeryLazy`. Must be the last line of init.lua.
-    resonance.trigger_verylazy()
-
-`setup()` takes only the UI options (see |resonance-api-main|). Plugin
-specifications go to `load()`.
+`setup()` takes the UI options and `replay` (see |resonance-api-main|).
+Plugin specifications go to `load()`. `User VeryLazy` fires on its own
+once the UI is up, and the files opened before it are replayed for the
+triggers registered then -- there is nothing else to call.
 
 ==============================================================================
 4. Configuration                                   *resonance-configuration*
@@ -154,7 +153,16 @@ event - Load when autocmd fires:
     event = 'LspAttach'
     event = {'BufReadPost', 'BufNewFile'}
     event = {'BufReadPost', pattern = {'*.lua', '*.vim'}}  -- With a pattern
-    event = {'User', pattern = 'VeryLazy'}
+    event = 'VeryLazy'                       -- User VeryLazy
+    event = 'User MasonLoaded'               -- any User event
+    event = {'User', pattern = 'MasonLoaded'}  -- the same, native form
+    event = {'InsertEnter', 'User MasonLoaded'}  -- mixed in a list
+    event = {'InsertEnter', {event = 'BufEnter', pattern = '*.md'}}
+                                       -- a pattern applies to its own event
+
+    An unknown event name is reported with a notification and skipped.
+    The valid events of the same spec, and every spec after it, still
+    register.
 
 cmd - Load when command is invoked:
     cmd = 'Neogit'
@@ -183,9 +191,6 @@ cond - Conditionally load plugin:
     cond = false         -- Skip plugin entirely
     cond = function() return vim.fn.has('nvim-0.10') == 1 end  -- Conditional
 
-`event = 'VeryLazy'` is an error: VeryLazy is not a Neovim event but the
-pattern of a User event. Write `{'User', pattern = 'VeryLazy'}`.
-
 lazy - Shorthand for common lazy-loading patterns:
     lazy = false         -- Eager load on VimEnter (no event/cmd/ft allowed)
     lazy = true          -- Lazy load on VeryLazy (User VeryLazy event)
@@ -205,6 +210,7 @@ same as lazy = false. Useful for a plugin you just want installed and
 pinned, with no trigger of its own.
 
 `event` accepts a User event with its own pattern:
+    event = 'VeryLazy'
     event = {'User', pattern = 'VeryLazy'}
 
 4.2 Dependencies                                   *resonance-dependencies*
@@ -359,9 +365,13 @@ actually has.
 6.1 Main Functions                                 *resonance-api-main*
 
     resonance.setup([config])
-        Initialize Resonance: creates the :Resonance command and merges the
-        UI options.
-        config: optional table with a `ui` field (see |resonance-ui|)
+        Initialize Resonance: creates the :Resonance command, merges the
+        options, and arms `User VeryLazy`.
+        config: optional table:
+            ui      the UI options (see |resonance-ui|)
+            replay  replay the read events for the open files right after
+                    VeryLazy (default: true). Read when VeryLazy fires, so
+                    it can be set after load() has already been called.
         Returns: nothing
 
     resonance.open_ui()
@@ -384,16 +394,14 @@ actually has.
 
         `startuptime` is a one-shot measurement, latched once and never
         changed afterwards. It is latched at UIEnter (VimEnter when there
-        is no UI) only if you call `resonance.trigger_verylazy()`; it is
-        also latched by the first stats() call, whichever comes first.
-        Without trigger_verylazy() it measures up to the first stats()
-        call -- usually the first time the UI is opened. The counts are read live on
-        every call, because a plugin can load at any point.
+        is no UI), or by the first stats() call if that comes first. The
+        counts are read live on every call, because a plugin can load at
+        any point.
 
     resonance.trigger_verylazy()
-        Fire `User VeryLazy` once the UI is up (UIEnter, or VimEnter when
-        there is no UI), and latch the startup time. Call it at the end of
-        init.lua.
+        Optional: setup() and load() already arm `User VeryLazy`. Kept so
+        configs that call it keep working; calling it as well fires
+        VeryLazy only once.
         Returns: nothing
 
     resonance.has_fired(event, buf)
@@ -418,15 +426,11 @@ actually has.
         Events still pending for the current read are left alone: Neovim
         fires them naturally. An invalid buffer id is ignored.
 
-        Useful in a config that replays missed events at startup: >lua
-            vim.schedule(function()
-              for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-                if vim.api.nvim_buf_is_loaded(buf) and vim.api.nvim_buf_get_name(buf) ~= '' then
-                  require('resonance').replay_for_buffer(buf)
-                end
-              end
-            end)
-<
+        Resonance already runs it for every open file right after
+        VeryLazy (see `replay` in resonance.setup()), so a config does not
+        need to. Call it yourself only for a buffer you open later from
+        your own code. Calling it twice is safe: a group that already ran
+        is not fired again.
 6.2 Loader Module                                  *resonance-api-loader*
 
     local loader = require('resonance.loader')
@@ -614,9 +618,11 @@ Autocmd events emitted:
     User  VeryLazy          Fired when the UI has become usable, so that
                            plugins which did not load yet can.
 
-`User VeryLazy` is fired by `resonance.trigger_verylazy()`, which you
-call at the end of your init.lua. A spec with `lazy = true` uses it as
-its trigger.
+`User VeryLazy` is armed by `resonance.setup()` and `resonance.load()`
+and fires once, at UIEnter (VimEnter when there is no UI). When Resonance
+itself is loaded after startup, it fires right away. Right after the
+VeryLazy handlers have run, the read events are replayed for the open
+files. A spec with `lazy = true` uses VeryLazy as its trigger.
 
 Event replay ensures autocmds fire in correct order for nested triggers.
 

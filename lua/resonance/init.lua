@@ -5,6 +5,10 @@ local create_autocmd = vim_api.nvim_create_autocmd
 local exec_autocmds = vim_api.nvim_exec_autocmds
 local create_user_command = vim_api.nvim_create_user_command
 local list_uis = vim_api.nvim_list_uis
+local create_augroup = vim_api.nvim_create_augroup
+local list_bufs = vim_api.nvim_list_bufs
+local buf_is_loaded = vim_api.nvim_buf_is_loaded
+local buf_get_name = vim_api.nvim_buf_get_name
 local hrtime = vim.uv.hrtime
 local schedule = vim.schedule
 local vim_tbl_deep_extend = vim.tbl_deep_extend
@@ -36,6 +40,7 @@ end
 
 ---@class ResonanceConfig
 ---@field ui? ResonanceUIConfig
+---@field replay? boolean Replay the read events for open buffers after VeryLazy (default: true)
 
 ---@class ResonanceKeyDef
 ---@field [1]? string|string[] Mode (e.g., "n", "i", {"n", "v"}). Default: "n"
@@ -75,12 +80,102 @@ M.config = {
     width = 0.65,
     height = 0.75,
     backdrop = 60,
-  }
+  },
+  replay = true,
 }
+
+-- VeryLazy is armed by setup() and load() themselves. It used to need a
+-- trigger_verylazy() call at the end of init.lua, and a config that forgot
+-- it never loaded a single VeryLazy plugin.
+--
+-- The generation guards against a module instance that is no longer
+-- current: _reset() bumps it, so a callback armed before the reset sees a
+-- different number and does nothing. The test runner builds a fresh module
+-- for every test, and each one arms VeryLazy again.
+local verylazy_generation = 0
+local verylazy_armed = false
+local verylazy_fired = false
+
+-- Give the trigger groups registered during VeryLazy their chance at the
+-- buffers that were read before them. `nvim <file>` reads the file before
+-- UIEnter, so a plugin that registers its BufReadPost trigger in VeryLazy
+-- would otherwise never see that file.
+local function replay_loaded_buffers()
+  loader_mod = loader_mod or require('resonance.loader')
+  local bufs = list_bufs()
+  for i = 1, #bufs do
+    local buf = bufs[i]
+    if buf_is_loaded(buf) and buf_get_name(buf) ~= '' then
+      pcall(loader_mod.replay_for_buffer, buf)
+    end
+  end
+end
+
+---@param generation integer the generation that armed this fire
+local function fire_verylazy(generation)
+  if generation ~= verylazy_generation or verylazy_fired then return end
+  verylazy_fired = true
+
+  -- The exec is synchronous: every VeryLazy callback has registered its
+  -- triggers by the time it returns, which is the one moment the replay
+  -- can see them all. A scheduled replay runs after the `once` triggers
+  -- were consumed and fires into nothing.
+  local ok, err = pcall(exec_autocmds, 'User', { pattern = 'VeryLazy' })
+
+  -- Read when firing, not when arming: load() can arm VeryLazy before the
+  -- user's setup({ replay = false }) has run.
+  if M.config.replay ~= false then
+    replay_loaded_buffers()
+  end
+
+  if not ok then
+    require('resonance.utils').notify('VeryLazy failed: ' .. tostring(err), vim.log.levels.ERROR)
+  end
+end
+
+local function arm_verylazy()
+  if verylazy_armed then return end
+  verylazy_armed = true
+  local generation = verylazy_generation
+
+  -- Startup is already over -- Resonance itself was loaded late. The
+  -- events below will not come again, so VeryLazy fires now.
+  if vim.v.vim_did_enter == 1 then
+    schedule(function() fire_verylazy(generation) end)
+    return
+  end
+
+  local group = create_augroup('ResonanceVeryLazy', { clear = true })
+
+  create_autocmd('UIEnter', {
+    group = group,
+    once = true,
+    callback = function()
+      if generation ~= verylazy_generation then return end
+      M._end_time = M._end_time or hrtime()
+      vim.cmd.redrawstatus()
+      schedule(function() fire_verylazy(generation) end)
+    end,
+  })
+
+  -- Headless: there is no UI to wait for, so VimEnter is the end of startup.
+  create_autocmd('VimEnter', {
+    group = group,
+    once = true,
+    callback = function()
+      if generation ~= verylazy_generation then return end
+      if #list_uis() == 0 then
+        M._end_time = M._end_time or hrtime()
+        schedule(function() fire_verylazy(generation) end)
+      end
+    end,
+  })
+end
 
 ---@param opts? ResonanceConfig
 function M.setup(opts)
   M.config = vim_tbl_deep_extend('force', M.config, opts or {})
+  arm_verylazy()
   create_user_command('Resonance', function()
     M.open_ui()
   end, { desc = 'Open Resonance UI' })
@@ -96,6 +191,7 @@ end
 
 ---@param spec ResonanceLoadSpec|ResonanceLoadSpec[]
 function M.load(spec)
+  arm_verylazy()
   if not loader_mod then
     loader_mod = require('resonance.loader')
   end
@@ -156,31 +252,18 @@ end
 function M._reset()
   M._end_time = nil
   loader_mod = nil
+  -- A callback armed before the reset must not fire into the next state.
+  verylazy_generation = verylazy_generation + 1
+  verylazy_armed = false
+  verylazy_fired = false
 end
 
+--- Arm the VeryLazy event.
+---
+--- Optional: setup() and load() already do it. Kept so configs that still
+--- call it keep working -- arming twice fires VeryLazy once.
 function M.trigger_verylazy()
-  create_autocmd('UIEnter', {
-    once = true,
-    callback = function()
-      M._end_time = M._end_time or hrtime()
-      vim.cmd.redrawstatus()
-      schedule(function()
-        exec_autocmds('User', { pattern = 'VeryLazy' })
-      end)
-    end,
-  })
-
-  create_autocmd('VimEnter', {
-    once = true,
-    callback = function()
-      if #list_uis() == 0 then
-        M._end_time = M._end_time or hrtime()
-        schedule(function()
-          exec_autocmds('User', { pattern = 'VeryLazy' })
-        end)
-      end
-    end
-  })
+  arm_verylazy()
 end
 
 function M.open_ui()

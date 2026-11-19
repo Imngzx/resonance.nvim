@@ -473,7 +473,7 @@ actually has.
 
 6.1 Main Functions                                 *resonance-api-main*
 
-    resonance.setup([config])
+    resonance.setup([config])                          *resonance.setup()*
         Initialize Resonance: creates the :Resonance command, merges the
         options, and arms `User VeryLazy`.
         config: optional table:
@@ -697,9 +697,12 @@ actually has.
     scanner.get_info([opts])
         Get plugin information.
         opts: {info = boolean, offline = boolean}
-        info=false (default): fast, no branches/tags
-        info=true: includes branches, tags, rev_to
-        offline=true (default): use cached data
+        info=false (default): fast (~1 ms), from the vim.pack lockfile
+        info=true: also fills the `rev_to` and `manifest` arrays; slow,
+            it runs git for every plugin and blocks until done. Branches
+            and tags are not kept.
+        offline=true (default): no `git fetch`; with info=true, `rev_to`
+            is resolved from what was fetched last
         Returns: {plugins = {name[], type[], path[], loaded[], disabled[],
                   trigger[], ...}, total, loaded, pack_dir, load_times}
         The plugins are parallel arrays indexed 1..total. Use `total`, not
@@ -721,8 +724,18 @@ actually has.
     ui.open(ui_config)
         Open the UI window.
 
+    actions.configure([opts])
+        Apply the `resonate` options (see |resonance-resonate-config|).
+        open_ui() calls it with the `resonate` section of the config.
+        opts: {concurrency = integer}
+
+    actions.fetch_concurrency()
+        Returns: integer -- how many `git fetch` a check runs at once.
+
     actions.check_updates_network()
-        Fetch remote updates for all plugins (async).
+        Run `git fetch` for every installed plugin, at most
+        actions.fetch_concurrency() at once, then compare each plugin's
+        revision with its update target (async).
         Returns: boolean -- true when this call started a check, false when
         a check was already running.
 
@@ -780,11 +793,17 @@ back on the next read):
 ==============================================================================
 9. Performance                                     *resonance-performance*
 
-Benchmarks (Neovim 0.13+, 43 plugins):
-- Startup overhead: ~0.9ms average
-- UI open: ~12ms (fast path + async branches/tags)
-- scanner.get_info(): ~1ms (offline, info=false)
-- scanner.get_info({info=true}): ~300ms (fetches branches/tags)
+Measured 2026-11-19 (Neovim 0.13.0-dev, 49 plugins, Linux, 8 threads):
+- Startup overhead: ~3 ms (`setup()` with no specs, vs a bare `-u NONE`
+  start); most of it is requiring the loader
+- UI open: ~7 ms (fast path; branches/tags only for an expanded row)
+- scanner.get_info(): ~0.5 ms (offline, info=false)
+- scanner.get_info({info=true}): ~450 ms, blocking (git for every plugin)
+- `r` (Resonate): ~0.5 s per `git fetch` round trip to GitHub, with
+  `resonate.concurrency` fetches at once
+
+Numbers like these go stale; the commands that produce them are in
+AGENTS.md, section 4 ("Benchmark").
 
 Optimizations:
 - Two-pass UI loading (commits first, branches/tags deferred)

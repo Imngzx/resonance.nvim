@@ -25,4 +25,5 @@ resonance-ui-icons	resonance.txt	/*resonance-ui-icons*
 resonance-ui-keys	resonance.txt	/*resonance-ui-keys*
 resonance-version	resonance.txt	/*resonance-version*
 resonance.import()	resonance.txt	/*resonance.import()*
+resonance.setup()	resonance.txt	/*resonance.setup()*
 resonance.txt	resonance.txt	/*resonance.txt*

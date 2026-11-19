@@ -154,8 +154,10 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
 - **Expanding a row:** the branches and tags for that one plugin are
   fetched with `info = true` inside a cancellable `vim.async` task. Closing
   the panel (`BufWipeout` on its buffer) cancels the task.
-- **`r` (check for updates):** runs `git fetch` for every plugin, at most 5
-  at once (`async.semaphore(5)`). It then makes one
+- **`r` (check for updates):** runs `git fetch` for every plugin, at most
+  `resonate.concurrency` at once (default 2 × CPU threads, like vim.pack;
+  a new `async.semaphore` per check, set by `actions.configure()` from
+  `open_ui()`). It then makes one
   `pack.get(nil, { info = true })` call to get `rev_to`, and runs
   `git log rev..rev_to` for each plugin that has an update.
 - **Rendering:** `render()` rebuilds the whole buffer from module-level

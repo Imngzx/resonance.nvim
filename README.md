@@ -439,15 +439,17 @@ calling it as well as `setup()` fires `VeryLazy` only once.
 
 ## ⌨️ UI Keymaps
 
-- `U` : Update all plugins (`vim.pack.update()`).
+- `<CR>`: Expand the plugin at the cursor (branches, tags, path, URL).
+- `U` : Update every plugin that `r` found pending (`vim.pack.update()`).
 - `u` : Update the plugin at the cursor (`vim.pack.update()`).
 - `dd`: Delete the plugin at the cursor.
 - `c` : Check out an available branch, commit, or tag.
-- `r` : Check for pending updates (`vim.pack.get()` fetches and resolves package revisions).
+- `r` : Resonate: `git fetch` every plugin, then list the pending updates with their commits (`:h resonance-resonate-config`).
 - `S` : Search inside plugins source code (Powered by Snacks.picker / Telescope / Native vimgrep).
 - `A` : Check Dependency Graph (DAG) and Event Replay.
 - `s` : Skip plugin update.
 - `D` : Open plugin directory.
+- `C` : Open vim.pack's own update review (offline).
 - `q` / Esc : Quit.
 
 ## License

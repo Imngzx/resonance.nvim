@@ -801,6 +801,141 @@ test.run_suite('resonance.loader.build', {
       uv.fs_rmdir(dir)
     end,
   },
+
+  {
+    name = 'build: concurrency limits how many build commands run at once',
+    fn = function()
+      -- Each build registers itself in a shared directory, counts who else
+      -- is there, and holds its slot for a while. The highest count is the
+      -- number of builds that actually ran at the same time.
+      --
+      -- Run at two limits, so the test proves the limit is what changes the
+      -- count: a run that never overlapped would pass a limit of 1 too.
+      local function peak(limit)
+        build.configure({ concurrency = limit })
+        local root = vim.fn.tempname()
+        local running = root .. '/running'
+        vim.fn.mkdir(running, 'p')
+        local log = root .. '/log'
+        local cmd = ('touch %s/$$; ls %s | wc -l >> %s; sleep 0.3; rm %s/$$')
+          :format(running, running, log, running)
+        local names, done = {}, 0
+        for i = 1, 3 do
+          names[i] = ('concurrency-%d-%d-%d'):format(limit, i, uv.hrtime())
+          build.run_build(names[i], root, cmd, 'hash1', function() done = done + 1 end)
+        end
+        vim.wait(5000, function() return done == 3 end)
+        local max = 0
+        for line in io.lines(log) do
+          local n = tonumber(line)
+          if n and n > max then max = n end
+        end
+        for i = 1, #names do clear_marker(names[i]) end
+        vim.fn.delete(root, 'rf')
+        return max, done
+      end
+
+      local ok, err = pcall(function()
+        local one, done1 = peak(1)
+        local two, done2 = peak(2)
+        test.assert_eq(done1, 3, 'not every build finished at a limit of 1')
+        test.assert_eq(done2, 3, 'not every build finished at a limit of 2')
+        test.assert_eq(one, 1, 'builds overlapped with a concurrency of 1')
+        test.assert_eq(two, 2, 'a concurrency of 2 did not run two builds at once')
+      end)
+      build.configure({})
+      if not ok then error(err, 0) end
+    end,
+  },
+
+  {
+    name = 'build: an invalid concurrency warns and falls back to the default',
+    fn = function()
+      local bad = { 0, -1, 1.5, 'four', math.huge }
+      for i = 1, #bad do
+        build.configure({ concurrency = 5 })
+        local notices = h.capture_and_wait(function()
+          build.configure({ concurrency = bad[i] })
+        end, 50)
+        test.assert_eq(build.concurrency(), 2,
+          'concurrency ' .. tostring(bad[i]) .. ' was not replaced by the default')
+        test.assert_true(h.noticed(notices, 'build.concurrency'),
+          'concurrency ' .. tostring(bad[i]) .. ' was accepted without a warning')
+      end
+      build.configure({})
+    end,
+  },
+
+  {
+    name = 'build: setup() passes the build config to the build module',
+    fn = function()
+      local r = h.live().resonance
+      local ok, err = pcall(function()
+        r.setup({ build = { concurrency = 3 } })
+        test.assert_eq(require('resonance.loader.build').concurrency(), 3)
+      end)
+      r.config.build = { concurrency = 2, progress = true }
+      require('resonance.loader.build').configure({})
+      if not ok then error(err, 0) end
+    end,
+  },
+
+  {
+    name = 'build: a build reports its progress, and closes it with the verdict',
+    fn = function()
+      -- One progress message per build, under one id: running while it
+      -- works, then success or failed. A message left on running is a
+      -- spinner that never stops.
+      local function progress_of(name, task, opts)
+        build.configure(opts or {})
+        local seen = {}
+        local group = vim.api.nvim_create_augroup('ResonanceBuildProgressTest', { clear = true })
+        vim.api.nvim_create_autocmd('Progress', {
+          group = group,
+          callback = function(ev)
+            local d = ev.data or {}
+            if d.source == 'resonance' and d.data and d.data.plugin == name then
+              seen[#seen + 1] = { id = d.id, status = d.status }
+            end
+          end,
+        })
+        local dir = vim.fn.tempname()
+        vim.fn.mkdir(dir, 'p')
+        local done = false
+        build.run_build(name, dir, task, 'hash1', function() done = true end)
+        vim.wait(3000, function() return done end)
+        vim.wait(50)
+        vim.api.nvim_del_augroup_by_id(group)
+        clear_marker(name)
+        vim.fn.delete(dir, 'rf')
+        build.configure({})
+        return seen
+      end
+
+      local function check(seen, name, verdict)
+        test.assert_true(#seen >= 2, name .. ': expected a running and a final message, got ' .. vim.inspect(seen))
+        test.assert_eq(seen[1].status, 'running', name .. ': the first message is not running')
+        test.assert_eq(seen[#seen].status, verdict, name .. ': the last message is not ' .. verdict)
+        for i = 1, #seen do
+          test.assert_eq(seen[i].id, 'resonance.build.' .. name, name .. ': a message used another id')
+        end
+      end
+
+      local t = uv.hrtime()
+      local ok_cmd = 'progress-ok-cmd-' .. t
+      check(progress_of(ok_cmd, 'true'), ok_cmd, 'success')
+      local fail_cmd = 'progress-fail-cmd-' .. t
+      check(progress_of(fail_cmd, 'exit 3'), fail_cmd, 'failed')
+      local ok_fn = 'progress-ok-fn-' .. t
+      check(progress_of(ok_fn, function() end), ok_fn, 'success')
+      local fail_fn = 'progress-fail-fn-' .. t
+      check(progress_of(fail_fn, function() error('no') end), fail_fn, 'failed')
+
+      local quiet = 'progress-off-' .. t
+      local seen = progress_of(quiet, 'true', { progress = false })
+      test.assert_eq(#seen, 0, 'progress = false still sent progress messages')
+    end,
+  },
 })
 
 test.print_summary()

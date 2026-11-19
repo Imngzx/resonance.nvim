@@ -277,6 +277,29 @@ A build that fails does not stop the plugin from being set up. The failure
 is reported, and the setup runs anyway -- the plugin may still work without
 the build's artifacts.
 
+                                                    *resonance-build-config*
+Build options go in the `build` section of |resonance.setup()|: >lua
+
+    require('resonance').setup({
+      build = {
+        concurrency = 2,   -- build commands that run at once
+        progress = true,   -- report builds as progress messages
+      },
+    })
+<
+`concurrency` limits the string build commands (`build = 'make'`) that run
+at the same time; the rest queue for a free slot. Lua build hooks are not
+counted: they run in the editor, and the work they start is their own. It
+must be a positive integer, otherwise the default is used and you are
+warned. A new value applies to the builds that start after it is set.
+
+With `progress` on, every build is reported as a |progress-message|: one
+message per plugin that moves from "running" to "success" or "failed".
+Neovim shows it in the message area, and any plugin that listens to the
+|Progress| event (filter on `ev.data.source == 'resonance'`) can show it
+too; `ev.data.data.plugin` is the plugin's name. The final success or
+failure notification is sent either way.
+
 4.4 Version Pinning                                *resonance-version*
 
 Pin to specific tag, branch, or commit:

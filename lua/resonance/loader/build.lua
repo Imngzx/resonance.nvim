@@ -15,8 +15,17 @@ local schedule = vim.schedule
 local type = type
 local tostring = tostring
 local fn_stdpath = vim.fn.stdpath
+local nvim_echo = vim.api.nvim_echo
+local math_floor = math.floor
 
--- Built on first use; see get_async() below.
+-- How many build commands run at once. Set by configure().
+local DEFAULT_CONCURRENCY = 2
+local concurrency = DEFAULT_CONCURRENCY
+
+-- Report each build as a progress message. Set by configure().
+local progress_enabled = true
+
+-- Built on first use; see get_semaphore() below.
 local build_semaphore = nil
 
 -- The child process of the build that is running, keyed by plugin name.
@@ -39,11 +48,72 @@ M.LOCK_POLL_MS = 500
 --
 -- @return table The vim.async module.
 local function get_async()
-  local async = vim.async
+  return vim.async
+end
+
+-- Read through this function, never through the upvalue: configure() drops
+-- the semaphore to apply a new limit, and a build that was waiting on a
+-- lock when that happened must still find one.
+local function get_semaphore()
   if not build_semaphore then
-    build_semaphore = async.semaphore(2)
+    build_semaphore = get_async().semaphore(concurrency)
   end
-  return async
+  return build_semaphore
+end
+
+--- Apply the `build` section of the user config.
+---
+--- A semaphore cannot be resized, so a new limit replaces it. Builds that
+--- already hold a slot keep it; the limit applies to the builds that start
+--- after this call.
+---@param opts? { concurrency?: integer, progress?: boolean }
+function M.configure(opts)
+  opts = opts or {}
+  local n = opts.concurrency
+  if n == nil then n = DEFAULT_CONCURRENCY end
+  if type(n) ~= 'number' or n < 1 or n ~= math_floor(n) or n == math.huge then
+    utils.notify('build.concurrency must be a positive integer, got ' .. tostring(n) ..
+      '; using ' .. DEFAULT_CONCURRENCY, vim.log.levels.WARN)
+    n = DEFAULT_CONCURRENCY
+  end
+  if n ~= concurrency then
+    concurrency = n
+    build_semaphore = nil
+  end
+  progress_enabled = opts.progress ~= false
+end
+
+--- The number of build commands allowed to run at once.
+---@return integer
+function M.concurrency()
+  return concurrency
+end
+
+-- Report a build's state as a progress message (|progress-message|).
+--
+-- Every update of one plugin's build uses the same id, so a frontend shows
+-- one entry that changes state rather than a new message per step: Neovim's
+-- own message area, or any plugin that listens to the Progress event.
+--
+-- Scheduled: the build task runs in a fast-event context, where nvim_echo
+-- is not allowed. The schedule queue is FIFO, so the updates arrive in the
+-- order they were sent. pcall, because the progress fields are recent and
+-- a nightly that predates them raises on them.
+---@param name string
+---@param status 'running'|'success'|'failed'
+---@param text string
+local function progress(name, status, text)
+  if not progress_enabled then return end
+  schedule(function()
+    pcall(nvim_echo, { { text } }, false, {
+      id = 'resonance.build.' .. name,
+      kind = 'progress',
+      status = status,
+      title = 'Resonance',
+      source = 'resonance',
+      data = { plugin = name },
+    })
+  end)
 end
 
 --- Run a command, and wait for it without blocking the editor.
@@ -216,6 +286,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
   -- that wrote the marker after the failure. A late second report could
   -- also overwrite the state of a newer build of the same plugin.
   local settled = false
+  local started = false
 
   ---@param quiet? boolean settle without a notification
   local function finish(ok, err, output_tail, quiet)
@@ -238,6 +309,16 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
     -- waiting on another session's lock must not delete that lock.
     if builds.holds_lock(name) then builds.release_lock(name) end
     running_objects[name] = nil
+
+    -- `started` is false for a build that never got past builds.start():
+    -- it sent no running message, so there is nothing to close.
+    if started then
+      if ok then
+        progress(name, 'success', 'Built ' .. name)
+      else
+        progress(name, 'failed', 'Build failed for ' .. name)
+      end
+    end
 
     if ok then
       M.mark_build_success(name, curr_hash)
@@ -268,6 +349,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
       -- second check_and_build() in the same tick sees it and does not
       -- start a second build.
       if not builds.start(name) then return end
+      started = true
 
       -- The lock keeps a second Neovim session from building the same
       -- plugin at the same time. The PID is the child process, so a
@@ -286,6 +368,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
         -- It used to report the build as succeeded straight away. The
         -- loader took that as "the build is done" and ran setup() against
         -- the tree the other session was still building.
+        progress(name, 'running', name .. ': waiting for another Neovim session')
         local async = get_async()
         local deadline = uv.hrtime() + builds.HARD_TIMEOUT_MS * 1e6
         while not locked do
@@ -315,6 +398,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
       end)
 
       if type(build_task) == 'function' then
+        progress(name, 'running', 'Building ' .. name)
         -- A Lua build hook may be synchronous, or it may hand back an
         -- object for work it started itself. Marking the build as
         -- successful before that work finishes would make the next check
@@ -346,7 +430,11 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
           end
         end
       else
-        local obj = build_semaphore:with(function()
+        -- Queued until a slot frees up: with more builds than slots, the
+        -- message says why nothing is happening yet.
+        progress(name, 'running', name .. ': waiting for a build slot')
+        local obj = get_semaphore():with(function()
+          progress(name, 'running', 'Building ' .. name)
           return run_command({ 'sh', '-c', build_task }, { cwd = dir, text = true }, function(handle)
             -- The handle is kept so the hard timeout can kill the child,
             -- and the PID is recorded as soon as the child exists, so the

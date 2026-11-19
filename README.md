@@ -74,7 +74,11 @@ resonance.setup({
     border = 'rounded',
     width = 0.65,
     height = 0.75,
-  }
+  },
+  build = {
+    concurrency = 2, -- build commands that run at once
+    progress = true, -- report builds as progress messages (:h resonance-build-config)
+  },
 })
 
 resonance.load({

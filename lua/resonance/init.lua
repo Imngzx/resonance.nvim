@@ -38,8 +38,13 @@ end
 ---@field backdrop? number
 ---@field icons? ResonanceUIConfigIcons Glyphs for loaded / not loaded / disabled plugins
 
+---@class ResonanceBuildConfig
+---@field concurrency? integer How many build commands run at once (default: 2)
+---@field progress? boolean Report builds as progress messages (default: true)
+
 ---@class ResonanceConfig
 ---@field ui? ResonanceUIConfig
+---@field build? ResonanceBuildConfig
 ---@field replay? boolean Replay the read events for open buffers after VeryLazy (default: true)
 
 ---@class ResonanceKeyDef
@@ -82,6 +87,10 @@ M.config = {
     backdrop = 60,
   },
   replay = true,
+  build = {
+    concurrency = 2,
+    progress = true,
+  },
 }
 
 -- VeryLazy is armed by setup() and load() themselves. It used to need a
@@ -192,6 +201,9 @@ function M.setup(opts)
     loader_mod = require('resonance.loader')
   end
   loader_mod.setup()
+  -- The loader has already required the build module, so this costs
+  -- nothing extra at startup.
+  require('resonance.loader.build').configure(M.config.build)
 end
 
 ---@param spec ResonanceLoadSpec|ResonanceLoadSpec[]

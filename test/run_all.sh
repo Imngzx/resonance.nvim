@@ -1,17 +1,7 @@
 #!/usr/bin/env bash
-# Run all resonance.nvim tests
+# Run all resonance.nvim tests, in the isolated env (see test/dev_env.sh).
 # Usage: ./test/run_all.sh
 
-set -e
+set -euo pipefail
 
-cd "$(dirname "$0")/.."
-
-echo "Running all resonance.nvim tests..."
-echo "=================================="
-
-nvim --headless \
-  -c "luafile test/run_all.lua" \
-  -c "qall"
-
-echo ""
-echo "All tests passed!"
+exec "$(dirname "$0")/dev_env.sh" test

@@ -73,6 +73,9 @@ end
 
 -- Load resonance from installed location
 local function load_installed()
+  -- The isolated env has no user config to packadd it, and the submodules
+  -- are found through the runtimepath, so add it the way a config would.
+  vim.cmd.packadd('resonance.nvim')
   local ok, r = pcall(dofile, vim.fn.stdpath('data') .. '/site/pack/core/opt/resonance.nvim/lua/resonance/init.lua')
   if not ok then error('Failed to load installed resonance: ' .. r) end
   r.setup()
@@ -114,9 +117,24 @@ local function assert_trees_in_sync()
   end
   if #stale > 0 then
     error(string.format(
-      'Installed resonance is stale for: %s\nSync with: cp -r lua/resonance/*.lua %s/lua/resonance/ && cp -r lua/resonance/loader/*.lua %s/lua/resonance/loader/ && cp -r lua/resonance/ui/*.lua %s/lua/resonance/ui/',
-      table.concat(stale, ', '), inst_root, inst_root, inst_root))
+      'Installed resonance is stale for: %s\nInstalled copy: %s\nSync with: test/dev_env.sh sync',
+      table.concat(stale, ', '), inst_root))
   end
+end
+
+-- The suite installs, builds and overwrites plugins under stdpath('data').
+-- Run outside test/dev_env.sh, that is the user's real plugin directory --
+-- the copy their editor actually runs -- and their whole config is loaded
+-- into the test process. Refuse unless the isolated env is active.
+local function assert_isolated_env()
+  if vim.env.RESONANCE_TEST_ALLOW_REAL_ENV == '1' then return end
+  local dev = vim.env.RESONANCE_DEV_ENV
+  local data = vim.fn.stdpath('data')
+  if dev and dev ~= '' and data:find(dev, 1, true) == 1 then return end
+  error(string.format(
+    'Refusing to run the suite against a non-isolated environment (stdpath data: %s).\n'
+      .. 'Run it through test/dev_env.sh test, or set RESONANCE_TEST_ALLOW_REAL_ENV=1 to override.',
+    data))
 end
 
 -- Stub vim.pack so a test can exercise the load path without installing
@@ -340,5 +358,6 @@ _G.test = {
   stub_pack = stub_pack,
 }
 
+assert_isolated_env()
 assert_trees_in_sync()
 load_installed()

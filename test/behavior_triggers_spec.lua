@@ -16,6 +16,15 @@ local recorder = h.recorder
 local count = h.count
 local make_git_repo = h.make_git_repo
 
+-- The lhs Neovim stores for a <leader> mapping. <leader> expands to
+-- g:mapleader at set time, and that is a backslash unless a config changed
+-- it -- the isolated test env has no config, so it must not be assumed.
+local function leader_lhs(rest)
+  local leader = vim.g.mapleader
+  if leader == nil or leader == '' then leader = '\\' end
+  return leader .. rest
+end
+
 test.run_suite('resonance.behavior.triggers', {
 
   {
@@ -345,7 +354,7 @@ test.run_suite('resonance.behavior.triggers', {
       -- The keymap is set, buffer-local.
       local set_count = 0
       for _, m in ipairs(api.nvim_buf_get_keymap(buf, 'n')) do
-        if m.lhs == ' Rb' then set_count = set_count + 1 end
+        if m.lhs == leader_lhs('Rb') then set_count = set_count + 1 end
       end
       test.assert_eq(set_count, 1, 'the buffer-local keymap was not set on the current buffer')
 
@@ -356,7 +365,7 @@ test.run_suite('resonance.behavior.triggers', {
 
       local left = 0
       for _, m in ipairs(api.nvim_buf_get_keymap(buf, 'n')) do
-        if m.lhs == ' Rb' then left = left + 1 end
+        if m.lhs == leader_lhs('Rb') then left = left + 1 end
       end
       test.assert_eq(left, 0, 'the buffer-local keymap stub survived the load')
     end,
@@ -651,7 +660,7 @@ test.run_suite('resonance.behavior.triggers', {
       -- The mapping is on the buffer that was current at registration.
       local set_count = 0
       for _, m in ipairs(api.nvim_buf_get_keymap(buf, 'n')) do
-        if m.lhs == ' Rz' then set_count = set_count + 1 end
+        if m.lhs == leader_lhs('Rz') then set_count = set_count + 1 end
       end
       test.assert_eq(set_count, 1, 'the buffer-local keymap was not set on the current buffer')
 
@@ -665,7 +674,7 @@ test.run_suite('resonance.behavior.triggers', {
 
       local left = 0
       for _, m in ipairs(api.nvim_buf_get_keymap(buf, 'n')) do
-        if m.lhs == ' Rz' then left = left + 1 end
+        if m.lhs == leader_lhs('Rz') then left = left + 1 end
       end
       test.assert_eq(left, 0, 'the buffer-local keymap stub survived the load')
     end,

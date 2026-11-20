@@ -11,7 +11,7 @@
 
 | Path | Role |
 |---|---|
-| `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `import()`, `stats()`, `open_ui()`, `has_fired()`, `replay_for_buffer()` |
+| `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `import()`, `stats()`, `open_ui()`, `has_fired()`, `replay_for_buffer()`, `trigger_verylazy()` (legacy) |
 | `lua/resonance/registry.lua` | Shared pure data: specs, triggers, disabled plugins, load times, plugin dirs. No side effects. |
 | `lua/resonance/loader/` | Control plane: `init` (load/force-load, install), `spec` (normalize), `triggers` (autocmd/cmd/keymap/ft), `replay` (fired-event tracker, `has_fired`, `replay_for_buffer`, post-load replay), `build` (build hooks), `dag` (dependency + event-chain data, required on first use) |
 | `lua/resonance/builds.lua` | Per-plugin build state: status, wait, `on_complete`, output tail, hard timeout, cross-session PID lock. Requires nothing from the loader. |
@@ -19,6 +19,7 @@
 | `lua/resonance/scanner.lua` | Read-only discovery of installed plugins (SoA: parallel arrays indexed `1..total`) |
 | `lua/resonance/ui/` | Panel: `init` (window + keymaps), `state` (singleton), `render`, `actions` |
 | `lua/resonance/utils.lua` | Shared helpers — **`utils.get_pack()` lives here** |
+| `CODE_TOUR.md` | The guided walk-through for a first read: glossary, file map, each flow as a story. Keep it in step when a flow changes. |
 
 Entry point: `require('resonance').setup()`.
 
@@ -193,7 +194,13 @@ vim-startuptime -vimpath nvim -count 10 -warmup 3 -- \
   -u NONE -c "qall"
 
 # UI open time
-nvim --headless -c "luafile lua/resonance/init.lua" \
+#
+# Same rule as above: `-u NONE` plus the synced copy on the runtimepath.
+# `luafile lua/resonance/init.lua` does not register the module, so
+# without these `require('resonance')` loads whatever the real config has
+# installed and the number is for that copy, not for the working tree.
+# The plugin list still comes from the real vim.pack lockfile.
+nvim --headless -u NONE --cmd "set rtp+=$I" \
   -c "lua require('resonance').setup(); local t=vim.uv.hrtime(); require('resonance').open_ui(); print('UI open:', (vim.uv.hrtime()-t)/1e6, 'ms')" \
   -c "qall"
 ```
@@ -237,8 +244,9 @@ in the plugin's own directory, which dirties its git worktree.
 
 **Build state lives in `lua/resonance/builds.lua`.** The settled rules:
 one build per plugin at a time; only the exit code decides success;
-`setup()` runs after the build (a `cmd`/`keys` load waits, bounded; an
-automatic load defers until every build of the spec settles); a failed
+`setup()` runs after the build (a spec that has `cmd`/`keys` waits,
+bounded, whichever trigger fired; any other spec defers until every build
+of the spec settles); a failed
 build still gets its plugin set up; background builds never block the
 editor. See `:h resonance-build-order`.
 

@@ -1,0 +1,57 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Resonance targets Neovim nightly (vim.pack + vim.async). A weekly run
+  # catches an upstream change that breaks it even when nothing was pushed.
+  schedule:
+    - cron: '0 3 * * 1'
+  # The "Run workflow" button on the Actions tab.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run still in progress.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # GitHub has no Arch machines: the job runs in an Arch container on
+    # top of the Ubuntu runner.
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 10
+    env:
+      # A test that reaches for a remote must fail, not wait for a password.
+      GIT_TERMINAL_PROMPT: 0
+    steps:
+      # git has to be there before the checkout: without it the action
+      # downloads a tarball with no .git, and the bootstrap installs
+      # Resonance by cloning this repository.
+      - name: Install git and bob
+        run: pacman -Syu --noconfirm git bob
+
+      - uses: actions/checkout@v4
+
+      # The container runs as root and the checkout belongs to another
+      # user; git refuses to clone from it otherwise.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install Neovim nightly with bob
+        run: |
+          bob use nightly
+          echo "$HOME/.local/share/bob/nvim-bin" >> "$GITHUB_PATH"
+
+      - name: Neovim version
+        run: nvim --version | head -n 3
+
+      # Bootstraps the isolated env in .dev, syncs the working tree into
+      # it and runs every spec. Exits non-zero on any failure.
+      - name: Run the test suite
+        run: ./test/run_all.sh

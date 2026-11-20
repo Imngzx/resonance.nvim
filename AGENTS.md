@@ -3,7 +3,7 @@
 > **Purpose:** the hard rules for editing this codebase. Read it, then read
 > the source — the source wins.
 > **Target:** Neovim **0.13+** (`vim.pack` + `vim.async` both required).
->repo url [resonance.nvim](https://github.com/Imngzx/resonance.nvim).
+> Repo: [resonance.nvim](https://github.com/Imngzx/resonance.nvim).
 
 ---
 
@@ -13,39 +13,29 @@
 |---|---|
 | `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `import()`, `stats()`, `open_ui()`, `has_fired()`, `replay_for_buffer()`, `trigger_verylazy()` (legacy) |
 | `lua/resonance/registry.lua` | Shared pure data: specs, triggers, disabled plugins, load times, plugin dirs. No side effects. |
-| `lua/resonance/loader/` | Control plane: `init` (load/force-load, install), `spec` (normalize), `triggers` (autocmd/cmd/keymap/ft), `replay` (fired-event tracker, `has_fired`, `replay_for_buffer`, post-load replay), `build` (build hooks), `dag` (dependency + event-chain data, required on first use) |
-| `lua/resonance/builds.lua` | Per-plugin build state: status, wait, `on_complete`, output tail, hard timeout, cross-session PID lock. Requires nothing from the loader. |
-| `lua/resonance/scandir.lua` | Opt-in `import()`: scan a `lua/<mod>/` folder, require each module, `load()` the specs it returns by `priority`. Required only when `import()` is called. |
+| `lua/resonance/loader/` | Control plane: `init` (load, install), `spec` (normalize), `triggers`, `replay` (event tracker and both replays), `build` (build hooks), `dag` (panel data, required on first use) |
+| `lua/resonance/builds.lua` | Per-plugin build state: status, wait, output tail, hard timeout, cross-session PID lock. Requires nothing from the loader. |
+| `lua/resonance/scandir.lua` | Opt-in `import()`. Required only when `import()` is called. |
 | `lua/resonance/scanner.lua` | Read-only discovery of installed plugins (SoA: parallel arrays indexed `1..total`) |
 | `lua/resonance/ui/` | Panel: `init` (window + keymaps), `state` (singleton), `render`, `actions` |
 | `lua/resonance/utils.lua` | Shared helpers — **`utils.get_pack()` lives here** |
-| `CODE_TOUR.md` | The guided walk-through for a first read: glossary, file map, each flow as a story. Keep it in step when a flow changes. |
+| `CODE_TOUR.md` | Guided walk-through: glossary, file map, each flow as a story. Keep it in step when a flow changes. |
 
 Entry point: `require('resonance').setup()`.
 
-**The scanner must not require the loader.** The shared state lives in
-`registry.lua`, which depends on neither. The loader and the scanner both
-require the registry, so the cycle is gone: requiring the scanner no
-longer drags the control plane — and its `PackChanged` build autocmd —
-into the read-only panel.
+**The scanner must not require the loader.** Shared state goes in
+`registry.lua`, which both require and which requires neither. Requiring
+the loader from the scanner would pull the control plane — and its
+`PackChanged` build autocmd — into the read-only panel.
 
-**Tools:** `rg` (ripgrep) for content search, `fd` for file finding — prefer
-both over `grep` and `find`. `nvim` for headless testing, `lua-language-server`
+**Tools:** `rg` for content search, `fd` for file finding — prefer both
+over `grep` and `find`. `nvim` for headless testing, `lua-language-server`
 for diagnostics.
 
-Development happens in an isolated env (`test/dev_env.sh`): every XDG
-directory points into the git-ignored `.dev/`, so the tests and any manual
-session never touch the real `~/.local`, `~/.config`, or the plugin copy the
-editor actually runs. The installed copy the test suite exercises:
-
-```text
-.dev/data/nvim/site/pack/core/opt/resonance.nvim/   # test/dev_env.sh path
-```
-
 **Open issues live in GitHub Issues.** History is `git log`; the *why* of
-each fix lives in the code comments and the regression tests. Keep any
-working plan in a local, untracked file (for example via
-`.git/info/exclude`) and do not commit it.
+each fix goes in the code comments and the regression tests. Keep any
+working plan in a local,
+untracked file (for example via `.git/info/exclude`) and do not commit it.
 
 ---
 
@@ -77,34 +67,25 @@ working plan in a local, untracked file (for example via
 
 - **Localize what the module uses, at the top.** Follow the existing naming
   in that file: `string_format`, `vim_schedule`, `vim_log_levels`,
-  `uv_fs_stat`, `nvim_buf_set_extmark`, `vbo` / `vwo`. Do **not** introduce
-  unused aliases, and do not rename to a different convention
-  (`sfmt` / `vnotif` / `vlog` are not this codebase's style).
-- **Arrays → numeric `for i = 1, #t`. Dictionaries → `pairs()`.** `pairs()`
-  is required for map iteration and is used throughout `loader/dag.lua`.
+  `uv_fs_stat`, `nvim_buf_set_extmark`, `vbo` / `vwo`. No unused aliases,
+  no other convention (`sfmt` / `vnotif` / `vlog`).
+- **Arrays → numeric `for i = 1, #t`. Dictionaries → `pairs()`.**
   `ipairs()` is not used anywhere in this codebase.
 - **`ui/render.lua` reuses buffers** via `table.clear` — do not reassign
   `lines` / `hls` / `line_parts` to `{}` mid-render.
-- **Use SoA where it already exists.** The scanner returns the plugins as
-  parallel arrays (`info.plugins.name[i]`, `.path[i]`, `.loaded[i]`, …), and
-  the UI and the DAG read them that way. Work on that data directly, and
-  add a new per-plugin field as one more parallel array. Do not convert it
-  into a list of tables. Use AoS (one table per entry, `p.name`, `p.path`)
-  only for a new list that does not come from an existing SoA structure.
-  SoA rules:
-  - Iterate `for i = 1, info.total`, never `#t`. A nil in a parallel array
-    makes `#` unreliable (measured: a nil at index 2 of a 3-element array
-    reports length 1 while index 3 still holds a value), and `rev` /
-    `rev_to` / `manifest` have holes on purpose.
+- **Use SoA where it already exists.** The scanner returns parallel arrays
+  (`info.plugins.name[i]`, `.path[i]`, `.loaded[i]`, …). Add a per-plugin
+  field as one more parallel array; do not convert to a list of tables.
+  Use AoS only for a new list that does not come from an SoA structure.
+  - Iterate `for i = 1, info.total`, never `#t`: `rev` / `rev_to` /
+    `manifest` have holes on purpose, and `#` is unreliable with holes.
   - Write every array at every index when adding an entry (see
-    `append_disabled()` in the scanner), so the arrays stay aligned.
+    `append_disabled()` in the scanner).
   - Sort with `utils.sort_plugins()` + `utils.apply_sort()`, and list
-    every field in `apply_sort`. A field left out stays in the old order
-    and no longer lines up with the others.
+    every field in `apply_sort`, or that field falls out of alignment.
 - Early returns, flat conditionals, comments only for *why*.
 - No filesystem walks in hot paths — use the `vim.pack.get()` cache.
-- Localize globals; avoid `vim.fn` in hot paths — prefer `vim.uv` /
-  `vim.system`.
+- Avoid `vim.fn` in hot paths — prefer `vim.uv` / `vim.system`.
 
 ---
 
@@ -112,18 +93,23 @@ working plan in a local, untracked file (for example via
 
 ### Isolated env
 
+Every XDG directory points into the git-ignored `.dev/`, so nothing
+touches the real `~/.local`, `~/.config`, or the plugin copy the editor
+runs.
+
 ```bash
 test/dev_env.sh bootstrap   # create .dev: installs resonance + 3 fixture plugins via vim.pack
 test/dev_env.sh sync        # copy the working tree over the installed copy
 test/dev_env.sh nvim        # an isolated Neovim for manual testing
 test/dev_env.sh shell       # a shell with the isolated XDG env exported
+test/dev_env.sh path        # print the installed copy's path
 rm -rf .dev                 # start over; the next command bootstraps again
 ```
 
 The suite tests the **installed** copy, not the repo. `test/dev_env.sh test`
-syncs before every run, and `test/runner.lua` fails loudly if the copy is
-stale. The runner also refuses to run outside the isolated env
-(`RESONANCE_TEST_ALLOW_REAL_ENV=1` overrides it — don't).
+syncs before every run, and `test/runner.lua` fails if the copy is stale or
+if it runs outside the isolated env (`RESONANCE_TEST_ALLOW_REAL_ENV=1`
+overrides it — don't).
 
 The isolated env has no user config: no `mapleader`, no snacks, no
 personal plugins. A test that needs one of them must set it up itself.
@@ -135,37 +121,30 @@ personal plugins. A test that needs one of them must set it up itself.
 test/dev_env.sh test test/gc_spec.lua      # one or more spec files
 ```
 
-A spec that fails to load exits non-zero; it no longer passes silently.
+- **Faking processes:** use `h.with_system(handler, fn)` from
+  `test/helpers.lua`, not an assignment to `vim.system`: `ui/actions.lua`
+  holds `vim.system` in a local, and the helper rebuilds it against the
+  stub and restores it afterwards.
+- **`test/docs_spec.lua`** fails on a broken `|link|` in the help file or a
+  stale `doc/tags`.
+- **`test/pack_integration_spec.lua`** installs real plugins into its own
+  temp `XDG_DATA_HOME` per test.
+- **`test/gc_spec.lua`** holds the memory regressions. Prefer an exact count
+  (buffers, windows, autocmds, registry refs, table keys) over a heap
+  bound. Neovim's runtime retains memory per buffer and window in headless
+  mode, so switch such sources off or count around them, and drain the
+  event loop (`vim.wait`) between cycles.
 
 **CI** (`.github/workflows/test.yml`) runs `./test/run_all.sh` on every push
 to `main`, every pull request and once a week, in an Arch container with
 Neovim nightly installed by `bob`. That machine has a shallow checkout on a
-detached HEAD, no global git config and no git identity, and it runs as
-root. A test that commits must pass `-c user.name=… -c user.email=…` itself,
-and nothing may depend on a tool beyond `git`, `sh` and coreutils. Only
-GitHub runs it; the Codeberg mirror does not.
+detached HEAD, no git identity, and runs as root. A test that commits must
+set the identity itself (`-c user.name=… -c user.email=…`, or `git config`
+inside its own temp repo), and nothing may depend on a tool beyond `git`,
+`sh` and coreutils. Only GitHub runs it.
 
-To fake processes, use `h.with_system(handler, fn)` from `test/helpers.lua`
-rather than assigning `vim.system`: `ui/actions.lua` copies `vim.system` into
-a local when it loads, so the helper rebuilds it against the stub, and it puts
-the real function back even when the test fails.
-
-`test/docs_spec.lua` fails on a broken `|link|` in the help file or a stale
-`doc/tags`.
-
-`test/pack_integration_spec.lua` installs real plugins into its own temp
-`XDG_DATA_HOME` per test.
-
-`test/gc_spec.lua` holds the memory regressions. Prefer an exact count
-(buffers, windows, autocmds, live Lua registry refs, table keys) over a
-heap bound. Neovim's own runtime retains memory per buffer and per window
-in headless mode — matchparen's pending `SafeState` autocmds, for one — so
-switch such sources off or count around them, and drain the event loop
-(`vim.wait`) between cycles.
-
-**Mutation-check new regression tests.** A test that passes against broken
-code is worse than no test. Revert the fix in the *installed* copy only and
-confirm the test fails, then sync to restore it:
+**Mutation-check new regression tests.** Revert the fix in the *installed*
+copy only and confirm the test fails, then sync to restore it:
 
 ```bash
 $EDITOR "$(test/dev_env.sh path)/lua/resonance/loader/init.lua"   # break it
@@ -181,44 +160,33 @@ lua-language-server --check=lua/resonance/loader/init.lua   # and the other modu
 
 ### Benchmark (performance changes only)
 
+No regression allowed on any of these.
+
 ```bash
-# startup
-#
-# -vimpath is required: vim-startuptime defaults to the `vim` binary,
-# which is not installed on this machine. Without it the command fails.
-#
-# The runtimepath has to be set explicitly. Under `-u NONE` the plugin
-# directory is not on the runtimepath, so `require('resonance')` fails
-# with "module not found" and the benchmark measures a failed require
-# instead of the plugin.
-I=$(test/dev_env.sh path)   # the synced copy; the real one is not kept in sync
+# Keep `-u NONE` and the rtp flag together. Without the synced copy on the
+# runtimepath, require('resonance') fails or loads the copy the real config
+# installed, and the number is not for the working tree. `luafile
+# lua/resonance/init.lua` does not register the module either.
+I=$(test/dev_env.sh path)
+
+# startup (-vimpath: vim-startuptime defaults to `vim`)
 vim-startuptime -vimpath nvim -count 10 -warmup 3 -- \
   -u NONE --cmd "set rtp+=$I" \
   -c "lua require('resonance').setup()" -c "qall"
 
-# Baseline, to get the plugin's own cost. Run it too: the startup total
-# is mostly Neovim itself.
+# baseline; subtract it to get the plugin's own cost
 vim-startuptime -vimpath nvim -count 10 -warmup 3 -- \
   -u NONE -c "qall"
 
-# UI open time
-#
-# Same rule as above: `-u NONE` plus the synced copy on the runtimepath.
-# `luafile lua/resonance/init.lua` does not register the module, so
-# without these `require('resonance')` loads whatever the real config has
-# installed and the number is for that copy, not for the working tree.
-# The plugin list still comes from the real vim.pack lockfile.
+# UI open time (the plugin list comes from the real vim.pack lockfile)
 nvim --headless -u NONE --cmd "set rtp+=$I" \
   -c "lua require('resonance').setup(); local t=vim.uv.hrtime(); require('resonance').open_ui(); print('UI open:', (vim.uv.hrtime()-t)/1e6, 'ms')" \
   -c "qall"
 ```
 
-No regression allowed on either.
-
-**Resonate (`r`)** — `test/bench_resonate.sh`. It needs no network: N local
-repos are installed through vim.pack in throwaway XDG dirs, each gets a
-pending commit, and every `git fetch` goes through git's `ext::` transport
-behind a sleep that stands in for the round trip. It times the phases
+**Resonate (`r`)** — `test/bench_resonate.sh`. No network needed: N local
+repos are installed through vim.pack in throwaway XDG dirs, and every
+`git fetch` sleeps to stand in for the round trip. It times the phases
 (fetch / blocking `pack.get` / `git log` / total) and exits non-zero if a
 check misses a pending update.
 
@@ -239,24 +207,23 @@ time.
 
 **Add a trigger type** — `loader/triggers.lua`: add `register_<type>()`,
 call it from `register_all()`. Pass the `group` through so the replay can
-address it.
+address it. A trigger pattern may be a list: join it for display, never
+concatenate it (see `parse_trigger()`).
 
 **Add a UI column/action** — `ui/state.lua` (field), `ui/actions.lua`
 (handler), `ui/init.lua` (keymap), `ui/render.lua` (column).
 
-**Modify the build system** — `loader/build.lua`: `run_build()`,
-`check_and_build()`, `mark_build_success()`, `clear_build_marker()`,
-`PackChanged` autocmd. The build hash marker lives in
-`stdpath('state') .. '/resonance/builds/'`, keyed by plugin name — never
-in the plugin's own directory, which dirties its git worktree.
-
-**Build state lives in `lua/resonance/builds.lua`.** The settled rules:
-one build per plugin at a time; only the exit code decides success;
-`setup()` runs after the build (a spec that has `cmd`/`keys` waits,
-bounded, whichever trigger fired; any other spec defers until every build
-of the spec settles); a failed
-build still gets its plugin set up; background builds never block the
-editor. See `:h resonance-build-order`.
+**Modify the build system** — hooks in `loader/build.lua` (`run_build()`,
+`check_and_build()`, `mark_build_success()`, `clear_build_marker()`, the
+`PackChanged` autocmd); state in `lua/resonance/builds.lua`. The build
+marker lives in `stdpath('state') .. '/resonance/builds/'`, keyed by plugin
+name — never in the plugin's own directory, which dirties its git worktree.
+The settled rules: one build per plugin at a time; only the exit code
+decides success; `setup()` runs after the build (a spec that has
+`cmd`/`keys` waits, bounded, whichever trigger fired; any other spec defers
+until every build of the spec settles); a failed build still gets its
+plugin set up; background builds never block the editor. See
+`:h resonance-build-order`.
 
 **Add a `setup()` option** — follow `build.concurrency` and
 `resonate.concurrency`:
@@ -285,13 +252,6 @@ editor. See `:h resonance-build-order`.
 nvim --headless -c 'helptags doc' -c q
 ```
 
-**A trigger pattern may be a list** — `normalize_events()` keeps a table
-pattern as a table, because Neovim accepts a list of patterns on an
-autocmd. Anything that renders a pattern for display has to join it
-rather than concatenate it. `parse_trigger()` does this; a bare
-`'(' .. pattern .. ')'` raises `attempt to concatenate a table value` and
-takes the whole load down.
-
 ---
 
 ## 6. Committing
@@ -300,13 +260,3 @@ Stage only your own changes, never `git add -A` / `git add .`: other
 agents or the user may have uncommitted work in the tree. Check
 `git status` first and add files by path. If a file mixes your changes
 with someone else's, do not commit it; ask the user.
-
-Some agent harnesses provide a `commit` namespace that selects your
-changed lines for you:
-
-```lua
-d = await commit.draft()
-await d.commit("subject", ["- body"])
-```
-
-Use it when it is available; otherwise plain `git` with the rule above.

@@ -12,12 +12,13 @@ init.lua (public API)
    ▼                                           ▼
 loader/  ── control plane ──┐            ui/  ── read-only panel
   init     load, load_now,  │              init    window, keymaps
-           event tracker,   │              state   singleton st.state
-           replay           │              render  full rebuild + spinner line
-  spec     normalize a spec │              actions fetch, update, checkout, uninstall
-  triggers event/cmd/keys/ft│                 │
+           install, deps    │              state   singleton st.state
+  spec     normalize a spec │              render  full rebuild + spinner line
+  triggers event/cmd/keys/ft│              actions fetch, update, checkout, uninstall
+  replay   event tracker,   │                 │
+           replay           │                 │
   build    markers, run cmds│                 ▼
-  dag      deps + chains    │            scanner.lua ── read-only discovery
+  dag      panel's DAG data │            scanner.lua ── read-only discovery
    │                        │                 │
    ▼                        ▼                 ▼
 builds.lua (build state)   registry.lua (pure shared data)  ◄── both sides
@@ -94,20 +95,36 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
    - Members listed before the first one with a running build are set up
      immediately.
    - The members from that one onward wait:
-     - A `cmd` or `keys` load waits up to 30 s (`builds.wait`).
-     - Any other load sets them up in `builds.on_complete` once every build
+     - A spec that has `cmd` or `keys` waits up to 30 s (`builds.wait`).
+       The spec decides, not the trigger that fired: such a spec waits
+       even when its `event` loads it, and so does `lazy = false` with
+       `keys`.
+     - Any other spec sets them up in `builds.on_complete` once every build
        has settled.
    - A failed build still gets its plugin set up.
 6. Remove the remaining triggers and record the load time in
    `registry.load_times`.
-7. Replay, once per spec. This only happens if the trigger event has
-   already fired for this buffer. The chain (`dag._get_event_chain_internal`)
-   is the trigger event and what follows it: `BufReadPre` and `BufNewFile`
-   are followed by `BufReadPost`. Each event in the chain that has already
-   fired for the buffer, other than the trigger event itself, is re-fired
-   once per augroup with `exec_autocmds(..., { group = ... })`. Autocmds
-   without a group are never replayed. Recursion is capped by
-   `MAX_REPLAY_DEPTH = 2`.
+7. Replay, once per spec, and only when an event loaded it (a `cmd` or
+   `keys` load has no event to replay). It lives in `loader/replay.lua`:
+   - Before anything loads, `replay.snapshot(ev.event)` records the
+     augroups that exist on the trigger event and on its predecessors
+     (`PREDECESSORS`): `BufReadPost` ← `BufReadPre`; `FileType` ←
+     `BufReadPre`, `BufNewFile`, `BufReadPost`; `BufEnter` ← those three
+     plus `FileType`. Any other event has no predecessors.
+   - After the load, `replay.after_load` fires each of those events once
+     per augroup that is *not* in the snapshot, with
+     `exec_autocmds(..., { group = ... })`. Those are the handlers the
+     plugin just registered. Neovim does not run an autocmd added while
+     its event is firing, so they would otherwise miss it.
+   - The trigger event is always fired to the new groups. A predecessor is
+     fired only if it already ran (or is running) for the buffer. Events
+     still to come (`BufReadPost` after a `BufReadPre` load) are left to
+     Neovim.
+   - Groups in the snapshot already saw the event and are never fired
+     again. Autocmds without a group are never replayed. Recursion is
+     capped by `MAX_REPLAY_DEPTH = 2`.
+   - `dag._get_event_chain_internal` is not part of this. It is an older
+     chain helper that only the tests still call.
 
 ## Flow 3: event tracking and replay
 

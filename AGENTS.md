@@ -137,6 +137,14 @@ test/dev_env.sh test test/gc_spec.lua      # one or more spec files
 
 A spec that fails to load exits non-zero; it no longer passes silently.
 
+**CI** (`.github/workflows/test.yml`) runs `./test/run_all.sh` on every push
+to `main`, every pull request and once a week, in an Arch container with
+Neovim nightly installed by `bob`. That machine has a shallow checkout on a
+detached HEAD, no global git config and no git identity, and it runs as
+root. A test that commits must pass `-c user.name=… -c user.email=…` itself,
+and nothing may depend on a tool beyond `git`, `sh` and coreutils. Only
+GitHub runs it; the Codeberg mirror does not.
+
 To fake processes, use `h.with_system(handler, fn)` from `test/helpers.lua`
 rather than assigning `vim.system`: `ui/actions.lua` copies `vim.system` into
 a local when it loads, so the helper rebuilds it against the stub, and it puts

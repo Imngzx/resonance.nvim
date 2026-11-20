@@ -266,8 +266,9 @@ end
 
 ---Plugin statistics.
 ---
----`startuptime` is latched on the first call and never changes: it is the
----time from startup to the moment the UI became usable.
+---`startuptime` is latched at UIEnter/VimEnter (or on the first call, if
+---that comes first) and never changes: it is the time from startup to the
+---moment the UI became usable.
 ---
 ---`count`, `loaded` and `times` are read live, because a plugin can load
 ---at any point -- after the first call, or never.

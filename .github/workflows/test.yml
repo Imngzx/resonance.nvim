@@ -36,17 +36,20 @@ jobs:
       - name: Install git and bob
         run: pacman -Syu --noconfirm git bob
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The container runs as root and the checkout belongs to another
       # user; git refuses to clone from it otherwise.
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      # The real binary goes on the PATH, not bob's nvim-bin shim: the
+      # shim looks its state up under XDG_DATA_HOME, which the isolated
+      # test env points into .dev, and it then fails to find Neovim.
       - name: Install Neovim nightly with bob
         run: |
           bob use nightly
-          echo "$HOME/.local/share/bob/nvim-bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/share/bob/nightly/bin" >> "$GITHUB_PATH"
 
       - name: Neovim version
         run: nvim --version | head -n 3

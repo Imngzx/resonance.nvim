@@ -38,11 +38,11 @@ Key features:
 - Optional lazy.nvim-style import of a folder of spec files
 - Automatic dependency resolution
 - Build hooks with hash-based caching
-- Terminal UI for plugin management (install, update, checkout, uninstall)
+- Terminal UI for plugin management (update, checkout, uninstall)
 - DAG visualization of plugin dependencies
 - Event replay for correct autocmd ordering
 - Fallback mode when vim.pack is unavailable
-- Sub-millisecond startup overhead
+- A few milliseconds of startup overhead (see |resonance-performance|)
 
 ==============================================================================
 2. Installation                                    *resonance-installation*
@@ -52,11 +52,11 @@ Requirements:
 - Git
 
 Using |vim.pack| (recommended):
-    :lua vim.pack.add({{src='https://github.com/yourname/resonance.nvim'}})
+    :lua vim.pack.add({{src='https://github.com/Imngzx/resonance.nvim'}})
     :packadd resonance.nvim
 
 Manual installation:
-    git clone https://github.com/yourname/resonance.nvim \
+    git clone https://github.com/Imngzx/resonance.nvim \
       ~/.local/share/nvim/site/pack/core/opt/resonance.nvim
 
 Then add to your init.lua:
@@ -110,7 +110,8 @@ Basic setup in your init.lua:
       resonance.open_ui()
     end)
 
-`setup()` takes the UI options and `replay` (see |resonance-api-main|).
+`setup()` takes the `ui`, `replay`, `build` and `resonate` options (see
+|resonance-api-main|).
 Plugin specifications go to `load()`. `User VeryLazy` fires on its own
 once the UI is up, and the files opened before it are replayed for the
 triggers registered then -- there is nothing else to call.
@@ -122,18 +123,23 @@ The `resonance.load()` function accepts a list of plugin specifications.
 Each spec is a table with the following fields:
 
 Common fields:
-    src (string)        Git repository URL (required)
+    src (string)        Git repository URL (required). `url`, or the URL as
+                        the first element, means the same
     name (string)       Override plugin name (derived from URL if omitted)
     version (string)    Git tag/branch/commit to checkout
+    data (any)          Passed through to |vim.pack| unchanged
     event (string|table) Lazy load on autocmd event(s)
     cmd (string|table)  Lazy load on command(s)
     ft (string|table)   Lazy load on filetype(s)
     keys (table|function) Lazy load on keymap(s) or function returning keymaps
-    dependencies (table) List of dependency plugin URLs
+    restore_keys (boolean) false: do not map a key's rhs again after the
+                        load (default true)
+    dependencies (string|table) Dependency plugin URL, or a list of them
     build (string|function) Build command or function(dir)
     config (function)   Called after plugin loads (alias for setup)
     setup (function)    Called after plugin loads
-    plugin (table)      Alternative spec format (lazy.nvim compatible)
+    plugin (string|table) The plugin, or a list of plugins, written apart
+                        from the options (see |resonance-version|)
     lazy (boolean)      false = eager (VimEnter), true = VeryLazy default
     cond (boolean|function) Conditional loading: a false result skips the
                         plugin (a function returning nil too)
@@ -205,7 +211,8 @@ if none of them fired first. It does not replace them.
 
 `lazy = false` cannot be combined with `event`, `cmd` or `ft` -- it
 means the plugin loads eagerly on VimEnter. `keys` is allowed, because a
-keymap works after an eager load.
+keymap works after an eager load. The combination is an error: load()
+raises, and in a list the specs after it are not registered.
 
 Triggers can be combined. Plugin loads on FIRST matching trigger.
 
@@ -221,8 +228,13 @@ pinned, with no trigger of its own.
 
     dependencies = {'https://github.com/nvim-lua/plenary.nvim'}
 
-Dependencies are loaded BEFORE the plugin. They support all trigger types.
+Dependencies are loaded BEFORE the plugin, whichever trigger loads it.
 Circular dependencies are detected and reported.
+
+A dependency entry is only installed and loaded: `src`, `name`, `version`
+and `data` are read, and a trigger, `build` or `config` written on the
+entry is ignored. To give a dependency those, register it with a spec of
+its own; the parent then loads it through that spec.
 
 4.3 Build Commands                                 *resonance-build*
 
@@ -265,12 +277,16 @@ The setup runs after the build has finished. A plugin is never set up
 against a half-built tree -- a setup that expects the build's output (a
 node_modules directory, a compiled native module) would otherwise fail.
 
-- A plugin loaded by a command or a keymap waits for its build. The wait
-  is bounded; if the build outlasts it, the setup is deferred and you are
-  told the build is still running.
-- A plugin loaded by an event, a filetype or an eager load does not wait.
-  The editor is never blocked by a build it did not ask for, and the
-  setup runs when the build finishes.
+- A spec that has a `cmd` or `keys` trigger waits for its build. The wait
+  is bounded (30 seconds); if the build outlasts it, the setup is deferred
+  and you are told the build is still running.
+- A spec with only `event` or `ft` triggers, or an eager one, does not
+  wait. The editor is not blocked, and the setup runs when the build
+  finishes.
+
+The spec decides, not the trigger that fired: a spec with both `event`
+and `keys` waits even when the event loads it, and `lazy = false` with
+`keys` waits at startup.
 
 Only one build of a plugin runs at a time, across Neovim sessions too. A
 session that finds another session building the plugin waits for it, and
@@ -366,6 +382,9 @@ Rules:
   its own return value is then not imported.
 - A folder imported on its own ("plugins.core") is skipped by a later
   import of its parent ("plugins"), so its specs register once.
+- A spec written with the URL as its first element is recognized by the
+  "://" in it. Write any other source (`git@host:user/repo`, a local
+  path) as `src = ...`, or the file's return value is ignored.
 - `priority` orders the specs within one import() call, highest first
   (default 0, ties in name order); give your colorscheme 1000. It is
   stripped before load(). A non-number is reported and counts as 0.
@@ -524,6 +543,11 @@ actually has.
         startuptime   Startup time in milliseconds
         times         Table of plugin_name -> load_time_ms
 
+        `startuptime` is counted from the first require('resonance').
+        To count from the start of Neovim, put this at the very top of
+        init.lua:
+            _G.start_time = vim.uv.hrtime()
+
         `startuptime` is a one-shot measurement, latched once and never
         changed afterwards. It is latched at UIEnter (VimEnter when there
         is no UI), or by the first stats() call if that comes first. The
@@ -544,6 +568,10 @@ actually has.
 
         Use this to avoid replaying an event that already ran. Firing an
         event twice makes every handler for it run twice.
+
+        Only the read events are tracked: BufReadPre, BufReadPost (and
+        its alias BufRead), BufNewFile, BufEnter and FileType. For any
+        other event the answer is always false.
 
     resonance.replay_for_buffer(buf)
         Replay the read events a buffer has already missed.
@@ -697,7 +725,7 @@ actually has.
     scanner.get_info([opts])
         Get plugin information.
         opts: {info = boolean, offline = boolean}
-        info=false (default): fast (~1 ms), from the vim.pack lockfile
+        info=false (default): fast (~0.5 ms), from the vim.pack lockfile
         info=true: also fills the `rev_to` and `manifest` arrays; slow,
             it runs git for every plugin and blocks until done. Branches
             and tags are not kept.
@@ -789,6 +817,9 @@ back on the next read):
 - Build hooks work
 - Update, uninstall and the native review (`u`, `U`, `dd`, `C`) are
   unavailable; checkout (`c`) still works, it runs git directly
+- `r` still runs `git fetch`, but lists no pending updates: the update
+  targets come from vim.pack. An expanded row shows no branches or tags
+  for the same reason
 
 ==============================================================================
 9. Performance                                     *resonance-performance*

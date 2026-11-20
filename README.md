@@ -183,8 +183,8 @@ rest of the spec, and every spec after it, still loads.
 
 Resonance accepts native `vim.pack` fields: `src`, `name`, `version`, and `data`. A source can also be supplied as the first positional value or through the `url` compatibility alias; Resonance normalizes both to `src` before calling `vim.pack.add()`.
 
-Each entry needs at least one lazy trigger: `event`, `cmd`, `keys`, or `ft`. An
-entry with no trigger loads eagerly on `VimEnter`, the same as `lazy = false` —
+Give an entry a lazy trigger -- `event`, `cmd`, `keys`, or `ft` -- to load it on
+demand. An entry with no trigger loads eagerly on `VimEnter`, the same as `lazy = false` —
 useful for a plugin you just want installed and pinned, with no trigger of its
 own.
 
@@ -249,9 +249,9 @@ resonance.load({
     lazy = false,
   },
 
-  { -- another plugin...},
+  -- { another plugin... },
 
-  { -- another plugin...},
+  -- { another plugin... },
 })
 ```
 
@@ -394,7 +394,7 @@ starter.setup({
 ```
 
 > [!TIP]
-> If you want a very "honest" startuptime, please add this on top of your init.lua.
+> `startuptime` is counted from the first `require('resonance')`. To count from the real start of Neovim (a very "honest" startuptime), add this on top of your init.lua.
 
 ```lua
 -- enable this for a "very" honest startuptime :)
@@ -431,7 +431,8 @@ do not run again.
 
 For your own replays, `require('resonance').replay_for_buffer(buf)` runs
 the same replay for one buffer, and `require('resonance').has_fired(event, buf)`
-tells you whether an event has already run for it. Calling the replay again
+tells you whether an event has already run for it (the read events only:
+`BufReadPre`, `BufReadPost`, `BufNewFile`, `BufEnter`, `FileType`). Calling the replay again
 is safe: a group that already ran is not fired twice.
 
 `resonance.trigger_verylazy()` is no longer needed. It still works, and

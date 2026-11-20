@@ -212,6 +212,35 @@ test.run_suite('resonance.behavior.specs', {
   },
 
   {
+    name = 'specs: several words reach a one-argument command as one argument',
+    fn = function()
+      -- The stub takes any number of arguments and split them on
+      -- whitespace. A real command with nargs 1 or ? then got three
+      -- arguments for `:Git commit -m x` and raised "Wrong number of
+      -- arguments": the plugin loaded, the command did not run.
+      test.stub_pack()
+      local nargs_list = { '?', 1 }
+      for n = 1, #nargs_list do
+        local name = fresh('cmd-one-arg-' .. n)
+        local cmd = 'CmdOneArg' .. n .. run_id:sub(-4)
+        local seen = nil
+        _G.resonance.load({
+          src = 'https://github.com/test/' .. name,
+          cmd = cmd,
+          setup = function()
+            api.nvim_create_user_command(cmd, function(a) seen = a.args end,
+              { nargs = nargs_list[n] })
+          end,
+        })
+        local notices = capture_and_wait(function() vim.cmd(cmd .. ' commit -m msg') end, 100)
+        test.assert_false(noticed(notices, 'Wrong number of arguments'),
+          'nargs=' .. tostring(nargs_list[n]) .. ': ' .. vim.inspect(notices))
+        test.assert_eq(seen, 'commit -m msg', 'nargs=' .. tostring(nargs_list[n]))
+      end
+    end,
+  },
+
+  {
     name = 'specs: a command the plugin never defines is reported, not run',
     fn = function()
       test.stub_pack()

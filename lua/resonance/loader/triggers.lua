@@ -228,7 +228,20 @@ function M.register_cmd(config, load_now, before_setup)
         -- smods is the structured form of the modifiers (:vertical, :tab,
         -- ...), which is what nvim_cmd takes. Re-parsing them from text used
         -- to name the command, and raised E492 when it did not exist.
-        local run_opts = { cmd = cmd, args = args.fargs, bang = args.bang, mods = args.smods }
+        --
+        -- The stub takes any number of arguments, so its fargs are split on
+        -- whitespace. The real command may take one argument (nargs 1 or
+        -- ?), and then the whole text is that argument: `:Git commit -m x`
+        -- sent as three arguments raised "Wrong number of arguments".
+        local run_args = args.fargs
+        if args.args ~= '' then
+          local real = api.nvim_get_commands({})[cmd] or api.nvim_buf_get_commands(0, {})[cmd]
+          local real_nargs = real and real.nargs
+          if real_nargs == '1' or real_nargs == '?' then
+            run_args = { args.args }
+          end
+        end
+        local run_opts = { cmd = cmd, args = run_args, bang = args.bang, mods = args.smods }
         if args.range == 1 then
           run_opts.range = { args.line1 }
         elseif args.range == 2 then

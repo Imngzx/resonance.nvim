@@ -252,6 +252,23 @@ plugin set up; background builds never block the editor. See
 nvim --headless -c 'helptags doc' -c q
 ```
 
+**Tag a release** — only when the user asks for one; never on your own.
+While the version is `0.x`: a fix raises the patch (`v0.9.1`), a feature or
+a breaking change raises the minor (`v0.10.0`).
+
+1. `main` is clean, pushed, and its last CI run is green
+   (`gh run list --branch main --limit 1`).
+2. Raise the pinned version in the install examples — `README.md`
+   (Installation) and `doc/resonance.txt` (`*resonance-installation*`) —
+   and commit that. The tag goes on this commit, so the tagged tree names
+   its own version.
+3. `git tag -a vX.Y.Z -m "vX.Y.Z: <summary>"`. Annotated, never lightweight.
+4. The user pushes: `git push origin main vX.Y.Z` (both remotes get it).
+   A tag push does not start CI; the `main` push does.
+5. Optional, GitHub only: `gh release create vX.Y.Z --verify-tag --notes-from-tag`.
+
+A pushed tag is never moved or deleted. A mistake gets a new patch version.
+
 ---
 
 ## 6. Committing

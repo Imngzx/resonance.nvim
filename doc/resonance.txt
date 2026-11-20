@@ -55,6 +55,12 @@ Using |vim.pack| (recommended):
     :lua vim.pack.add({{src='https://github.com/Imngzx/resonance.nvim'}})
     :packadd resonance.nvim
 
+To stay on a tagged release instead of the latest commit, pin it: >lua
+    vim.pack.add({{
+      src = 'https://github.com/Imngzx/resonance.nvim',
+      version = 'v0.9.0',
+    }})
+<
 Manual installation:
     git clone https://github.com/Imngzx/resonance.nvim \
       ~/.local/share/nvim/site/pack/core/opt/resonance.nvim

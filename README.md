@@ -52,6 +52,9 @@ triggers.
 -- Method 1:
 vim.pack.add({'https://github.com/Imngzx/resonance.nvim'})
 
+-- To stay on a tagged release instead of the latest commit:
+-- vim.pack.add({{ src = 'https://github.com/Imngzx/resonance.nvim', version = 'v0.9.0' }})
+
 --OR ...
 
 -- Method 2 (for custom message):

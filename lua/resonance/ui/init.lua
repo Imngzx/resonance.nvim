@@ -97,10 +97,20 @@ local function bind_keys(win_close_fn)
   map('D', function()
     win_close_fn()
     local dir = st.state.info.pack_dir
+    local escaped = vim.fn.fnameescape(dir)
     if pcall(require, 'snacks') then
       require('snacks').explorer({ cwd = dir })
+    elseif vim.fn.exists(':Neotree') == 2 then
+      -- The command, not the module: a lazily loaded neo-tree has only its
+      -- command stub until it is first used.
+      vim_cmd('Neotree dir=' .. escaped)
+    elseif vim.fn.exists(':Explore') == 2 then
+      vim_cmd('Explore ' .. escaped)
     else
-      vim_cmd('Explore ' .. vim.fn.fnameescape(dir))
+      -- netrw is disabled (g:loaded_netrwPlugin), so :Explore does not
+      -- exist and used to raise E492. Editing the directory hands it to
+      -- whatever took netrw's place -- oil, nvim-tree, mini.files.
+      vim_cmd('edit ' .. escaped)
     end
   end, 'Open Dir')
   map('C', function()

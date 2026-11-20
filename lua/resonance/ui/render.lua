@@ -99,6 +99,18 @@ local function mark_row(name, is_detail)
   if not is_detail then st.state.name_to_line[name] = line_idx + 1 end
 end
 
+-- Mark the detail lines drawn under a plugin's row as that plugin's, so an
+-- action on a commit or a detail line still finds it. Blank lines are left
+-- unmarked: they separate plugins and belong to none.
+---@param name string
+---@param row integer the 1-based line of the plugin's own row
+local function mark_details(name, row)
+  local line_to_name = st.state.line_to_name
+  for r = row + 1, line_idx do
+    if lines[r] ~= '' then line_to_name[r] = name end
+  end
+end
+
 local function reset_render_state()
   table_clear(lines)
   table_clear(hls)
@@ -157,6 +169,7 @@ local function build_dag_content()
     local replay = replay_info[name]
 
     mark_row(name, false)
+    local row = line_idx + 1
 
     -- Plugin node
     local loaded = node and node.loaded or false
@@ -203,6 +216,7 @@ local function build_dag_content()
       nl()
     end
 
+    mark_details(name, row)
     nl()
   end
 
@@ -289,6 +303,7 @@ local function build_content()
     local p_trigger = triggers[idx]
 
     mark_row(p_name, false)
+    local row = line_idx + 1
 
     if is_disabled then
       add('  ' .. icons.disabled .. ' ', 'DiagnosticError')
@@ -402,6 +417,8 @@ local function build_content()
       end
       nl()
     end
+
+    mark_details(p_name, row)
   end
 
   if p_idx == 0 then

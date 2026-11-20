@@ -104,6 +104,14 @@ That is the whole setup. `VeryLazy` fires on its own once the UI is up,
 and the files you opened before it are replayed for the plugins that
 register their triggers then. See [Replaying Missed Events](#-replaying-missed-events).
 
+> [!NOTE]
+> **Keep netrw enabled unless you have `snacks.nvim` or `neo-tree.nvim`.**
+> The panel's `D` key (open the plugin directory) uses the snacks explorer,
+> then `:Neotree`, then netrw's `:Explore`. If you disable netrw
+> (`vim.g.loaded_netrwPlugin = 1`) and have neither, `D` falls back to
+> `:edit <dir>`, which only shows something when another plugin handles
+> directories (oil.nvim, nvim-tree, mini.files).
+
 ### 🎨 Customizing Icons
 
 The glyphs used for each plugin state can be changed via `ui.icons`. Each key is
@@ -454,7 +462,7 @@ calling it as well as `setup()` fires `VeryLazy` only once.
 - `S` : Search inside plugins source code (Powered by Snacks.picker / Telescope / Native vimgrep).
 - `A` : Check Dependency Graph (DAG) and Event Replay.
 - `s` : Skip plugin update.
-- `D` : Open plugin directory.
+- `D` : Open plugin directory (snacks explorer / neo-tree / netrw).
 - `C` : Open vim.pack's own update review (offline).
 - `q` / Esc : Quit.
 

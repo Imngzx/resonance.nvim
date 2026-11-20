@@ -891,6 +891,64 @@ test.run_suite('resonance.behavior.ui', {
   },
 
   {
+    name = 'render: only a plugin row and its detail lines resolve to a plugin',
+    fn = function()
+      -- plugin_at_cursor() walked up to the nearest plugin from any line,
+      -- so `u` on the "Up To Date" title or on a blank line updated the
+      -- plugin above it, and `dd` offered to uninstall it.
+      local l = live()
+      local buf = api.nvim_create_buf(false, true)
+      local win = api.nvim_open_win(buf, false, {
+        relative = 'editor', row = 1, col = 1, width = 60, height = 20,
+      })
+      l.state.state.buf = buf
+      l.state.state.win = win
+      l.state.state.info = {
+        total = 2,
+        loaded = 2,
+        plugins = {
+          name = { 'a-plugin', 'b-plugin' },
+          type = { 'opt', 'opt' },
+          path = { '/tmp', '/tmp' },
+          loaded = { true, true },
+          disabled = { false, false },
+          trigger = { 'event', 'event' },
+        },
+      }
+      l.state.state.updates['b-plugin'] = { 'abc1234 fix: something' }
+      require('resonance.ui.render').render()
+
+      local at = require('resonance.ui.state').plugin_at_cursor
+      local lines = api.nvim_buf_get_lines(buf, 0, -1, false)
+      local b_line = l.state.state.name_to_line['b-plugin']
+      local commit_line, title_line
+      for i = 1, #lines do
+        if lines[i]:find('abc1234', 1, true) then commit_line = i end
+        if lines[i]:find('Up To Date', 1, true) then title_line = i end
+      end
+      test.assert_not_nil(commit_line, 'no commit line rendered')
+      test.assert_not_nil(title_line, 'no section title rendered')
+      test.assert_true(b_line < commit_line and commit_line < title_line, 'unexpected layout')
+
+      api.nvim_win_set_cursor(win, { commit_line, 0 })
+      test.assert_eq(at(), 'b-plugin', 'a commit line lost its plugin')
+      api.nvim_win_set_cursor(win, { title_line, 0 })
+      test.assert_nil(at(), 'the section title resolved to a plugin')
+      for i = b_line, title_line do
+        if lines[i] == '' then
+          api.nvim_win_set_cursor(win, { i, 0 })
+          test.assert_nil(at(), 'blank line ' .. i .. ' resolved to a plugin')
+        end
+      end
+      api.nvim_win_set_cursor(win, { 1, 0 })
+      test.assert_nil(at(), 'the header resolved to a plugin')
+
+      l.state.state.updates['b-plugin'] = nil
+      api.nvim_win_close(win, true)
+    end,
+  },
+
+  {
     name = 'ui: opening the UI does not fetch info for every plugin',
     fn = function()
       -- Pass 2 asked pack.get for info = true across every installed

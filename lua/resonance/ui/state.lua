@@ -189,15 +189,12 @@ end
 function M.plugin_at_cursor()
   if not M.state.win or not nvim_win_is_valid(M.state.win) then return nil end
   local row = nvim_win_get_cursor(M.state.win)[1]
-  local name = M.state.line_to_name[row]
-  -- If cursor on detail line, search upward for nearest plugin
-  if not name then
-    for r = row - 1, 1, -1 do
-      name = M.state.line_to_name[r]
-      if name then break end
-    end
-  end
-  return name
+  -- The renderer marks a plugin's row and every detail line under it. A
+  -- line it did not mark -- a blank line, a section title, the header --
+  -- belongs to no plugin. Walking up to the nearest plugin from such a
+  -- line made `u` on "Up To Date (3)" update the plugin above it, and `dd`
+  -- offer to uninstall it.
+  return M.state.line_to_name[row]
 end
 
 function M.get_src_url(path)

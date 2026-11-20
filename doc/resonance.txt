@@ -440,6 +440,20 @@ In the Resonance UI buffer:
     A            Toggle DAG view (dependency graph)
     q / <Esc>    Close UI
 
+`u`, `s`, `c`, `dd` and <CR> act on the plugin whose row, commit line or
+detail line the cursor is on. On a blank line or a section title they do
+nothing.
+
+`D` uses the snacks explorer when snacks.nvim is installed, else `:Neotree`
+when neo-tree.nvim is, else netrw's `:Explore`. With netrw disabled
+(`g:loaded_netrwPlugin`) and neither of them, it runs `:edit` on the
+directory, which only shows something when another plugin handles
+directories (oil.nvim, nvim-tree, mini.files).
+
+A `git fetch` started by `r` is stopped after 60 seconds. The plugins it
+was stopped for are named in a warning and are not checked for updates;
+the others are listed as usual.
+
                                                     *resonance-resonate-config*
 `r` (Resonate) runs one `git fetch` per plugin. A fetch is mostly waiting
 on the network, so how many run at once sets how long the check takes.

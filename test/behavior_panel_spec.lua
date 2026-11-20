@@ -195,6 +195,117 @@ test.run_suite('resonance.behavior.panel', {
   },
 
   {
+    name = 'panel: D uses neo-tree when its command exists',
+    fn = function()
+      local seen = nil
+      api.nvim_create_user_command('Neotree', function(a) seen = a.args end, { nargs = '*' })
+      local ok, err = pcall(function()
+        package.loaded['resonance.ui'] = nil
+        require('resonance').open_ui()
+        vim.wait(100)
+        local st = require('resonance.ui.state')
+        st.state.info.pack_dir = '/tmp/with space/pack'
+        local cb = keymap_callback(st.state.buf, 'D')
+        assert(cb, 'no D mapping')
+        without_modules({ 'snacks' }, cb)
+      end)
+      api.nvim_del_user_command('Neotree')
+      package.loaded['resonance.ui'] = nil
+      test.assert_true(ok, tostring(err))
+      test.assert_eq(seen, 'dir=/tmp/with\\ space/pack')
+    end,
+  },
+
+  {
+    name = 'panel: D edits the directory when netrw is disabled',
+    fn = function()
+      -- With g:loaded_netrwPlugin set there is no :Explore, and D raised
+      -- "E492: Not an editor command". Editing the directory hands it to
+      -- the plugin that replaced netrw.
+      local cmds = {}
+      local orig_cmd = vim.cmd
+      local orig_exists = vim.fn.exists
+      vim.fn.exists = function(what)
+        if what == ':Explore' or what == ':Neotree' then return 0 end
+        return orig_exists(what)
+      end
+      vim.cmd = setmetatable({}, {
+        __call = function(_, c)
+          if type(c) == 'string' and (c:find('^Explore') or c:find('^edit ')) then
+            cmds[#cmds + 1] = c
+            return
+          end
+          return orig_cmd(c)
+        end,
+        __index = orig_cmd,
+      })
+      local ok, err = pcall(function()
+        package.loaded['resonance.ui'] = nil
+        require('resonance').open_ui()
+        vim.wait(100)
+        local st = require('resonance.ui.state')
+        st.state.info.pack_dir = '/tmp/with space/pack'
+        local cb = keymap_callback(st.state.buf, 'D')
+        assert(cb, 'no D mapping')
+        without_modules({ 'snacks' }, cb)
+      end)
+      vim.cmd = orig_cmd
+      vim.fn.exists = orig_exists
+      package.loaded['resonance.ui'] = nil
+      test.assert_true(ok, tostring(err))
+      test.assert_eq(cmds[1], 'edit /tmp/with\\ space/pack')
+    end,
+  },
+
+  {
+    name = 'panel: a fetch that hangs is stopped, reported, and the check finishes',
+    fn = function()
+      -- One `git fetch` that never returned held the whole check open:
+      -- no result was shown and `r` stayed inert for the session. Every
+      -- fetch now carries a timeout, and vim.system reports a process it
+      -- stopped that way as exit code 124.
+      local l = live()
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return { get = function() return {} end }
+      end
+      local fetch_timeouts = {}
+      local still_checking
+      local notices
+      local ok, err = pcall(h.with_system, function(cmd, opts, cb)
+        if cmd[2] == 'fetch' then
+          fetch_timeouts[#fetch_timeouts + 1] = opts.timeout or false
+          cb(h.completed(opts.cwd == '/tmp/hung' and 124 or 0))
+          return
+        end
+        cb(h.completed(0))
+      end, function(l2)
+        l2.state.state.info = {
+          total = 2, loaded = 0,
+          plugins = { name = { 'fine-plugin', 'hung-plugin' }, path = { '/tmp/fine', '/tmp/hung' } },
+        }
+        l2.state.state.checking = false
+        notices = capture_and_wait(function()
+          l2.actions.check_updates_network()
+          vim.wait(1000, function() return not l2.state.state.checking end, 20)
+        end, 100)
+        still_checking = l2.state.state.checking
+        l2.state.state.checking = false
+      end)
+      l.utils.get_pack = orig_get_pack
+      if not ok then error(err, 0) end
+      test.assert_eq(#fetch_timeouts, 2)
+      for i = 1, #fetch_timeouts do
+        test.assert_true(type(fetch_timeouts[i]) == 'number' and fetch_timeouts[i] > 0,
+          'a fetch was started without a timeout')
+      end
+      test.assert_false(still_checking, 'the check never finished')
+      test.assert_true(noticed(notices, 'Fetch timed out for hung-plugin'), vim.inspect(notices))
+      test.assert_false(noticed(notices, 'fine-plugin'), vim.inspect(notices))
+    end,
+  },
+
+  {
     name = 'panel: without vim.pack, update and uninstall say so instead of pretending',
     fn = function()
       -- Update used to say "Triggering plugin update" and do nothing;

@@ -32,6 +32,13 @@ local string_format = string.format
 local DEFAULT_FETCH_CONCURRENCY = 2 * (vim.uv.available_parallelism() or 1)
 local fetch_concurrency = DEFAULT_FETCH_CONCURRENCY
 
+-- How long one `git fetch` may run before it is stopped. A fetch that never
+-- returns -- an ssh remote waiting for a passphrase, a stalled connection --
+-- used to hold the whole check open: no result was shown, even for the
+-- plugins that fetched fine, and `r` stayed inert for the rest of the
+-- session.
+M.FETCH_TIMEOUT_MS = 60000
+
 --- Apply the `resonate` section of the user config.
 ---
 --- A check builds its semaphore when it starts, so a new limit applies to
@@ -124,6 +131,9 @@ function M.check_updates_network()
 
   local completed_fetches = 0
   local check_semaphore = async.semaphore(fetch_concurrency)
+  -- The plugins whose fetch was stopped by the timeout. Their update state
+  -- is unknown, so the user is told instead of shown "no update".
+  local timed_out = {}
 
   for i = 1, info.total do
     local path = paths[i]
@@ -131,7 +141,12 @@ function M.check_updates_network()
       local run = async.run('resonance_fetch:' .. names[i], function()
         check_semaphore:with(function()
           -- Fetch all branches and tags silently in the background
-          system_async({ 'git', 'fetch', '--tags', '--force' }, { cwd = path, text = true })
+          local out = system_async({ 'git', 'fetch', '--tags', '--force' },
+            { cwd = path, text = true, timeout = M.FETCH_TIMEOUT_MS })
+          -- vim.system reports a process it stopped on timeout as 124.
+          if out and out.code == 124 then
+            timed_out[#timed_out + 1] = names[i]
+          end
           return true
         end)
       end)
@@ -140,6 +155,11 @@ function M.check_updates_network()
         completed_fetches = completed_fetches + 1
         if completed_fetches >= valid_total then
           schedule(function()
+            if #timed_out > 0 then
+              utils.notify('Fetch timed out for ' .. table_concat(timed_out, ', ') ..
+                ' -- not checked for updates', vim_log_levels.WARN)
+            end
+
             -- Network fetches are done. Ask native vim.pack to calculate rev_to offline
             local pack = utils.get_pack()
             if not pack then

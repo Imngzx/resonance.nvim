@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/Imngzx/resonance.nvim/blob/main/doc/resonance.txt
+    about: The help file (`:h resonance`) covers every spec field and option.
+  - name: Contributing
+    url: https://github.com/Imngzx/resonance.nvim/blob/main/CONTRIBUTING.md
+    about: How to send a fix or a feature.

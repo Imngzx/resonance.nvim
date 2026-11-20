@@ -1,0 +1,62 @@
+name: Bug report
+description: Something loads wrong, errors, or behaves differently from the docs
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A small spec and the exact steps are what get a bug fixed quickly.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Include the error message if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: spec
+    attributes:
+      label: Spec
+      description: The `resonance.load()` spec that misbehaves, as small as you can make it.
+      render: lua
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start Neovim with the spec above
+        2. Run `:SomeCommand arg`
+        3. See the error
+    validations:
+      required: true
+  - type: textarea
+    id: nvim-version
+    attributes:
+      label: Neovim version
+      description: The output of `nvim --version`. Resonance needs Neovim 0.13 (nightly).
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: resonance-version
+    attributes:
+      label: Resonance version
+      description: The tag you pinned, or the commit shown for resonance.nvim in the `:Resonance` panel.
+      placeholder: v0.9.1
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Arch Linux, macOS 15, Windows 11 ...
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: It still happens with only Resonance and the plugin in the spec above loaded.

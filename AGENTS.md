@@ -219,9 +219,9 @@ concatenate it (see `parse_trigger()`).
 marker lives in `stdpath('state') .. '/resonance/builds/'`, keyed by plugin
 name — never in the plugin's own directory, which dirties its git worktree.
 The settled rules: one build per plugin at a time; only the exit code
-decides success; `setup()` runs after the build (a spec that has
-`cmd`/`keys` waits, bounded, whichever trigger fired; any other spec defers
-until every build of the spec settles); a failed build still gets its
+decides success; `setup()` runs after the build (a load started by a
+command or a keymap waits, bounded, and so do its dependencies; any other
+load defers until every build of the spec settles); a failed build still gets its
 plugin set up; background builds never block the editor. See
 `:h resonance-build-order`.
 

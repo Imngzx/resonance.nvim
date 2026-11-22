@@ -22,6 +22,13 @@ local table_concat = table.concat
 
 local vim_log_levels = vim.log.levels
 
+-- What a command stub and a keymap stub hand to load_now in place of an
+-- autocmd event. It tells the loader that the user asked for the plugin
+-- and is waiting for it, which decides whether the load waits for a build.
+-- It has no `buf` and no `event`, so nothing is recorded or replayed for it.
+M.USER_ACTION = { user_action = true }
+local USER_ACTION = M.USER_ACTION
+
 -- Every trigger is registered in its own augroup. The replay selects
 -- autocmds group by group, so an ungrouped trigger cannot be excluded from
 -- a replay and cannot be replayed individually. Grouping makes the
@@ -210,7 +217,7 @@ function M.register_cmd(config, load_now, before_setup)
         -- A failed load (an install error) leaves nothing to run. The stub
         -- is put back so the command can be tried again: deleting it for
         -- good meant the command was gone until Neovim was restarted.
-        if load_now(nil) == false then
+        if load_now(USER_ACTION) == false then
           create_user_command(cmd, stub, cmd_opts)
           return
         end
@@ -395,7 +402,7 @@ function M.register_keys(config, load_now, name)
         -- The plugin may already be loaded -- another trigger of the same
         -- spec may have loaded it first. load_now returns without loading
         -- anything in that case, and the mapping still has to be restored.
-        load_now(nil)
+        load_now(USER_ACTION)
 
         if rhs then
           if type(rhs) == 'function' then

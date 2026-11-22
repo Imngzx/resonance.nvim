@@ -351,16 +351,17 @@ tree. In `setup_members` (`loader/init.lua:634`):
 
 - Members listed before the first building member are set up now.
 - From that member on, everybody waits (to keep the order):
-  - If the **spec has `cmd` or `keys`**, Neovim waits up to 30 s for the
-    build (the event loop keeps running). If the build is still going
-    after that, the setup is postponed and the user is told.
+  - If a **command or a keymap started the load**, Neovim waits up to 30 s
+    for the build (the event loop keeps running). If the build is still
+    going after that, the setup is postponed and the user is told.
   - Otherwise nothing waits; the setups run when every build has settled.
 - A failed build still gets its plugin set up.
 
-> **Careful:** the code looks at whether the spec *has* `cmd`/`keys`, not
-> at which trigger actually fired. A spec with `event` + `keys` that loads
-> through its event still waits (measured: a 2 s build blocked for 1.9 s),
-> and `lazy = false` + `keys` waits at startup.
+The trigger that fired decides. The `cmd` and `keys` stubs call
+`load_now(triggers.USER_ACTION)`; an autocmd calls it with its event. The
+flag travels in `visiting_path`, so a dependency loaded for a command
+waits too. A spec with `event` + `keys` that loads through its event does
+not wait.
 
 ---
 

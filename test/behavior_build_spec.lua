@@ -166,6 +166,106 @@ test.run_suite('resonance.behavior.build', {
   },
 
   {
+    name = 'build: the trigger that fired decides the wait, not the triggers the spec has',
+    fn = function()
+      -- The check used to be "the spec has cmd or keys". A spec with an
+      -- event and a key then blocked the editor when the event loaded it,
+      -- although nobody had asked for the plugin.
+      local builds = reset_builds()
+      test.stub_pack()
+
+      local by_event, by_key = fresh_name('wait-by-event'), fresh_name('wait-by-key')
+      clear_marker(by_event)
+      clear_marker(by_key)
+      local lhs_event = '<Plug>(WaitByEvent' .. run_id:sub(-4) .. ')'
+      local lhs_key = '<Plug>(WaitByKey' .. run_id:sub(-4) .. ')'
+      local ran = {}
+
+      _G.resonance.load({
+        {
+          src = 'https://github.com/test/' .. by_event,
+          event = { 'User', pattern = 'ResonanceWaitByEvent' },
+          keys = { { 'n', lhs_event, function() end } },
+          build = 'sleep 0.6',
+          setup = function() ran.event = true end,
+        },
+        {
+          src = 'https://github.com/test/' .. by_key,
+          event = { 'User', pattern = 'ResonanceWaitByKey' },
+          keys = { { 'n', lhs_key, function() end } },
+          build = 'sleep 0.6',
+          setup = function() ran.key = true end,
+        },
+      })
+
+      -- The event loads the first one: it must not wait.
+      local start = vim.uv.hrtime()
+      api.nvim_exec_autocmds('User', { pattern = 'ResonanceWaitByEvent', modeline = false })
+      local elapsed = (vim.uv.hrtime() - start) / 1e6
+      test.assert_true(elapsed < 300,
+        'the event blocked for ' .. math.floor(elapsed) .. ' ms on a spec that also has keys')
+      test.assert_eq(ran.event, nil, 'the setup ran while the build was still going')
+      vim.wait(3000, function() return ran.event end, 20)
+      test.assert_true(ran.event, 'the deferred setup never ran')
+
+      -- The key loads the second one: the user is waiting, so it waits.
+      local stub = vim.fn.maparg(lhs_key, 'n', false, true).callback
+      test.assert_not_nil(stub, 'the key stub was not mapped')
+      start = vim.uv.hrtime()
+      stub()
+      elapsed = (vim.uv.hrtime() - start) / 1e6
+      test.assert_true(ran.key, 'the key returned before the plugin was set up')
+      test.assert_true(elapsed >= 400, 'the key did not wait for the build: ' .. math.floor(elapsed) .. ' ms')
+
+      test.assert_eq(builds.status(by_event).state, 'ok')
+      test.assert_eq(builds.status(by_key).state, 'ok')
+      pcall(vim.keymap.del, 'n', lhs_event)
+      pcall(vim.keymap.del, 'n', lhs_key)
+      clear_marker(by_event)
+      clear_marker(by_key)
+    end,
+  },
+
+  {
+    name = 'build: a command waits for the build of a dependency as well',
+    fn = function()
+      -- The dependency is loaded on behalf of the user who ran the command.
+      -- Its own spec has no command, but the parent's setup runs right
+      -- after it and needs it set up.
+      reset_builds()
+      test.stub_pack()
+
+      local parent, dep = fresh_name('wait-parent'), fresh_name('wait-dep')
+      clear_marker(dep)
+      local cmd = 'ResonanceWaitParent'
+      local order = {}
+
+      _G.resonance.load({
+        {
+          src = 'https://github.com/test/' .. dep,
+          event = { 'User', pattern = 'ResonanceWaitDep' },
+          build = 'sleep 0.5',
+          setup = function() order[#order + 1] = 'dep' end,
+        },
+        {
+          src = 'https://github.com/test/' .. parent,
+          cmd = cmd,
+          dependencies = { 'https://github.com/test/' .. dep },
+          setup = function()
+            order[#order + 1] = 'parent'
+            api.nvim_create_user_command(cmd, function() end, {})
+          end,
+        },
+      })
+
+      vim.cmd(cmd)
+      test.assert_eq(table.concat(order, ','), 'dep,parent',
+        'the dependency was not set up before its parent')
+      clear_marker(dep)
+    end,
+  },
+
+  {
     name = 'build: a failing build does not stop the plugin from being set up',
     fn = function()
       -- A broken build must not leave the plugin unloaded forever. The

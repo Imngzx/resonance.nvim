@@ -97,11 +97,11 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
    - Members listed before the first one with a running build are set up
      immediately.
    - The members from that one onward wait:
-     - A spec that has `cmd` or `keys` waits up to 30 s (`builds.wait`).
-       The spec decides, not the trigger that fired: such a spec waits
-       even when its `event` loads it, and so does `lazy = false` with
-       `keys`.
-     - Any other spec sets them up in `builds.on_complete` once every build
+     - A load started by a command or a keymap waits up to 30 s
+       (`builds.wait`). The stubs pass `triggers.USER_ACTION` to
+       `load_now`, and the `visiting_path` carries it to the dependencies.
+       The trigger that fired decides, not the triggers the spec has.
+     - Any other load sets them up in `builds.on_complete` once every build
        has settled.
    - A failed build still gets its plugin set up.
 6. Remove the remaining triggers and record the load time in

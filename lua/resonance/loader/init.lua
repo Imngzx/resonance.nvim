@@ -513,21 +513,6 @@ function M.load(config)
     end
   end
 
-  -- Whether this spec is loaded by an explicit user action.
-  --
-  -- A command or a keymap is the user saying "I want this plugin now". An
-  -- event, a filetype or an eager load is the editor getting there on its
-  -- own, and the user is not waiting for anything.
-  --
-  -- The distinction decides what happens when the plugin has a build and
-  -- the build is still running: an explicit action waits for the build, and
-  -- an automatic one does not wait -- it defers the setup until the build
-  -- is done, so the editor stays responsive.
-  local user_initiated = false
-  if config.cmd or config.keys then
-    user_initiated = true
-  end
-
   -- The setup closures, kept until the build is done.
   --
   -- A deferred setup has to hold on to the closure until the build
@@ -638,9 +623,15 @@ function M.load(config)
   --     not wait. A plugin with a 60-second build would freeze the
   --     editor on startup. The setup is deferred until the build is
   --     done instead, and the editor carries on.
+  --
+  -- The trigger that fired decides, not the triggers the spec has. The
+  -- check used to be "the spec has cmd or keys", so a spec with `event` and
+  -- `keys` blocked the editor when its event loaded it, and `lazy = false`
+  -- with `keys` blocked at startup -- with nobody waiting for the plugin.
   ---@param member_loaded boolean[] which members were already loaded
   ---@param building table<integer, true> the indexes of the building members
-  local function setup_members(member_loaded, building)
+  ---@param user_initiated boolean whether a command or a keymap started the load
+  local function setup_members(member_loaded, building, user_initiated)
     -- The members waiting for a build, and the first of them.
     --
     -- The setups run in the order the plugins were listed, so a plugin
@@ -744,6 +735,13 @@ function M.load(config)
     -- Initialize visiting_path if nil
     if not visiting_path then visiting_path = {} end
 
+    -- A command or a keymap started this load: the user is waiting for the
+    -- plugin. The path carries it down to the dependencies, which are loaded
+    -- on the same user's behalf -- the parent's setup runs right after
+    -- theirs and usually needs them set up.
+    if ev == triggers.USER_ACTION then visiting_path._user_action = true end
+    local user_initiated = visiting_path._user_action == true
+
     -- Use ordered list for cycle detection to preserve path order
     local path_order = visiting_path._order
     if not path_order then
@@ -827,7 +825,7 @@ function M.load(config)
       pcall(nvim_cmd, { cmd = 'packadd', args = { parsed_names[i] } })
     end
 
-    setup_members(member_loaded, start_builds(parsed_names))
+    setup_members(member_loaded, start_builds(parsed_names), user_initiated)
 
     for i = 1, #parsed_names do
       local member_state = plugin_state[parsed_names[i]]

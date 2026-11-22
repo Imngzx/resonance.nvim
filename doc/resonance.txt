@@ -294,16 +294,17 @@ The setup runs after the build has finished. A plugin is never set up
 against a half-built tree -- a setup that expects the build's output (a
 node_modules directory, a compiled native module) would otherwise fail.
 
-- A spec that has a `cmd` or `keys` trigger waits for its build. The wait
-  is bounded (30 seconds); if the build outlasts it, the setup is deferred
-  and you are told the build is still running.
-- A spec with only `event` or `ft` triggers, or an eager one, does not
-  wait. The editor is not blocked, and the setup runs when the build
+- A load started by a command or a keymap waits for the build: you asked
+  for the plugin. The wait is bounded (30 seconds); if the build outlasts
+  it, the setup is deferred and you are told the build is still running.
+- A load started by an event, a filetype, VeryLazy or an eager spec does
+  not wait. The editor is not blocked, and the setup runs when the build
   finishes.
 
-The spec decides, not the trigger that fired: a spec with both `event`
-and `keys` waits even when the event loads it, and `lazy = false` with
-`keys` waits at startup.
+The trigger that fired decides, not the triggers the spec has: a spec with
+both `event` and `keys` does not wait when the event loads it, and waits
+when the key does. A dependency follows the load that pulled it in: loaded
+for a command or a keymap, it waits for its own build too.
 
 Only one build of a plugin runs at a time, across Neovim sessions too. A
 session that finds another session building the plugin waits for it, and

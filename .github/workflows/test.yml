@@ -58,3 +58,25 @@ jobs:
       # it and runs every spec. Exits non-zero on any failure.
       - name: Run the test suite
         run: ./test/run_all.sh
+
+  # A job of its own, so a diagnostic is not mistaken for a failing test.
+  # It can also turn red without a change here: Neovim nightly and the
+  # language server both move, and either may start reporting something new.
+  lint:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    timeout-minutes: 10
+    steps:
+      - name: Install git, bob and lua-language-server
+        run: pacman -Syu --noconfirm git bob lua-language-server
+
+      - uses: actions/checkout@v5
+
+      # The check reads Neovim's type definitions from its runtime.
+      - name: Install Neovim nightly with bob
+        run: |
+          bob use nightly
+          echo "$HOME/.local/share/bob/nightly/bin" >> "$GITHUB_PATH"
+
+      - name: Check lua/ with lua-language-server
+        run: ./test/lint.sh

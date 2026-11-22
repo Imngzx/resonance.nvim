@@ -890,7 +890,7 @@ function M.load(config)
   end
 end
 
----@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, table<string, string[]>
+---@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean, disabled:boolean}>, table<string, string[]>
 function M.get_dag_data()
   local scanner = package.loaded['resonance.scanner'] or require('resonance.scanner')
   local scanner_info = scanner.get_info()

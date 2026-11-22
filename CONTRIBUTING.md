@@ -21,8 +21,10 @@ does not work" is not enough to act on.
 1. Fork the repository on GitHub and create a branch.
 2. Make the change and add a test for it (see below).
 3. Run the suite: `./test/run_all.sh`. It must pass.
-4. Open a pull request against `main`. CI runs the same suite on Neovim
-   nightly.
+4. Run `test/lint.sh` if you have `lua-language-server`. It must report
+   nothing.
+5. Open a pull request against `main`. CI runs the suite and the lint on
+   Neovim nightly.
 
 Pull requests go to GitHub. The Codeberg repository is a mirror.
 
@@ -46,7 +48,8 @@ test/dev_env.sh nvim                     # an isolated Neovim for trying things 
 rm -rf .dev                              # start over
 ```
 
-You need `git`, `sh` and a Neovim nightly on your `PATH`.
+You need `git`, `sh` and a Neovim nightly on your `PATH`. `test/lint.sh`
+also needs `lua-language-server`.
 
 ### Tests
 

@@ -143,9 +143,10 @@ test/dev_env.sh test test/gc_spec.lua      # one or more spec files
   mode, so switch such sources off or count around them, and drain the
   event loop (`vim.wait`) between cycles.
 
-**CI** (`.github/workflows/test.yml`) runs `./test/run_all.sh` on every push
-to `main`, every pull request and once a week, in an Arch container with
-Neovim nightly installed by `bob`. That machine has a shallow checkout on a
+**CI** (`.github/workflows/test.yml`) runs `./test/run_all.sh` and, as a
+second job, `./test/lint.sh` on every push to `main`, every pull request
+and once a week, in an Arch container with Neovim nightly installed by
+`bob`. That machine has a shallow checkout on a
 detached HEAD, no git identity, and runs as root. A test that commits must
 set the identity itself (`-c user.name=… -c user.email=…`, or `git config`
 inside its own temp repo), and nothing may depend on a tool beyond `git`,
@@ -163,8 +164,12 @@ test/dev_env.sh sync
 ### Diagnose
 
 ```bash
-lua-language-server --check=lua/resonance/loader/init.lua   # and the other modules
+test/lint.sh    # lua-language-server over lua/, with Neovim's types; must report nothing
 ```
+
+CI runs it. `--check` on a single file from the repo root reports every
+`vim` as an undefined global, because `.luarc.json` is not applied that
+way; use the script.
 
 ### Benchmark (performance changes only)
 

@@ -176,7 +176,7 @@ end
 ---@param cmd string[]
 ---@param opts table
 ---@param on_start? fun(handle: table) Called once the child process exists.
----@return table result { code, stdout, stderr }
+---@return vim.SystemCompleted result { code, stdout, stderr }
 local function run_command(cmd, opts, on_start)
   local async = get_async()
 
@@ -184,15 +184,16 @@ local function run_command(cmd, opts, on_start)
   -- a closable, so async closes it if the task is cancelled -- which is
   -- how a cancelled build kills its child.
   local ok, result = async.pawait(1, function(callback)
-    local handle = system(cmd, opts, callback)
+    local handle = system(cmd, opts, callback --[[@as fun(out: vim.SystemCompleted)]])
     if on_start then on_start(handle) end
-    return handle
+    return handle --[[@as vim.async.Closable]]
   end)
 
   if not ok then
     return { code = -1, stdout = '', stderr = tostring(result) }
   end
-  return result or { code = -1, stdout = '', stderr = 'command did not run' }
+  local completed = result --[[@as vim.SystemCompleted|nil]]
+  return completed or { code = -1, stdout = '', stderr = 'command did not run' }
 end
 
 M.build_hooks = {}
@@ -480,6 +481,9 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
         end
       else
         local obj = get_semaphore():with(function()
+          -- lua-language-server cannot resolve the variadic return of
+          -- semaphore:with(), so the value is cast on the way out.
+          ---@diagnostic disable-next-line: return-type-mismatch
           return run_command({ 'sh', '-c', build_task }, { cwd = dir, text = true }, function(handle)
             -- The handle is kept so the hard timeout can kill the child,
             -- and the PID is recorded as soon as the child exists, so the
@@ -488,7 +492,7 @@ function M.run_build(name, dir, build_task, curr_hash, on_done)
             builds.set_pid(name, handle.pid)
             builds.update_lock_pid(name, handle.pid)
           end)
-        end)
+        end) --[[@as vim.SystemCompleted]]
         -- The output is captured before the exit code is checked, so a
         -- failure has the output that caused it.
         builds.append_output(name, obj.stdout)
@@ -508,7 +512,7 @@ end
 
 -- Check and run build if hash changed
 ---@param name string
----@param dir string
+---@param dir string|nil The plugin directory; nil when it is not on disk yet.
 ---@param build_task string|function
 function M.check_and_build(name, dir, build_task)
   if not dir or dir == '' then return end

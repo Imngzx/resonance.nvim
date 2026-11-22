@@ -151,6 +151,9 @@ function M.check_updates_network()
           if out and out.code == 124 then
             timed_out[#timed_out + 1] = names[i]
           end
+          -- lua-language-server cannot resolve the variadic return of
+          -- semaphore:with() and flags any value returned from it.
+          ---@diagnostic disable-next-line: return-type-mismatch
           return true
         end)
       end)

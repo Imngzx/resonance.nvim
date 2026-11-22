@@ -411,7 +411,7 @@ end
 
 --- The User event patterns in a normalized event list.
 ---@param events ResonanceEventSpec[]
----@return string[] patterns, 'nil' for a User event without one
+---@return string[] patterns One per User event that has a pattern.
 function M.user_event_patterns(events)
   local out = {}
   for i = 1, #events do

@@ -36,7 +36,9 @@ end
 -- that is loaded twice, inspected afterwards, or shared between two
 -- plugin managers sees exactly what it was written as.
 ---@param config table
----@return table|nil
+---@return table|nil parsed the normalized copy; nil when the spec is rejected
+---@return string|nil reason why it was rejected ('disabled')
+---@return table|nil rejected the normalized copy of a rejected spec
 function M.parse_config(config)
   if M.is_plugin_list(config) then
     return nil -- handled by caller

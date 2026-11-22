@@ -20,6 +20,8 @@
 | `lua/resonance/ui/` | Panel: `init` (window + keymaps), `state` (singleton), `render`, `actions` |
 | `lua/resonance/utils.lua` | Shared helpers — **`utils.get_pack()` lives here** |
 | `CODE_TOUR.md` | Guided walk-through: glossary, file map, each flow as a story. Keep it in step when a flow changes. |
+| `ARCHITECTURE.md` | The shape of the code: layers, module boundaries, and why the red lines below exist. |
+| `CONTRIBUTING.md` | For outside contributors: how to report a bug and send a change. |
 
 Entry point: `require('resonance').setup()`.
 

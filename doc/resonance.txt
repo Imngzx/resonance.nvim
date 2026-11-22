@@ -591,12 +591,6 @@ actually has.
         counts are read live on every call, because a plugin can load at
         any point.
 
-    resonance.trigger_verylazy()
-        Optional: setup() and load() already arm `User VeryLazy`. Kept so
-        configs that call it keep working; calling it as well fires
-        VeryLazy only once.
-        Returns: nothing
-
     resonance.has_fired(event, buf)
         Whether an event has already fired for a buffer.
         event: event name, e.g. "BufReadPost"

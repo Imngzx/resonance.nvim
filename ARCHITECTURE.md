@@ -53,7 +53,6 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
 - A `fired` flag keeps it to one fire even if both paths reach it. A
   generation counter, bumped by `_reset()`, makes callbacks armed by an
   older module instance do nothing (the test runner builds one per test).
-- `trigger_verylazy()` is the same guarded arm, kept for old configs.
 
 ## Flow 1: `load(spec)`
 

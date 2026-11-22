@@ -97,8 +97,8 @@ test.run_suite('resonance.behavior.verylazy', {
       -- never fired VeryLazy, and no VeryLazy plugin ever loaded.
       --
       -- Start from nothing armed: the user's config, loaded by the Neovim
-      -- running the suite, may have called trigger_verylazy() itself, and
-      -- that would make this test pass without setup() doing anything.
+      -- running the suite, may have armed VeryLazy itself, and that would
+      -- make this test pass without setup() doing anything.
       drop_foreign_verylazy()
       pcall(api.nvim_del_augroup_by_name, 'ResonanceVeryLazy')
       _G.resonance._reset()
@@ -110,12 +110,14 @@ test.run_suite('resonance.behavior.verylazy', {
   },
 
   {
-    name = 'verylazy: setup() plus trigger_verylazy() still fires once',
+    name = 'verylazy: arming twice still fires once',
     fn = function()
-      -- An old config calls both. The UIEnter and VimEnter paths can also
-      -- both reach the fire; VeryLazy must still run once.
+      -- setup() and load() both arm VeryLazy, and a config may call setup()
+      -- twice. The UIEnter and VimEnter paths can also both reach the fire;
+      -- VeryLazy must still run once.
       drop_foreign_verylazy()
-      _G.resonance.trigger_verylazy()
+      _G.resonance.setup()
+      _G.resonance.setup()
       local n = count_verylazy()
       fire_startup()
       vim.wait(100)
@@ -211,39 +213,6 @@ test.run_suite('resonance.behavior.verylazy', {
   },
 
   {
-    name = 'verylazy: trigger_verylazy() with no setup() or load() still replays',
-    fn = function()
-      -- A config that only arms VeryLazy reaches the replay with no loader
-      -- module cached; the replay must load it, not index nil.
-      test.stub_pack()
-      drop_foreign_verylazy()
-      local buf = read_buffer()
-      local setup_ran = false
-      _G.resonance._reset()
-      _G.resonance.trigger_verylazy()
-      local group = api.nvim_create_augroup(fresh('TestVeryLazyBare'), { clear = true })
-      api.nvim_create_autocmd('User', {
-        group = group,
-        pattern = 'VeryLazy',
-        callback = function()
-          -- Straight to the loader, so the resonance module's cached
-          -- loader stays unset.
-          require('resonance.loader').load({
-            src = 'https://github.com/test/' .. fresh('verylazy-bare'),
-            event = 'BufReadPost',
-            setup = function() setup_ran = true end,
-          })
-        end,
-      })
-
-      local notices = capture_and_wait(function() fire_startup() end, 300)
-      pcall(api.nvim_buf_delete, buf, { force = true })
-      test.assert_false(noticed(notices, 'VeryLazy failed'), 'firing VeryLazy raised')
-      test.assert_true(setup_ran, 'the replay did not run without setup()')
-    end,
-  },
-
-  {
     name = 'verylazy: loaded after startup, VeryLazy fires once and latches the startup time',
     fn = function()
       -- The suite runs inside -c, before VimEnter, so the path taken when
@@ -261,7 +230,6 @@ test.run_suite('resonance.behavior.verylazy', {
         "vim.api.nvim_create_autocmd('User', { pattern = 'VeryLazy', callback = function() n = n + 1 end })",
         "local did_enter = vim.v.vim_did_enter",
         "r.setup()",
-        "r.trigger_verylazy()",
         "vim.defer_fn(function()",
         "  io.stdout:write('DID_ENTER=' .. did_enter .. ' FIRED=' .. n .. ' LATCHED=' .. tostring(r._end_time ~= nil) .. '\\n')",
         "  vim.cmd('qall!')",

@@ -71,7 +71,7 @@ test.run_suite('resonance.behavior.stats', {
       local l = live()
       l.resonance._end_time = nil
 
-      -- Latch the end the way trigger_verylazy() does.
+      -- Latch the end the way the VeryLazy fire does.
       l.resonance._end_time = vim.uv.hrtime()
       vim.wait(50)
       local latched = l.resonance.stats().startuptime

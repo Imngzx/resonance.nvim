@@ -11,7 +11,7 @@
 
 | Path | Role |
 |---|---|
-| `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `import()`, `stats()`, `open_ui()`, `has_fired()`, `replay_for_buffer()`, `trigger_verylazy()` (legacy) |
+| `lua/resonance/init.lua` | Public API: `setup()`, `load()`, `import()`, `stats()`, `open_ui()`, `has_fired()`, `replay_for_buffer()` |
 | `lua/resonance/registry.lua` | Shared pure data: specs, triggers, disabled plugins, load times, plugin dirs. No side effects. |
 | `lua/resonance/loader/` | Control plane: `init` (load, install), `spec` (normalize), `triggers`, `replay` (event tracker and both replays), `build` (build hooks), `dag` (panel data, required on first use) |
 | `lua/resonance/builds.lua` | Per-plugin build state: status, wait, output tail, hard timeout, cross-session PID lock. Requires nothing from the loader. |

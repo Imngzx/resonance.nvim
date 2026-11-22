@@ -450,8 +450,8 @@ tells you whether an event has already run for it (the read events only:
 `BufReadPre`, `BufReadPost`, `BufNewFile`, `BufEnter`, `FileType`). Calling the replay again
 is safe: a group that already ran is not fired twice.
 
-`resonance.trigger_verylazy()` is no longer needed. It still works, and
-calling it as well as `setup()` fires `VeryLazy` only once.
+`resonance.trigger_verylazy()` was removed in v0.10.0. `setup()` and `load()`
+fire `VeryLazy` themselves; delete the call from your config.
 
 ## ⌨️ UI Keymaps
 

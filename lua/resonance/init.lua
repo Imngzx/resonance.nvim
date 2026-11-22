@@ -298,14 +298,7 @@ function M._reset()
   verylazy_generation = verylazy_generation + 1
   verylazy_armed = false
   verylazy_fired = false
-end
-
---- Arm the VeryLazy event.
----
---- Optional: setup() and load() already do it. Kept so configs that still
---- call it keep working -- arming twice fires VeryLazy once.
-function M.trigger_verylazy()
-  arm_verylazy()
+  require('resonance.registry').verylazy_fired = false
 end
 
 function M.open_ui()

@@ -58,7 +58,7 @@ Using |vim.pack| (recommended):
 To stay on a tagged release instead of the latest commit, pin it: >lua
     vim.pack.add({{
       src = 'https://github.com/Imngzx/resonance.nvim',
-      version = 'v0.9.1',
+      version = 'v0.10.0',
     }})
 <
 Manual installation:

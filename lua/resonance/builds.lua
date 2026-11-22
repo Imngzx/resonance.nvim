@@ -35,7 +35,10 @@ local type = type
 local tostring = tostring
 local tonumber = tonumber
 local fn_stdpath = vim.fn.stdpath
-local mkdir_p = require('resonance.utils').mkdir_p
+local utils = require('resonance.utils')
+local mkdir_p = utils.mkdir_p
+local notify = utils.notify
+local vim_log_levels = vim.log.levels
 
 -- How long a build may run before it is killed. A build that runs for ten
 -- minutes is stuck, not slow: the dependencies are not going to arrive.
@@ -292,10 +295,8 @@ function M.finish(name, ok, err, output_tail)
     for i = 1, #list do
       local ok_call, call_err = pcall(list[i], ok, err)
       if not ok_call then
-        schedule(function()
-          vim.notify('Build callback error for ' .. name .. ': ' .. tostring(call_err),
-            vim.log.levels.ERROR)
-        end)
+        notify('Build callback error for ' .. name .. ': ' .. tostring(call_err),
+          vim_log_levels.ERROR)
       end
     end
   end

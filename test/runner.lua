@@ -307,9 +307,42 @@ local function reset_state()
   load_installed()
 end
 
+-- A test that never returns used to hang the whole run with nothing printed
+-- about which test it was: the name is only printed once a test is over.
+--
+-- Two guards, because a hang has two shapes:
+--
+--   - Most hung tests sit in vim.wait(), which keeps the event loop running.
+--     A timer can fire there, so the watchdog names the test and exits.
+--   - A test that blocks Lua itself (a busy loop, a blocking call) never
+--     lets the timer fire. For that one the name of the running test is
+--     kept in a file, and test/dev_env.sh prints it when its own time
+--     limit stops Neovim.
+local TEST_TIMEOUT_S = tonumber(vim.env.RESONANCE_TEST_TIMEOUT_S) or 120
+local current_test_file = vim.env.RESONANCE_DEV_ENV and (vim.env.RESONANCE_DEV_ENV .. '/current_test')
+local watchdog = uv.new_timer()
+
+local function note_current_test(name)
+  if not current_test_file then return end
+  local fd = io.open(current_test_file, 'w')
+  if not fd then return end
+  fd:write(name, '\n')
+  fd:close()
+end
+
 local function run_test(name, fn)
   reset_state()
+  note_current_test(name)
+  watchdog:start(TEST_TIMEOUT_S * 1000, 0, function()
+    io.stderr:write(string.format(
+      '\n✗ %s\n  TIMEOUT: still running after %d s (RESONANCE_TEST_TIMEOUT_S); the run is stopped\n',
+      name, TEST_TIMEOUT_S))
+    -- A timer callback is a fast context, where os.exit is refused. The
+    -- vim.wait() the test hangs in runs scheduled callbacks.
+    vim.schedule(function() os.exit(2) end)
+  end)
   local ok, err = pcall(fn)
+  watchdog:stop()
   if ok then
     test_results.passed = test_results.passed + 1
     print(string.format("✓ %s", name))

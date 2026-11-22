@@ -125,6 +125,14 @@ test/dev_env.sh test test/gc_spec.lua      # one or more spec files
   `test/helpers.lua`, not an assignment to `vim.system`: `ui/actions.lua`
   holds `vim.system` in a local, and the helper rebuilds it against the
   stub and restores it afterwards.
+- **Names from `fresh(label)`:** the helper in the spec files returns the
+  same name for the same label within a run. In a loop, pass a different
+  label per iteration, or every iteration registers the same plugin.
+- **A hung test is stopped and named.** A test may run for 120 s
+  (`RESONANCE_TEST_TIMEOUT_S`) and the whole run for 600 s
+  (`RESONANCE_SUITE_TIMEOUT_S`). The second limit catches a test that
+  blocks Neovim outright; `test/dev_env.sh` then prints the test that was
+  running.
 - **`test/docs_spec.lua`** fails on a broken `|link|` in the help file or a
   stale `doc/tags`.
 - **`test/pack_integration_spec.lua`** installs real plugins into its own

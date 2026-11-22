@@ -54,7 +54,24 @@ run_lua_files() {
   for f in "$@"; do
     args+=(-c "lua local ok, e = pcall(dofile, '$f') if not ok then io.stderr:write(tostring(e) .. '\n') vim.cmd('cquit 1') end")
   done
-  nvim --headless "${args[@]}" -c "qall"
+  # A test that blocks Neovim outright cannot be stopped from inside (see the
+  # watchdog in test/runner.lua), so the whole run has a time limit too.
+  # runner.lua keeps the name of the running test in $DEV/current_test.
+  local limit="${RESONANCE_SUITE_TIMEOUT_S:-600}"
+  local status=0
+  rm -f "$DEV/current_test"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout -k 10 "$limit" nvim --headless "${args[@]}" -c "qall" || status=$?
+  else
+    nvim --headless "${args[@]}" -c "qall" || status=$?
+  fi
+  # 124: stopped by timeout. 137: it had to be killed.
+  if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+    echo >&2
+    echo "TIMEOUT: the run was stopped after ${limit} s (RESONANCE_SUITE_TIMEOUT_S)." >&2
+    echo "The test running at that moment: $(cat "$DEV/current_test" 2>/dev/null || echo unknown)" >&2
+  fi
+  return "$status"
 }
 
 run_tests() {

@@ -129,6 +129,10 @@ function M.check_updates_network()
     return true
   end
 
+  -- Built here, on the main loop: the fetch tasks resume in callbacks,
+  -- where vim.fn is not available.
+  local git_env = utils.git_env()
+
   local completed_fetches = 0
   local check_semaphore = async.semaphore(fetch_concurrency)
   -- The plugins whose fetch was stopped by the timeout. Their update state
@@ -142,7 +146,7 @@ function M.check_updates_network()
         check_semaphore:with(function()
           -- Fetch all branches and tags silently in the background
           local out = system_async({ 'git', 'fetch', '--tags', '--force' },
-            { cwd = path, text = true, timeout = M.FETCH_TIMEOUT_MS })
+            { cwd = path, text = true, timeout = M.FETCH_TIMEOUT_MS, env = git_env, clear_env = true })
           -- vim.system reports a process it stopped on timeout as 124.
           if out and out.code == 124 then
             timed_out[#timed_out + 1] = names[i]
@@ -186,7 +190,7 @@ function M.check_updates_network()
 
                 -- Local git log is fast enough for standard callbacks
                 system({ 'git', 'log', '--oneline', pk.rev .. '..' .. pk.rev_to },
-                  { cwd = pk.path, text = true }, function(out)
+                  { cwd = pk.path, text = true, env = git_env, clear_env = true }, function(out)
                     local lines = {}
                     if out.code == 0 and out.stdout then
                       for line in out.stdout:gmatch('[^\r\n]+') do lines[#lines + 1] = line end
@@ -403,7 +407,8 @@ function M.checkout_plugin(name)
 
     utils.notify('Checking out ' .. name .. ' -> ' .. target, 2)
 
-    system({ 'git', 'checkout', target }, { cwd = path, text = true }, function(out)
+    system({ 'git', 'checkout', target },
+      { cwd = path, text = true, env = utils.git_env(), clear_env = true }, function(out)
       schedule(function()
         if out.code == 0 then
           state.commits[name] = st.get_local_hash(path)

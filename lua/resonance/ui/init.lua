@@ -232,7 +232,12 @@ function M.open(ui_config)
   api.nvim_create_autocmd('BufWipeout', {
     buffer = st.state.buf,
     once = true,
-    callback = function()
+    callback = function(args)
+      -- Only the buffer of the panel that is open now may clear the state.
+      -- A split of the panel keeps its buffer alive after the panel is
+      -- closed; when the panel had been reopened by the time that split
+      -- went away, the old buffer's wipe cleared the new panel's state.
+      if st.state.buf ~= args.buf then return end
       cancel_details_task()
       render_mod.clear()
       st.state.win, st.state.buf = nil, nil

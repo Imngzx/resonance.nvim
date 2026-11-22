@@ -407,6 +407,38 @@ local function start_builds(parsed_names)
   return building
 end
 
+-- Whether VimEnter has happened. A field of the module so a test can stand
+-- in for a started session: the suite runs from `-c` commands, which come
+-- before VimEnter, and v:vim_did_enter cannot be written.
+function M._startup_over()
+  return vim.v.vim_did_enter == 1
+end
+
+-- Whether the spec waits for a startup event that is already over.
+--
+-- VimEnter comes once, and VeryLazy fires once. A spec registered after
+-- them -- a load() call from a command, a mapping or a late-loaded config --
+-- got a trigger that could never fire: an eager spec, a spec with no
+-- trigger and a `lazy = true` spec were registered and then never loaded,
+-- with no message.
+---@param config table the parsed spec
+---@return boolean
+local function startup_trigger_passed(config)
+  local entered = M._startup_over()
+  local verylazy_fired = registry.verylazy_fired
+  if not entered and not verylazy_fired then return false end
+  local events = utils.normalize_events(config.event)
+  for i = 1, #events do
+    local e = events[i]
+    if e.user then
+      if verylazy_fired and e.pattern == 'VeryLazy' then return true end
+    elseif entered and e.event == 'VimEnter' then
+      return true
+    end
+  end
+  return false
+end
+
 -- How long an explicit user action waits for a build before giving up
 -- and letting the build finish in the background.
 local BUILD_WAIT_MS = 30000
@@ -844,6 +876,20 @@ function M.load(config)
   -- once it has loaded.
   trigger_teardown_before_setup, trigger_teardown =
     triggers.register_all(config, load_now, triggers.trigger_group(group_name), group_name)
+
+  -- The spec's startup event is over, so it loads now instead of never. On
+  -- the next tick, as at startup: load() returns before anything loads, and
+  -- a list of specs is registered as a whole first. Should the event still
+  -- reach the trigger after all -- load() called from inside a VimEnter
+  -- callback -- the second load finds the plugin loaded and does nothing.
+  --
+  -- The check against force_load_fns drops a callback whose spec was reset
+  -- or registered again in the meantime.
+  if startup_trigger_passed(config) then
+    schedule(function()
+      if force_load_fns[current_name] == load_now then load_now(nil) end
+    end)
+  end
 end
 
 ---@return table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, table<string, string[]>

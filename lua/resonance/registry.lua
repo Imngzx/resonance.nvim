@@ -32,6 +32,11 @@ M.spec_urls = {}
 -- Load time in milliseconds, keyed by plugin name.
 M.load_times = {}
 
+-- Whether VeryLazy has fired in this session. The main module sets it; the
+-- loader reads it for a spec that is registered afterwards, whose VeryLazy
+-- trigger would otherwise wait for an event that does not come again.
+M.verylazy_fired = false
+
 -- Plugin name -> installation directory.
 --
 -- Populated lazily from the vim.pack cache, or from a filesystem scan when
@@ -57,6 +62,7 @@ function M._reset()
   for k in pairs(M.spec_urls) do M.spec_urls[k] = nil end
   for k in pairs(M.load_times) do M.load_times[k] = nil end
   M.plugin_dirs = nil
+  M.verylazy_fired = false
 end
 
 return M

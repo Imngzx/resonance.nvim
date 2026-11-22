@@ -199,7 +199,8 @@ Resonance accepts native `vim.pack` fields: `src`, `name`, `version`, and `data`
 Give an entry a lazy trigger -- `event`, `cmd`, `keys`, or `ft` -- to load it on
 demand. An entry with no trigger loads eagerly on `VimEnter`, the same as `lazy = false` —
 useful for a plugin you just want installed and pinned, with no trigger of its
-own.
+own. An entry registered after startup (a `load()` call from a command or a
+late-sourced file) loads at once if its startup event is already over.
 
 ### 📝 Complete Example
 
@@ -231,7 +232,8 @@ resonance.load({
       -- mapping is left in place.
       '<leader>Tg',
       '<leader>TL',
-      -- Or full spec:
+      -- Or full spec, in the order { mode, lhs, rhs, opts } (not lazy.nvim's).
+      -- An entry Neovim rejects is reported and skipped:
       { 'n', '<leader>Tc', '<cmd>cmd3<CR>', { desc = 'Open something' } },
     },
 

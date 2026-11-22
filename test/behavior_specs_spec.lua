@@ -240,6 +240,123 @@ test.run_suite('resonance.behavior.specs', {
     end,
   },
 
+  -- a spec registered after startup ------------------------------------------
+
+  {
+    name = 'specs: an eager or triggerless spec registered after VimEnter still loads',
+    fn = function()
+      -- Both get a VimEnter trigger, and VimEnter does not come twice: the
+      -- spec was registered and then never loaded, with no message.
+      -- The suite runs before VimEnter, so the test stands in for a session
+      -- that has started.
+      test.stub_pack()
+      local a, b, c = fresh('late-plain'), fresh('late-eager'), fresh('late-event')
+      local ran = {}
+      local orig = _G.loader._startup_over
+      _G.loader._startup_over = function() return true end
+      local ok, err = pcall(_G.resonance.load, {
+        { src = 'https://github.com/test/' .. a, setup = function() ran.plain = true end },
+        { src = 'https://github.com/test/' .. b, lazy = false, setup = function() ran.eager = true end },
+        { src = 'https://github.com/test/' .. c, event = 'BufReadPost', setup = function() ran.event = true end },
+      })
+      _G.loader._startup_over = orig
+      test.assert_true(ok, tostring(err))
+      test.assert_eq(ran.plain, nil, 'load() must return before the plugin loads, as at startup')
+      vim.wait(500, function() return ran.plain and ran.eager end, 10)
+      test.assert_true(ran.plain, 'the spec with no trigger never loaded')
+      test.assert_true(ran.eager, 'the lazy = false spec never loaded')
+      test.assert_eq(ran.event, nil, 'a spec waiting for an ordinary event was loaded too')
+    end,
+  },
+
+  {
+    name = 'specs: a lazy = true spec registered after VeryLazy still loads',
+    fn = function()
+      test.stub_pack()
+      local first, late, both = fresh('vl-first'), fresh('vl-late'), fresh('vl-late-cmd')
+      local fired = false
+      local ran = {}
+      api.nvim_create_autocmd('User', { pattern = 'VeryLazy', once = true, callback = function() fired = true end })
+      _G.resonance.load({ src = 'https://github.com/test/' .. first, lazy = true })
+      -- Headless, VimEnter is what ends startup and fires VeryLazy.
+      api.nvim_exec_autocmds('VimEnter', { group = 'ResonanceVeryLazy' })
+      vim.wait(500, function() return fired end, 10)
+      test.assert_true(fired, 'VeryLazy did not fire in the test session')
+
+      _G.resonance.load({
+        { src = 'https://github.com/test/' .. late, lazy = true, setup = function() ran.late = true end },
+        -- VeryLazy is the fallback of a spec with another trigger, and it
+        -- is just as gone.
+        {
+          src = 'https://github.com/test/' .. both,
+          lazy = true,
+          cmd = 'VlLate' .. run_id:sub(-4),
+          setup = function() ran.both = true end,
+        },
+      })
+      vim.wait(500, function() return ran.late and ran.both end, 10)
+      test.assert_true(ran.late, 'the lazy = true spec never loaded')
+      test.assert_true(ran.both, 'the lazy = true spec with a command never loaded')
+    end,
+  },
+
+  -- a bad keys entry ---------------------------------------------------------
+
+  {
+    name = 'specs: a bad keys entry is reported and the rest still registers',
+    fn = function()
+      -- { lhs, rhs } is lazy.nvim's order; here the lhs is read as the mode
+      -- and vim.keymap.set raises "Invalid mode shortname". The raise left
+      -- load() half-way: the second spec was never registered.
+      test.stub_pack()
+      local a, b = fresh('bad-keys-a'), fresh('bad-keys-b')
+      local good_lhs = '<Plug>(GoodKey' .. run_id:sub(-4) .. ')'
+      local ok, err
+      local notices = capture_and_wait(function()
+        ok, err = pcall(_G.resonance.load, {
+          {
+            src = 'https://github.com/test/' .. a,
+            keys = {
+              { '<leader>zz', '<cmd>echo 1<CR>', desc = 'lazy.nvim order' },
+              { 'n', good_lhs, '<cmd>echo 2<CR>' },
+            },
+          },
+          { src = 'https://github.com/test/' .. b, cmd = 'BadKeysB' .. run_id:sub(-4) },
+        })
+      end, 100)
+      test.assert_true(ok, 'load() raised: ' .. tostring(err))
+      test.assert_true(noticed(notices, 'Invalid keys entry'), 'the bad entry was not reported: ' .. vim.inspect(notices))
+      test.assert_true(noticed(notices, a), 'the report does not name the plugin: ' .. vim.inspect(notices))
+      test.assert_not_nil(_G.loader.specs[b], 'the spec after the bad entry was not registered')
+      test.assert_true(vim.fn.maparg(good_lhs, 'n') ~= '' or vim.fn.mapcheck(good_lhs, 'n') ~= '',
+        'the valid entry of the same spec was not mapped')
+      pcall(vim.keymap.del, 'n', good_lhs)
+    end,
+  },
+
+  {
+    name = 'specs: a keys function may return shorthand strings, and one that raises is reported',
+    fn = function()
+      test.stub_pack()
+      local a, b, c = fresh('keys-fn-a'), fresh('keys-fn-b'), fresh('keys-fn-c')
+      local lhs = '<Plug>(FnKey' .. run_id:sub(-4) .. ')'
+      local ok, err
+      local notices = capture_and_wait(function()
+        ok, err = pcall(_G.resonance.load, {
+          { src = 'https://github.com/test/' .. a, keys = function() return { lhs, 42 } end },
+          { src = 'https://github.com/test/' .. b, keys = function() error('keys blew up') end },
+          { src = 'https://github.com/test/' .. c, cmd = 'KeysFnC' .. run_id:sub(-4) },
+        })
+      end, 100)
+      test.assert_true(ok, 'load() raised: ' .. tostring(err))
+      test.assert_true(vim.fn.mapcheck(lhs, 'n') ~= '', 'the shorthand returned by the function was not mapped')
+      test.assert_true(noticed(notices, 'Invalid keys entry 42'), vim.inspect(notices))
+      test.assert_true(noticed(notices, 'keys blew up'), vim.inspect(notices))
+      test.assert_not_nil(_G.loader.specs[c], 'the spec after the raising function was not registered')
+      pcall(vim.keymap.del, 'n', lhs)
+    end,
+  },
+
   {
     name = 'specs: a command the plugin never defines is reported, not run',
     fn = function()

@@ -258,6 +258,45 @@ test.run_suite('resonance.behavior.panel', {
   },
 
   {
+    name = 'panel: wiping the buffer of a closed panel leaves the reopened panel alone',
+    fn = function()
+      -- A split keeps the panel buffer alive after the panel is closed.
+      -- When that split went away later, the old buffer's BufWipeout
+      -- cleared the state of the panel that had been opened since.
+      local st
+      local old_buf, new_buf, buf_after, win_after
+      local ok, err = pcall(function()
+        package.loaded['resonance.ui'] = nil
+        require('resonance').open_ui()
+        vim.wait(100)
+        st = require('resonance.ui.state')
+        old_buf = st.state.buf
+        local split = api.nvim_open_win(old_buf, false, { split = 'below' })
+        local close = keymap_callback(old_buf, 'q')
+        assert(close, 'no q mapping')
+        close()
+        assert(api.nvim_buf_is_valid(old_buf), 'the split did not keep the old buffer alive')
+
+        require('resonance').open_ui()
+        vim.wait(100)
+        new_buf = st.state.buf
+        api.nvim_win_close(split, true)
+        if api.nvim_buf_is_valid(old_buf) then api.nvim_buf_delete(old_buf, { force = true }) end
+        buf_after, win_after = st.state.buf, st.state.win
+      end)
+      if st and st.state.buf then
+        local close = keymap_callback(st.state.buf, 'q')
+        if close then pcall(close) end
+      end
+      package.loaded['resonance.ui'] = nil
+      test.assert_true(ok, tostring(err))
+      test.assert_true(new_buf ~= nil and new_buf ~= old_buf, 'the panel was not reopened on a new buffer')
+      test.assert_eq(buf_after, new_buf, 'the old buffer wiped the state of the reopened panel')
+      test.assert_not_nil(win_after, 'the reopened panel lost its window')
+    end,
+  },
+
+  {
     name = 'panel: a fetch that hangs is stopped, reported, and the check finishes',
     fn = function()
       -- One `git fetch` that never returned held the whole check open:
@@ -302,6 +341,69 @@ test.run_suite('resonance.behavior.panel', {
       test.assert_false(still_checking, 'the check never finished')
       test.assert_true(noticed(notices, 'Fetch timed out for hung-plugin'), vim.inspect(notices))
       test.assert_false(noticed(notices, 'fine-plugin'), vim.inspect(notices))
+    end,
+  },
+
+  {
+    name = 'panel: git runs without the GIT_DIR of the environment',
+    fn = function()
+      -- GIT_DIR wins over the working directory. With Neovim started as
+      -- `GIT_DIR=~/.dotfiles nvim`, the fetch and the log ran against the
+      -- dotfiles repository and the check reported no update; a checkout
+      -- would have switched branches there.
+      local l = live()
+      local dir = vim.fn.tempname()
+      vim.fn.mkdir(dir .. '/.git', 'p')
+      local vars = { 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE' }
+      local saved = {}
+      for i = 1, #vars do
+        saved[i] = vim.env[vars[i]]
+        vim.env[vars[i]] = '/tmp/someone-elses-repo'
+      end
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return {
+          get = function()
+            return { { spec = { name = 'env-plugin' }, path = dir, rev = 'aaaaaaa111', rev_to = 'bbbbbbb222' } }
+          end,
+        }
+      end
+      local orig_input = vim.ui.input
+      vim.ui.input = function(_, cb) cb('main') end
+      local seen = {}
+      local ok, err = pcall(h.with_system, function(cmd, opts, cb)
+        seen[cmd[2]] = opts
+        cb(h.completed(0))
+      end, function(l2)
+        l2.state.state.info = {
+          total = 1, loaded = 0,
+          plugins = { name = { 'env-plugin' }, path = { dir } },
+        }
+        l2.state.state.checking = false
+        l2.actions.check_updates_network()
+        vim.wait(1000, function() return not l2.state.state.checking end, 20)
+        l2.actions.checkout_plugin('env-plugin')
+        vim.wait(500, function() return seen.checkout ~= nil end, 20)
+        l2.state.state.checking = false
+      end)
+      vim.ui.input = orig_input
+      l.utils.get_pack = orig_get_pack
+      for i = 1, #vars do vim.env[vars[i]] = saved[i] end
+      vim.fn.delete(dir, 'rf')
+      if not ok then error(err, 0) end
+
+      local subcommands = { 'fetch', 'log', 'checkout' }
+      for i = 1, #subcommands do
+        local sub = subcommands[i]
+        local opts = seen[sub]
+        test.assert_not_nil(opts, 'git ' .. sub .. ' never ran')
+        test.assert_true(opts.clear_env == true and type(opts.env) == 'table',
+          'git ' .. sub .. ' inherits the environment as it is')
+        for v = 1, #vars do
+          test.assert_eq(opts.env[vars[v]], nil, 'git ' .. sub .. ' still sees ' .. vars[v])
+        end
+        test.assert_not_nil(opts.env.PATH, 'git ' .. sub .. ' lost the rest of the environment')
+      end
     end,
   },
 

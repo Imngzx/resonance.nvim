@@ -60,7 +60,9 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
 1. `spec.parse_config` works on a copy of the spec. It normalizes
    `plugin`, `setup`/`config` and `lazy`. `lazy = false` means `VimEnter`;
    `lazy = true` adds `User VeryLazy`. A spec with no trigger and no `lazy`
-   field also loads on `VimEnter`.
+   field also loads on `VimEnter`. When that startup event is already over
+   (`v:vim_did_enter`, `registry.verylazy_fired`), `load()` schedules
+   `load_now` itself after registering the triggers.
 2. The names, triggers and a retained copy of the spec are recorded in the
    registry. Build hooks go into `build_hooks`, and `check_and_build` runs
    for each one.
@@ -176,7 +178,9 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
   a new `async.semaphore` per check, set by `actions.configure()` from
   `open_ui()`). It then makes one
   `pack.get(nil, { info = true })` call to get `rev_to`, and runs
-  `git log rev..rev_to` for each plugin that has an update.
+  `git log rev..rev_to` for each plugin that has an update. Every git
+  process of the panel gets `utils.git_env()`, the environment without
+  `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`.
 - **Rendering:** `render()` rebuilds the whole buffer from module-level
   tables that are reused across renders (`table.clear`). The spinner
   rewrites only its own line every 100 ms.

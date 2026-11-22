@@ -202,6 +202,11 @@ keys - Load when keymap is pressed:
     mapping is left in place. A key with an rhs keeps that rhs: the stub
     is replaced by the real mapping after the load.
 
+    The order of a full entry is { mode, lhs, rhs, opts }. It is not
+    lazy.nvim's: { '<leader>g', func } reads '<leader>g' as the mode. An
+    entry Neovim rejects is reported with the plugin's name and skipped;
+    the other keys and the other specs still register.
+
 cond - Conditionally load plugin:
     cond = true          -- Load (default)
     cond = false         -- Skip plugin entirely
@@ -225,6 +230,12 @@ Triggers can be combined. Plugin loads on FIRST matching trigger.
 A spec with no trigger and no `lazy` field loads eagerly on VimEnter, the
 same as lazy = false. Useful for a plugin you just want installed and
 pinned, with no trigger of its own.
+
+A spec registered after startup -- `resonance.load()` called from a
+command, a mapping or a config that is sourced late -- does not wait for a
+startup event that is already over. An eager or triggerless spec loads
+right after the load() call returns, and so does a `lazy = true` spec once
+VeryLazy has fired.
 
 `event` accepts a User event with its own pattern:
     event = 'VeryLazy'
@@ -453,6 +464,11 @@ directories (oil.nvim, nvim-tree, mini.files).
 A `git fetch` started by `r` is stopped after 60 seconds. The plugins it
 was stopped for are named in a warning and are not checked for updates;
 the others are listed as usual.
+
+The git commands of the panel (`r` and `c`) ignore `GIT_DIR`,
+`GIT_WORK_TREE` and `GIT_INDEX_FILE`, as vim.pack does. Neovim started
+with them set -- a bare dotfiles repository, for example -- still checks
+and checks out the plugin's own repository.
 
                                                     *resonance-resonate-config*
 `r` (Resonate) runs one `git fetch` per plugin. A fetch is mostly waiting

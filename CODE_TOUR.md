@@ -103,10 +103,10 @@ Who may require whom (the important part):
 ## 4. Story 1: Neovim starts
 
 The user's `init.lua` calls `require('resonance').setup(opts)`
-(`init.lua:198`). It does five small things:
+(`init.lua:201`). It does five small things:
 
 1. Merges `opts` into `M.config`.
-2. **Arms VeryLazy** (`arm_verylazy`, `init.lua:158`): one autocmd on
+2. **Arms VeryLazy** (`arm_verylazy`, `init.lua:161`): one autocmd on
    `UIEnter`, one on `VimEnter` (for headless runs with no UI).
 3. Creates the `:Resonance` command.
 4. Calls `loader.setup()`, which installs:
@@ -137,7 +137,7 @@ It fires only once, even if both autocmds reach it.
 
 ## 5. Story 2: `load(spec)` — registering, not loading
 
-`loader/init.lua:415`. Nothing is installed here. The spec is only
+`loader/init.lua:447`. Nothing is installed here. The spec is only
 **registered**.
 
 1. **List or single?** `spec.is_plugin_list`: a table whose `[1]` is a
@@ -163,6 +163,10 @@ It fires only once, even if both autocmds reach it.
 5. **Create `load_now`**, one closure for the whole spec, and store it in
    `force_load_fns[name]` for every member. Dependencies use this table.
 6. **Create the stubs** (`triggers.register_all`), described next.
+7. **Too late for the startup event?** If the spec waits for `VimEnter`
+   and startup is over, or for VeryLazy and it has fired
+   (`registry.verylazy_fired`), `load_now` is scheduled for the next tick.
+   Without this, a spec registered after startup never loaded.
 
 ### The four stubs (`loader/triggers.lua`)
 
@@ -176,7 +180,9 @@ It fires only once, even if both autocmds reach it.
 Details worth knowing:
 
 - An unknown event name is reported and skipped; the other events and the
-  other specs still register.
+  other specs still register. A `keys` entry that `vim.keymap.set` rejects
+  (lazy.nvim's `{ lhs, rhs }` order is the usual one) is handled the same
+  way.
 - `register_all` returns **two** cleanup lists. Command stubs are removed
   *before* `:packadd` (the plugin wants to create the same command name).
   Everything else is removed *after* the load.
@@ -187,7 +193,7 @@ Details worth knowing:
 
 ## 6. Story 3: a trigger fires — `load_now`
 
-`loader/init.lua:690`. This is the heart of the plugin.
+`loader/init.lua:713`. This is the heart of the plugin.
 
 ```text
 trigger fires
@@ -341,7 +347,7 @@ called:
   success/failure notification.
 
 **Setup waits for the build.** A plugin must not be set up on a half-built
-tree. In `setup_members` (`loader/init.lua:611`):
+tree. In `setup_members` (`loader/init.lua:634`):
 
 - Members listed before the first building member are set up now.
 - From that member on, everybody waits (to keep the order):
@@ -360,7 +366,7 @@ tree. In `setup_members` (`loader/init.lua:611`):
 
 ## 9. Story 6: the panel
 
-`open_ui()` → `ui/init.lua:126`.
+`open_ui()` → `ui/init.lua:136`.
 
 1. **Scan.** `scanner.get_info()` asks `vim.pack.get(nil, { info = false,
    offline = true })` (fast, reads the lockfile) and adds the plugins
@@ -398,6 +404,10 @@ Keys (`bind_keys`, `ui/init.lua:38`):
    each plugin's target revision (`rev_to`).
 3. For every plugin where `rev ≠ rev_to`: `git log --oneline rev..rev_to`,
    shown under the plugin.
+
+The panel's git processes (fetch, log, checkout) run with
+`utils.git_env()`: the environment without `GIT_DIR`, `GIT_WORK_TREE` and
+`GIT_INDEX_FILE`, which would otherwise point git at another repository.
 
 ---
 

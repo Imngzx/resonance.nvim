@@ -275,23 +275,40 @@ end
 -- Register keymap trigger keymaps
 ---@param config table
 ---@param load_now function
+---@param name? string the plugin, for error messages
 ---@return function[] teardown callbacks that remove the registered keymaps
-function M.register_keys(config, load_now)
+function M.register_keys(config, load_now, name)
   local teardown = {}
   if not config.keys then return teardown end
 
   local keys = config.keys
   if type(keys) == 'function' then
-    keys = keys()
+    -- A keys function that raises is reported like any other bad entry: the
+    -- raise must not take the rest of the list with it (see below).
+    local ok, result = pcall(keys)
+    if not ok or type(result) ~= 'table' then
+      utils.notify('Invalid keys function for ' .. (name or 'plugin') .. ': ' ..
+        (ok and 'it returned ' .. type(result) .. ', expected a list' or tostring(result)),
+        vim_log_levels.ERROR)
+      return teardown
+    end
+    keys = result
   end
   for k = 1, #keys do
     local key_cfg = keys[k]
-    local mode = key_cfg[1] or key_cfg.mode or 'n'
-    local lhs = key_cfg[2] or key_cfg.lhs
-    local rhs = key_cfg[3] or key_cfg.rhs
-    local opts = key_cfg[4] or key_cfg.opts or {}
+    -- The shorthand of a static list is expanded when the spec is parsed. A
+    -- list returned by a function arrives here as written.
+    if type(key_cfg) == 'string' then key_cfg = { 'n', key_cfg } end
+    local is_table = type(key_cfg) == 'table'
+    local mode = is_table and (key_cfg[1] or key_cfg.mode) or 'n'
+    local lhs = is_table and (key_cfg[2] or key_cfg.lhs)
+    local rhs = is_table and (key_cfg[3] or key_cfg.rhs)
+    local opts = is_table and (key_cfg[4] or key_cfg.opts) or {}
 
-    if lhs then
+    if not is_table then
+      utils.notify('Invalid keys entry ' .. vim.inspect(key_cfg) .. ' for ' .. (name or 'plugin') ..
+        ' (expected a string or { mode, lhs, rhs, opts })', vim_log_levels.ERROR)
+    elseif lhs then
       -- Preserve original opts for restoration (including buffer-local info)
       local restore_opts = vim.tbl_extend('keep', {}, opts)
       -- opts.buffer can be true, meaning "the current buffer". The delete
@@ -399,9 +416,19 @@ function M.register_keys(config, load_now)
         end
       end
 
-      set_keymap(mode, lhs, stub_callback, opts)
-
-      teardown[#teardown + 1] = restore_keymap
+      -- vim.keymap.set raises on a bad mode or option, and the raise used
+      -- to leave load() half-way: the rest of this spec's triggers and every
+      -- spec after it in the list were never registered. The usual cause is
+      -- an entry in lazy.nvim's order, { lhs, rhs }, whose lhs is then read
+      -- as the mode. A bad event name is reported the same way.
+      local ok, err = pcall(set_keymap, mode, lhs, stub_callback, opts)
+      if ok then
+        teardown[#teardown + 1] = restore_keymap
+      else
+        utils.notify('Invalid keys entry ' .. vim.inspect(key_cfg, { newline = ' ', indent = '' }) ..
+          ' for ' .. (name or 'plugin') .. ' (expected { mode, lhs, rhs, opts }): ' .. tostring(err),
+          vim_log_levels.ERROR)
+      end
     end
   end
   return teardown
@@ -448,7 +475,7 @@ function M.register_all(config, load_now, group, name)
   collect(M.register_cmd(config, load_now, before_setup))
 
   collect(M.register_event(config, load_now, group, name))
-  collect(M.register_keys(config, load_now))
+  collect(M.register_keys(config, load_now, name))
   collect(M.register_ft(config, load_now, group))
 
   return before_setup, teardown

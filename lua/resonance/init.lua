@@ -132,6 +132,9 @@ end
 local function fire_verylazy(generation)
   if generation ~= verylazy_generation or verylazy_fired then return end
   verylazy_fired = true
+  -- The loader reads this for a spec registered from now on: its VeryLazy
+  -- trigger has nothing left to wait for.
+  require('resonance.registry').verylazy_fired = true
 
   -- The startup time is latched here as well as at UIEnter/VimEnter: when
   -- Resonance is loaded after startup, those events never come, and the

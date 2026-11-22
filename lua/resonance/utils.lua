@@ -167,6 +167,25 @@ function M.reset_pack_cache()
   _pack_checked = false
 end
 
+--- The environment for a git process that must act on a plugin's repository.
+---
+--- GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE win over the working
+--- directory. With Neovim started as `GIT_DIR=~/.dotfiles nvim` (the
+--- bare-repo dotfiles setup), the panel's `git fetch` and `git log` ran
+--- against the dotfiles repository -- "No pending updates", always -- and
+--- `git checkout` would have switched branches there. vim.pack clears the
+--- same three for its own git calls.
+---
+--- A variable can only be removed by replacing the whole environment, so the
+--- result goes with `clear_env = true`. It calls vim.fn: build it on the main
+--- loop, before entering a task or a callback.
+---@return table<string, string>
+function M.git_env()
+  local env = vim.fn.environ()
+  env.GIT_DIR, env.GIT_WORK_TREE, env.GIT_INDEX_FILE = nil, nil, nil
+  return env
+end
+
 ---@param msg string
 ---@param level integer
 ---@param opts table|nil

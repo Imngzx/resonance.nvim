@@ -828,6 +828,11 @@ itself is loaded after startup, it fires right away. Right after the
 VeryLazy handlers have run, the read events are replayed for the open
 files. A spec with `lazy = true` uses VeryLazy as its trigger.
 
+On a first start, when the eager plugins are still being installed,
+VeryLazy waits until the installs are done. The eager plugins are set up
+first, and a file opened during the install still gets its plugins from
+the replay.
+
 When an event loads a plugin, the handlers the plugin registers while it
 loads are fired for that event, once: Neovim does not run an autocmd that
 was added while its event is firing, so without this a plugin loaded on

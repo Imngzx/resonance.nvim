@@ -103,10 +103,10 @@ Who may require whom (the important part):
 ## 4. Story 1: Neovim starts
 
 The user's `init.lua` calls `require('resonance').setup(opts)`
-(`init.lua:201`). It does five small things:
+(`init.lua:214`). It does five small things:
 
 1. Merges `opts` into `M.config`.
-2. **Arms VeryLazy** (`arm_verylazy`, `init.lua:161`): one autocmd on
+2. **Arms VeryLazy** (`arm_verylazy`, `init.lua:174`): one autocmd on
    `UIEnter`, one on `VimEnter` (for headless runs with no UI).
 3. Creates the `:Resonance` command.
 4. Calls `loader.setup()`, which installs:
@@ -128,6 +128,14 @@ Later, when the UI appears, `fire_verylazy()` runs (`init.lua:132`):
 
 It fires only once, even if both autocmds reach it.
 
+It never fires in the middle of an install. vim.pack runs the event loop
+while it clones, so on a first start the scheduled fire came during the
+`lazy = false` installs: VeryLazy plugins were set up before the
+colorscheme, and a file opened meanwhile lost its read events (the install
+runs inside a `VimEnter` handler, and autocommands do not nest). If
+`loader.installing()` is true, `fire_verylazy()` hands itself to
+`loader.after_installs()`, which runs it once the last install is over.
+
 > **Startup time note.** `stats().startuptime` is counted from
 > `_G.start_time` if the user set it at the top of `init.lua`. Otherwise
 > it is counted from the first `require('resonance')`, not from the real
@@ -137,7 +145,7 @@ It fires only once, even if both autocmds reach it.
 
 ## 5. Story 2: `load(spec)` — registering, not loading
 
-`loader/init.lua:447`. Nothing is installed here. The spec is only
+`loader/init.lua:501`. Nothing is installed here. The spec is only
 **registered**.
 
 1. **List or single?** `spec.is_plugin_list`: a table whose `[1]` is a
@@ -193,7 +201,7 @@ Details worth knowing:
 
 ## 6. Story 3: a trigger fires — `load_now`
 
-`loader/init.lua:713`. This is the heart of the plugin.
+`loader/init.lua:767`. This is the heart of the plugin.
 
 ```text
 trigger fires
@@ -347,7 +355,7 @@ called:
   success/failure notification.
 
 **Setup waits for the build.** A plugin must not be set up on a half-built
-tree. In `setup_members` (`loader/init.lua:634`):
+tree. In `setup_members` (`loader/init.lua:688`):
 
 - Members listed before the first building member are set up now.
 - From that member on, everybody waits (to keep the order):

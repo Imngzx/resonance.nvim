@@ -39,6 +39,52 @@ local function invalidate_plugin_dir_cache()
   registry.invalidate_plugin_dirs()
 end
 
+-- How many vim.pack installs are running, and what waits for them to end.
+--
+-- vim.pack.add waits for its git clones by running the event loop, so
+-- anything scheduled meanwhile runs in the middle of the install. On a first
+-- start that included VeryLazy: it fired while the `lazy = false` plugins
+-- were still cloning, so VeryLazy plugins were set up before the colorscheme.
+-- Worse, an eager install runs inside a VimEnter handler, and Neovim does not
+-- fire autocommands from inside another one: a file opened during the
+-- install never fired its BufReadPost, its plugin never loaded, and the
+-- VeryLazy replay that would have caught it had already run.
+local installs_running = 0
+local after_installs = {}
+
+-- Run what waited for the installs, unless another one has started since.
+local function run_after_installs()
+  if installs_running > 0 or #after_installs == 0 then return end
+  local list = {}
+  for i = 1, #after_installs do
+    list[i] = after_installs[i]
+    after_installs[i] = nil
+  end
+  for i = 1, #list do
+    local ok, err = pcall(list[i])
+    if not ok then
+      utils.notify('Callback after install failed: ' .. tostring(err), vim_log_levels.ERROR)
+    end
+  end
+end
+
+--- Whether a vim.pack install is running.
+---@return boolean
+function M.installing()
+  return installs_running > 0
+end
+
+--- Run fn once no vim.pack install is running: now if none is, otherwise on
+--- the main loop after the last one ends.
+---@param fn function
+function M.after_installs(fn)
+  if installs_running == 0 then
+    fn()
+    return
+  end
+  after_installs[#after_installs + 1] = fn
+end
+
 -- Install specs with vim.pack. `pack.add` raises when an install fails, so
 -- the error is captured and returned instead of propagating. When vim.pack is
 -- unavailable there is nothing to install and the call succeeds.
@@ -47,7 +93,14 @@ end
 local function pack_install(specs)
   local pack = utils.get_pack()
   if not (pack and pack.add) then return true end
+  installs_running = installs_running + 1
   local ok, err = pcall(pack.add, specs, { confirm = false, load = false })
+  installs_running = installs_running - 1
+  -- Scheduled, not run here: the load that installed has its setup still
+  -- to run, and what waited -- VeryLazy -- has to come after it.
+  if installs_running == 0 and #after_installs > 0 then
+    schedule(run_after_installs)
+  end
   -- A fresh install is not in the cached plugin directories, so the cache
   -- has to go before anything looks the plugin up.
   invalidate_plugin_dir_cache()
@@ -226,6 +279,7 @@ function M._reset()
   for k in pairs(M.spec_urls) do M.spec_urls[k] = nil end
   for k in pairs(registry.load_times) do registry.load_times[k] = nil end
   replay._reset()
+  for i = #after_installs, 1, -1 do after_installs[i] = nil end
   registry.invalidate_plugin_dirs()
   -- The autocmds are still installed, so the guard stays set: reinstalling
   -- them would create a second copy of every handler.

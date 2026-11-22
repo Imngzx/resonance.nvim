@@ -88,6 +88,57 @@ end
 
 test.run_suite('resonance.behavior.verylazy', {
 
+  -- VeryLazy and the installs of a first start --------------------------------
+
+  {
+    name = 'verylazy: waits for a running install, and its replay rescues a file opened meanwhile',
+    fn = function()
+      -- vim.pack.add runs the event loop while it clones. VeryLazy, scheduled
+      -- at startup, fired in the middle of the `lazy = false` install: its
+      -- plugins were set up before the eager one. A file opened during the
+      -- install fired no BufReadPost -- the install runs inside a VimEnter
+      -- handler, and autocommands do not nest -- and the replay that would
+      -- have caught it had already run. Its plugin never loaded.
+      local stub = test.stub_pack()
+      drop_foreign_verylazy()
+      _G.resonance._reset()
+      _G.resonance.setup()
+
+      local eager, vl, onread = fresh('first-eager'), fresh('first-vl'), fresh('first-onread')
+      local file = vim.fn.tempname()
+      vim.fn.writefile({ 'x' }, file)
+      local log = {}
+      local add = stub.add
+      stub.add = function(specs)
+        local src = type(specs[1]) == 'table' and (specs[1].src or specs[1][1]) or specs[1]
+        if tostring(src):find(eager, 1, true) then
+          -- The clone takes a while, and the user opens a file meanwhile.
+          vim.defer_fn(function() vim.cmd('edit ' .. vim.fn.fnameescape(file)) end, 20)
+          vim.wait(200)
+        end
+        return add(specs)
+      end
+
+      _G.resonance.load({
+        { src = 'https://github.com/test/' .. eager, lazy = false, setup = function() log[#log + 1] = 'eager' end },
+        { src = 'https://github.com/test/' .. vl, event = 'VeryLazy', setup = function() log[#log + 1] = 'vl' end },
+        { src = 'https://github.com/test/' .. onread, event = 'BufReadPost', setup = function() log[#log + 1] = 'onread' end },
+      })
+
+      -- Startup: VeryLazy is scheduled, then the eager trigger installs.
+      api.nvim_exec_autocmds('VimEnter', { group = 'ResonanceVeryLazy', modeline = false })
+      local group = require('resonance.loader.triggers').trigger_group_name(eager)
+      api.nvim_exec_autocmds('VimEnter', { group = group, modeline = false })
+      vim.wait(500, function() return #log >= 3 end, 10)
+
+      local buf = vim.fn.bufnr(file)
+      if buf > 0 then pcall(api.nvim_buf_delete, buf, { force = true }) end
+      vim.fn.delete(file)
+      test.assert_eq(table.concat(log, ','), 'eager,vl,onread',
+        'VeryLazy ran during the install, or the file opened meanwhile lost its plugin')
+    end,
+  },
+
   -- VeryLazy fires by itself ------------------------------------------------
 
   {

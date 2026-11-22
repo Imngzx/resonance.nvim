@@ -131,6 +131,19 @@ end
 ---@param generation integer the generation that armed this fire
 local function fire_verylazy(generation)
   if generation ~= verylazy_generation or verylazy_fired then return end
+
+  -- Not in the middle of an install. On a first start the `lazy = false`
+  -- plugins are still cloning when this is scheduled, and vim.pack runs the
+  -- event loop while it waits: VeryLazy fired then, before the colorscheme
+  -- was set up, and its replay ran before a file opened during the install
+  -- -- whose read events the install had swallowed. It fires once the last
+  -- install is over instead.
+  loader_mod = loader_mod or require('resonance.loader')
+  if loader_mod.installing() then
+    loader_mod.after_installs(function() fire_verylazy(generation) end)
+    return
+  end
+
   verylazy_fired = true
   -- The loader reads this for a spec registered from now on: its VeryLazy
   -- trigger has nothing left to wait for.

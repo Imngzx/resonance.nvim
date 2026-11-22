@@ -50,6 +50,9 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
   `setup({ replay = false })`). Synchronous on purpose: by then every
   handler has registered its triggers, and a scheduled replay would run
   after the `once` triggers were consumed.
+- It waits for running installs: if `loader.installing()`, it queues
+  itself with `loader.after_installs()`. `pack_install` counts the
+  installs and schedules the queue when the count drops to zero.
 - A `fired` flag keeps it to one fire even if both paths reach it. A
   generation counter, bumped by `_reset()`, makes callbacks armed by an
   older module instance do nothing (the test runner builds one per test).

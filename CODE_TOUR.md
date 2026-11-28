@@ -391,7 +391,7 @@ not wait.
    rewrites only its own line every 100 ms (and as each fetch finishes),
    showing `Resonating (done/total)...`.
 
-Keys (`bind_keys`, `ui/init.lua:38`):
+Keys (`bind_keys`, `ui/init.lua`, customizable via `ui.keys`):
 
 | Key | What it does | Where |
 |---|---|---|

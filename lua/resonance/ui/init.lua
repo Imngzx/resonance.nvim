@@ -8,6 +8,8 @@ local registry = require('resonance.registry')
 
 local pcall = pcall
 local pairs = pairs
+local type = type
+local tostring = tostring
 local math_floor = math.floor
 local math_min = math.min
 local vim_keymap_set = vim.keymap.set
@@ -35,26 +37,71 @@ local function resolve_icons(icons)
   }
 end
 
+local function is_valid_key(v)
+  if v == false then return true end
+  if type(v) == 'string' then return v ~= '' end
+  if type(v) == 'table' and #v > 0 then
+    for i = 1, #v do
+      if type(v[i]) ~= 'string' or v[i] == '' then return false end
+    end
+    return true
+  end
+  return false
+end
+
+-- Merge user-supplied keybindings over the defaults. Each action is
+-- independent; a value of `false` disables it, and an invalid value warns
+-- and falls back to the default.
+local function resolve_keys(keys)
+  local resolved = st.default_keys()
+  if keys == nil then return resolved end
+  if type(keys) ~= 'table' then
+    utils.notify('ui.keys must be a table, got ' .. type(keys) .. '; using defaults',
+      vim_log_levels.WARN)
+    return resolved
+  end
+  for action, value in pairs(keys) do
+    if st.DEFAULT_KEYS[action] == nil then
+      utils.notify("Unknown ui.keys action '" .. tostring(action) .. "'", vim_log_levels.WARN)
+    elseif is_valid_key(value) then
+      resolved[action] = value
+    else
+      utils.notify('ui.keys.' .. action ..
+        ' must be a non-empty string, a list of strings, or false; using default',
+        vim_log_levels.WARN)
+    end
+  end
+  return resolved
+end
+
 local function bind_keys(win_close_fn)
-  local map = function(lhs, rhs, desc)
-    vim_keymap_set('n', lhs, rhs, { buf = st.state.buf, nowait = true, silent = true, desc = desc })
+  local keys = st.state.keys or st.DEFAULT_KEYS
+  local map = function(action, rhs, desc)
+    local lhs = keys[action]
+    if not lhs then return end
+    if type(lhs) == 'table' then
+      for i = 1, #lhs do
+        vim_keymap_set('n', lhs[i], rhs, { buf = st.state.buf, nowait = true, silent = true, desc = desc })
+      end
+    else
+      vim_keymap_set('n', lhs, rhs, { buf = st.state.buf, nowait = true, silent = true, desc = desc })
+    end
   end
 
-  map('q', win_close_fn, 'Close')
-  map('<Esc>', win_close_fn, 'Close')
-  map('<CR>', actions.toggle_details, 'Toggle Details')
-  map('r', function()
+  map('close', win_close_fn, 'Close')
+  map('toggle_details', actions.toggle_details, 'Toggle Details')
+  map('resonate', function()
     -- Notify only when a check actually started. While one is in flight the
     -- key stays inert, so holding `r` cannot stack notifications.
     if actions.check_updates_network() then
       utils.notify('Resonating in background...', vim_log_levels.INFO)
     end
   end, 'Fetch Updates')
-  map('u', function()
+  map('update', function()
     local name = st.plugin_at_cursor()
     if name then actions.update_plugins({ name }) end
   end, 'Update Current Plugin')
-  map('U', function()
+  map('update_all', function()
     local names = {}
     for name, _ in pairs(st.state.updates) do names[#names + 1] = name end
     if #names > 0 then
@@ -63,7 +110,7 @@ local function bind_keys(win_close_fn)
       utils.notify('No pending updates.', vim_log_levels.INFO)
     end
   end, 'Update All Pending')
-  map('s', function()
+  map('skip', function()
     local name = st.plugin_at_cursor()
     if name and st.state.updates[name] then
       st.state.updates[name] = nil
@@ -71,11 +118,11 @@ local function bind_keys(win_close_fn)
       utils.notify('Skipped update for ' .. name, vim_log_levels.INFO)
     end
   end, 'Skip Update')
-  map('dd', function()
+  map('uninstall', function()
     local name = st.plugin_at_cursor()
     if name then actions.uninstall_plugin(name) end
   end, 'Uninstall Current Plugin')
-  map('S', function()
+  map('search', function()
     win_close_fn()
     local dir = st.state.info.pack_dir
     local ok_snacks, snacks = pcall(require, 'snacks')
@@ -94,7 +141,7 @@ local function bind_keys(win_close_fn)
       end)
     end
   end, 'Search Sources')
-  map('D', function()
+  map('open_dir', function()
     win_close_fn()
     local dir = st.state.info.pack_dir
     local escaped = vim.fn.fnameescape(dir)
@@ -113,7 +160,7 @@ local function bind_keys(win_close_fn)
       vim_cmd('edit ' .. escaped)
     end
   end, 'Open Dir')
-  map('C', function()
+  map('review', function()
     local pack = utils.get_pack()
     if pack and pack.update then
       win_close_fn()
@@ -122,11 +169,11 @@ local function bind_keys(win_close_fn)
       utils.notify('Native vim.pack is not available.', vim_log_levels.WARN)
     end
   end, 'Native Update Review')
-  map('c', function()
+  map('checkout', function()
     local name = st.plugin_at_cursor()
     if name then actions.checkout_plugin(name) end
   end, 'Checkout Plugin')
-  map('A', function()
+  map('dag', function()
     st.state.view_mode = st.state.view_mode == 'dag' and 'list' or 'dag'
     st.refresh_dag_data()
     render_mod.schedule_render()
@@ -160,6 +207,7 @@ function M.open(ui_config)
   st.state.fetch_total = 0
   st.state.view_mode = 'list'
   st.state.icons = resolve_icons(ui_config.icons)
+  st.state.keys = resolve_keys(ui_config.keys)
   local function load_commits_async()
     -- First pass: fast load with info=false (commits, urls, rev) ~1ms
     local pack = utils.get_pack()

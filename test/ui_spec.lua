@@ -958,6 +958,222 @@ test.run_suite('resonance.ui', {
       l.state.state.buf = nil
     end,
   },
+
+  {
+    name = 'keys: default keybindings are exposed on state',
+    fn = function()
+      local l = live()
+      test.assert_eq(l.state.state.keys.resonate, 'r')
+      test.assert_eq(l.state.state.keys.dag, 'A')
+      test.assert_eq(l.state.state.keys.uninstall, 'dd')
+      test.assert_eq(l.state.state.keys.toggle_details, '<CR>')
+      test.assert_eq(l.state.state.keys.close[1], 'q')
+      test.assert_eq(l.state.state.keys.close[2], '<Esc>')
+    end,
+  },
+
+  {
+    name = 'keys: open binds custom keys, disables false keys, and updates rendered labels',
+    fn = function()
+      local l = live()
+      local ui_mod = require('resonance.ui')
+      local ok, err = pcall(function()
+        ui_mod.open({
+          border = 'rounded',
+          title = 'test',
+          width = 0.65,
+          height = 0.5,
+          backdrop = 0,
+          keys = {
+            dag = 'g',
+            resonate = { 'R', '<C-r>' },
+            skip = false,
+            close = 'Q',
+          },
+        })
+        vim.wait(200)
+
+        local buf = l.state.state.buf
+        test.assert_not_nil(buf)
+
+        local mapped = {}
+        local maps = vim.api.nvim_buf_get_keymap(buf, 'n')
+        for i = 1, #maps do
+          mapped[maps[i].lhs] = true
+        end
+
+        -- Custom bindings are installed; replaced/disabled defaults are not.
+        test.assert_true(mapped['g'], 'custom dag key g was not bound')
+        test.assert_nil(mapped['A'], 'default dag key A should not be bound when overridden')
+        test.assert_true(mapped['R'], 'first key in resonate list was not bound')
+        test.assert_true(mapped['<C-R>'] or mapped['<C-r>'], 'second key in resonate list was not bound')
+        test.assert_nil(mapped['r'], 'default resonate key r should not be bound when overridden')
+        test.assert_nil(mapped['s'], 'disabled skip key s must not be bound')
+        test.assert_true(mapped['Q'], 'custom close key Q was not bound')
+        test.assert_nil(mapped['q'], 'default close key q should not be bound when overridden')
+        test.assert_nil(mapped['<Esc>'], 'default close key <Esc> should not be bound when overridden')
+        -- Unspecified keys keep their defaults.
+        test.assert_true(mapped['u'], 'unspecified update key u should keep default')
+
+        -- Header buttons reflect the custom keys and omit disabled ones.
+        local header = table.concat(vim.api.nvim_buf_get_lines(buf, 0, 10, false), '\n')
+        test.assert_contains(header, '[R] ')
+        test.assert_contains(header, '[g] ')
+        test.assert_contains(header, '[Q] ')
+        test.assert_not_contains(header, 'Skip')
+
+        -- Pressing the custom dag key toggles DAG view and updates the DAG hint.
+        vim.api.nvim_buf_call(buf, function()
+          vim.api.nvim_feedkeys('g', 'x', false)
+        end)
+        vim.wait(100)
+        test.assert_eq(l.state.state.view_mode, 'dag')
+        local dag_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, 10, false), '\n')
+        test.assert_contains(dag_text, 'Press g to return to list view')
+      end)
+
+      if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
+        vim.api.nvim_win_close(l.state.state.win, true)
+      end
+      l.state.state.win = nil
+      l.state.state.buf = nil
+      if not ok then error(err, 0) end
+    end,
+  },
+
+  {
+    name = 'keys: invalid ui.keys entries warn and fall back to defaults',
+    fn = function()
+      local l = live()
+      local ui_mod = require('resonance.ui')
+      local ok, err = pcall(function()
+        local notices = with_capture(function()
+          ui_mod.open({
+            border = 'rounded',
+            title = 'test',
+            width = 0.5,
+            height = 0.5,
+            backdrop = 0,
+            keys = {
+              resonate = '',
+              update = 123,
+              skip = true,
+              close = {},
+              dag = { '' },
+              bogus_action = 'x',
+            },
+          })
+          vim.wait(100)
+        end)
+
+        test.assert_eq(l.state.state.keys.resonate, 'r')
+        test.assert_eq(l.state.state.keys.update, 'u')
+        test.assert_eq(l.state.state.keys.skip, 's')
+        test.assert_eq(l.state.state.keys.close[1], 'q')
+        test.assert_eq(l.state.state.keys.dag, 'A')
+
+        local joined = table.concat(notices, '\n')
+        test.assert_contains(joined, 'ui.keys.resonate')
+        test.assert_contains(joined, 'ui.keys.update')
+        test.assert_contains(joined, 'ui.keys.skip')
+        test.assert_contains(joined, 'ui.keys.close')
+        test.assert_contains(joined, 'ui.keys.dag')
+        test.assert_contains(joined, 'bogus_action')
+      end)
+
+      if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
+        vim.api.nvim_win_close(l.state.state.win, true)
+      end
+      l.state.state.win = nil
+      l.state.state.buf = nil
+      if not ok then error(err, 0) end
+    end,
+  },
+
+  {
+    name = 'keys: non-table ui.keys warns and falls back to defaults',
+    fn = function()
+      local l = live()
+      local ui_mod = require('resonance.ui')
+      local ok, err = pcall(function()
+        local notices = with_capture(function()
+          ui_mod.open({
+            border = 'rounded',
+            title = 'test',
+            width = 0.5,
+            height = 0.5,
+            backdrop = 0,
+            keys = 'not-a-table',
+          })
+          vim.wait(100)
+        end)
+
+        test.assert_eq(l.state.state.keys.resonate, 'r')
+        test.assert_eq(l.state.state.keys.dag, 'A')
+        test.assert_contains(table.concat(notices, '\n'), 'ui.keys must be a table')
+      end)
+
+      if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
+        vim.api.nvim_win_close(l.state.state.win, true)
+      end
+      l.state.state.win = nil
+      l.state.state.buf = nil
+      if not ok then error(err, 0) end
+    end,
+  },
+
+  {
+    name = 'keys: DAG view omits return hint when dag key is disabled',
+    fn = function()
+      local l = live()
+      local buf = vim.api.nvim_create_buf(false, true)
+      local st = l.state.state
+      st.buf = buf
+      st.win = vim.api.nvim_get_current_win()
+      st.view_mode = 'dag'
+      st.keys = l.state.default_keys()
+      st.keys.dag = false
+      st.dag_data = {
+        nodes = { ['some-plugin'] = { name = 'some-plugin', deps = {}, trigger = 'event', loaded = true } },
+        edges = {},
+      }
+
+      require('resonance.ui.render').render()
+      local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n')
+      test.assert_not_contains(text, 'to return to list view')
+
+      st.win = nil
+      st.buf = nil
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end,
+  },
+
+  {
+    name = 'keys: setup() wires ui.keys through to open_ui()',
+    fn = function()
+      local r = require('resonance')
+      local l = live()
+      local orig_keys = r.config.ui.keys
+      local ok, err = pcall(function()
+        r.setup({ ui = { keys = { resonate = 'R', skip = false } } })
+        r.open_ui()
+        vim.wait(100)
+        test.assert_eq(l.state.state.keys.resonate, 'R')
+        test.assert_eq(l.state.state.keys.skip, false)
+        test.assert_eq(l.state.state.keys.update, 'u')
+      end)
+
+      if l.state.state.win and vim.api.nvim_win_is_valid(l.state.state.win) then
+        vim.api.nvim_win_close(l.state.state.win, true)
+      end
+      l.state.state.win = nil
+      l.state.state.buf = nil
+      r.config.ui.keys = orig_keys
+      if not ok then error(err, 0) end
+    end,
+  },
 })
 
 test.print_summary()

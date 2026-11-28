@@ -37,6 +37,7 @@ end
 ---@field height? number
 ---@field backdrop? number
 ---@field icons? ResonanceUIConfigIcons Glyphs for loaded / not loaded / disabled plugins
+---@field keys? ResonanceUIConfigKeys Keybindings for the Resonance UI panel
 
 ---@class ResonanceBuildConfig
 ---@field concurrency? integer How many build commands run at once (default: 2)

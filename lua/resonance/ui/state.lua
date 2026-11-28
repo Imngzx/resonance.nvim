@@ -41,6 +41,56 @@ function M.default_icons()
   }
 end
 
+---Default keybindings for the UI panel. Overridable via `setup({ ui = { keys = { ... } } })`.
+---Each entry is a key string, a list of key strings, or `false` to disable the binding.
+---@alias ResonanceUIKey string|string[]|false
+
+---@class ResonanceUIConfigKeys
+---@field close? ResonanceUIKey Close the UI (default: `{ 'q', '<Esc>' }`)
+---@field toggle_details? ResonanceUIKey Expand/collapse plugin details (default: `'<CR>'`)
+---@field resonate? ResonanceUIKey Check for updates over the network (default: `'r'`)
+---@field update? ResonanceUIKey Update plugin at cursor (default: `'u'`)
+---@field update_all? ResonanceUIKey Update all pending plugins (default: `'U'`)
+---@field skip? ResonanceUIKey Skip pending update for plugin at cursor (default: `'s'`)
+---@field uninstall? ResonanceUIKey Uninstall plugin at cursor (default: `'dd'`)
+---@field search? ResonanceUIKey Search plugin sources (default: `'S'`)
+---@field open_dir? ResonanceUIKey Open pack directory (default: `'D'`)
+---@field review? ResonanceUIKey Open native vim.pack update review (default: `'C'`)
+---@field checkout? ResonanceUIKey Checkout branch/tag/commit for plugin at cursor (default: `'c'`)
+---@field dag? ResonanceUIKey Toggle DAG view (default: `'A'`)
+
+---@type table<string, ResonanceUIKey>
+M.DEFAULT_KEYS = {
+  close = { 'q', '<Esc>' },
+  toggle_details = '<CR>',
+  resonate = 'r',
+  update = 'u',
+  update_all = 'U',
+  skip = 's',
+  uninstall = 'dd',
+  search = 'S',
+  open_dir = 'D',
+  review = 'C',
+  checkout = 'c',
+  dag = 'A',
+}
+
+---Copy of the default keybindings, so callers cannot mutate the shared table.
+---@return table<string, ResonanceUIKey>
+function M.default_keys()
+  local copy = {}
+  for k, v in pairs(M.DEFAULT_KEYS) do
+    if type(v) == 'table' then
+      local list = {}
+      for i = 1, #v do list[i] = v[i] end
+      copy[k] = list
+    else
+      copy[k] = v
+    end
+  end
+  return copy
+end
+
 ---@class ResonancePluginSOA
 ---@field name string[]
 ---@field type string[]
@@ -79,6 +129,7 @@ end
 ---@field dag_data table    -- { nodes: table<string, {name:string, deps:string[], trigger:string, loaded:boolean}>, edges: table<string, string[]> }
 ---@field replay_info table<string, {event:string, chain:string[], replayed:boolean}>
 ---@field icons ResonanceUIConfigIcons
+---@field keys table<string, ResonanceUIKey>
 ---@field details_task? vim.async.Task  -- cancellable task for the deferred details pass
 M.state = {
   buf = nil,
@@ -104,6 +155,7 @@ M.state = {
   view_mode = 'list',
   dag_data = { nodes = {}, edges = {} },
   icons = M.default_icons(),
+  keys = M.default_keys(),
 }
 
 -- Reset all UI state (for testing)
@@ -132,6 +184,7 @@ function M._reset()
   M.state.dag_data = { nodes = {}, edges = {} }
   M.state.replay_info = {}
   M.state.icons = M.default_icons()
+  M.state.keys = M.default_keys()
 end
 
 function M.init_hls()

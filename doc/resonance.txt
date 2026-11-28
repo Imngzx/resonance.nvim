@@ -437,20 +437,37 @@ The UI options are set through `resonance.setup()`:
 
 5.1 Key Mappings                                   *resonance-ui-keys*
 
-In the Resonance UI buffer:
+In the Resonance UI buffer (action name in parentheses):
 
-    <CR>         Toggle plugin details (expanded view)
-    r            Check for updates (network)
-    u            Update plugin under cursor
-    U            Update all plugins with pending updates
-    s            Skip update for plugin under cursor
-    c            Checkout branch/tag/commit (prompts for target)
-    dd           Uninstall plugin under cursor
-    S            Search the source of all plugins (grep in the pack dir)
-    D            Open the pack directory in an explorer
-    C            Run native vim.pack.update (offline)
-    A            Toggle DAG view (dependency graph)
-    q / <Esc>    Close UI
+    <CR>         Toggle plugin details (toggle_details)
+    r            Check for updates over the network (resonate)
+    u            Update plugin under cursor (update)
+    U            Update all plugins with pending updates (update_all)
+    s            Skip update for plugin under cursor (skip)
+    c            Checkout branch/tag/commit (checkout)
+    dd           Uninstall plugin under cursor (uninstall)
+    S            Search the source of all plugins (search)
+    D            Open the pack directory in an explorer (open_dir)
+    C            Run native vim.pack.update, offline (review)
+    A            Toggle DAG view (dag)
+    q / <Esc>    Close UI (close)
+
+Any binding can be overridden or disabled via `ui.keys` in |resonance.setup()|.
+Each entry accepts a key string, a list of key strings, or `false` to disable
+the mapping (disabled actions are also hidden from the header bar). Unspecified
+actions keep their defaults; invalid values warn and fall back to the default: >lua
+
+    resonance.setup({
+      ui = {
+        keys = {
+          close = 'q',              -- drop <Esc>, keep only q
+          resonate = { 'r', 'R' },  -- bind multiple keys
+          dag = 'g',                -- remap DAG toggle
+          skip = false,             -- disable skip
+        },
+      },
+    })
+<
 
 `u`, `s`, `c`, `dd` and <CR> act on the plugin whose row, commit line or
 detail line the cursor is on. On a blank line or a section title they do

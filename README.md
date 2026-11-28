@@ -80,6 +80,7 @@ resonance.setup({
     border = 'rounded',
     width = 0.65,
     height = 0.75,
+    -- keys = { close = 'q', dag = 'g', skip = false }, -- :h resonance-ui-keys
   },
   build = {
     concurrency = 2, -- build commands that run at once
@@ -466,6 +467,8 @@ fire `VeryLazy` themselves; delete the call from your config.
 - `s` : Skip plugin update.
 - `D` : Open plugin directory (snacks explorer / neo-tree / netrw).
 - `C` : Open vim.pack's own update review (offline).
+
+All panel keybindings can be customized or disabled via `ui.keys` in `setup()` (`:h resonance-ui-keys`).
 - `q` / Esc : Quit.
 
 ## License

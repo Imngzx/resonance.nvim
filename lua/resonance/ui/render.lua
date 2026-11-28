@@ -54,20 +54,26 @@ local TYPE_LABELS = {
   core = '󰒇 core',
 }
 
--- Static button definitions (never change)
+-- Static button definitions (key labels are resolved from state.keys on render)
 local BUTTONS = {
-  { 'r', '󱑽 Resonate', 'ResoBtnResonateKey', 'ResoBtnResonateText' },
-  { 'A', 'DAG', 'ResoBtnDAGKey', 'ResoBtnDAGText' },
-  { 'u', 'Update', 'ResoBtnUpdateKey', 'ResoBtnUpdateText' },
-  { 'U', 'Update All', 'ResoBtnUpdateAllKey', 'ResoBtnUpdateAllText' },
-  { 'dd', 'Uninstall', 'ResoBtnUninstallKey', 'ResoBtnUninstallText' },
-  { 'c', 'Checkout', 'ResoBtnCheckoutKey', 'ResoBtnCheckoutText' },
-  { 'C', 'Review', 'ResoBtnReviewKey', 'ResoBtnReviewText' },
-  { 's', 'Skip', 'ResoBtnSkipKey', 'ResoBtnSkipText' },
-  { 'S', 'Search', 'ResoBtnSearchKey', 'ResoBtnSearchText' },
-  { 'D', 'Dir', 'ResoBtnDirKey', 'ResoBtnDirText' },
-  { 'q', 'Quit', 'ResoBtnQuitKey', 'ResoBtnQuitText' },
+  { 'resonate', '󱑽 Resonate', 'ResoBtnResonateKey', 'ResoBtnResonateText' },
+  { 'dag', 'DAG', 'ResoBtnDAGKey', 'ResoBtnDAGText' },
+  { 'update', 'Update', 'ResoBtnUpdateKey', 'ResoBtnUpdateText' },
+  { 'update_all', 'Update All', 'ResoBtnUpdateAllKey', 'ResoBtnUpdateAllText' },
+  { 'uninstall', 'Uninstall', 'ResoBtnUninstallKey', 'ResoBtnUninstallText' },
+  { 'checkout', 'Checkout', 'ResoBtnCheckoutKey', 'ResoBtnCheckoutText' },
+  { 'review', 'Review', 'ResoBtnReviewKey', 'ResoBtnReviewText' },
+  { 'skip', 'Skip', 'ResoBtnSkipKey', 'ResoBtnSkipText' },
+  { 'search', 'Search', 'ResoBtnSearchKey', 'ResoBtnSearchText' },
+  { 'open_dir', 'Dir', 'ResoBtnDirKey', 'ResoBtnDirText' },
+  { 'close', 'Quit', 'ResoBtnQuitKey', 'ResoBtnQuitText' },
 }
+
+local function primary_key(val)
+  if type(val) == 'string' then return val end
+  if type(val) == 'table' then return val[1] end
+  return nil
+end
 
 -- The startup time is latched by resonance.stats() itself, so there is
 -- nothing to cache here: reading it is cheap and always current.
@@ -168,8 +174,13 @@ local function build_dag_content()
   nl()
   add('  Dependency Graph (DAG) & Event Replay', 'Title')
   nl()
-  add('  Press A to return to list view', 'Comment')
-  nl(); nl()
+  local keys = st.state.keys or st.DEFAULT_KEYS
+  local dag_key = primary_key(keys.dag)
+  if dag_key then
+    add('  Press ' .. dag_key .. ' to return to list view', 'Comment')
+    nl()
+  end
+  nl()
 
   for i = 1, #sorted_names do
     local name = sorted_names[i]
@@ -239,18 +250,22 @@ local function build_content()
   -- Static header (buttons + startuptime)
   nl()
   local cur_w = 2
+  local keys = st.state.keys or st.DEFAULT_KEYS
   add('  ')
   for i = 1, #BUTTONS do
     local btn = BUTTONS[i]
-    local k, t, hl_k, hl_t = btn[1], btn[2], btn[3], btn[4]
-    local b_len = 8 + #t
-    if cur_w + b_len > st.state.win_width - 2 then
-      nl(); nl(); add('  '); cur_w = 2
+    local k = primary_key(keys[btn[1]])
+    if k then
+      local t, hl_k, hl_t = btn[2], btn[3], btn[4]
+      local b_len = 7 + #k + #t
+      if cur_w + b_len > st.state.win_width - 2 then
+        nl(); nl(); add('  '); cur_w = 2
+      end
+      add(' [' .. k .. '] ', hl_k)
+      add(t .. ' ', hl_t)
+      add('  ')
+      cur_w = cur_w + b_len
     end
-    add(' [' .. k .. '] ', hl_k)
-    add(t .. ' ', hl_t)
-    add('  ')
-    cur_w = cur_w + b_len
   end
   nl(); nl()
 

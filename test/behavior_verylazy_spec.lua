@@ -60,9 +60,9 @@ local function read_buffer()
   local file = vim.fn.tempname()
   vim.fn.writefile({ 'x' }, file)
   api.nvim_buf_set_name(buf, file)
-  api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
-  api.nvim_exec_autocmds('BufReadPost', { buffer = buf, modeline = false })
-  api.nvim_exec_autocmds('BufEnter', { buffer = buf, modeline = false })
+  api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
+  api.nvim_exec_autocmds('BufReadPost', { buf = buf, modeline = false })
+  api.nvim_exec_autocmds('BufEnter', { buf = buf, modeline = false })
   return buf
 end
 

@@ -280,7 +280,7 @@ function M.open(ui_config)
   -- so it must not outlive the buffer. A BufWipeout autocmd on the UI
   -- buffer catches every way of closing it.
   api.nvim_create_autocmd('BufWipeout', {
-    buffer = st.state.buf,
+    buf = st.state.buf,
     once = true,
     callback = function(args)
       -- Only the buffer of the panel that is open now may clear the state.

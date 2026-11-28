@@ -44,9 +44,9 @@ test.run_suite('resonance.behavior.replay', {
       api.nvim_buf_set_name(buf, file)
 
       -- The read events happen FIRST, before the trigger exists.
-      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
-      api.nvim_exec_autocmds('BufReadPost', { buffer = buf, modeline = false })
-      api.nvim_exec_autocmds('BufEnter', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPost', { buf = buf, modeline = false })
+      api.nvim_exec_autocmds('BufEnter', { buf = buf, modeline = false })
 
       -- The plugin registers its trigger NOW, after those events fired.
       _G.resonance.load({
@@ -84,9 +84,9 @@ test.run_suite('resonance.behavior.replay', {
       api.nvim_buf_set_name(buf, file)
 
       -- The read events happen FIRST, before the trigger exists.
-      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
-      api.nvim_exec_autocmds('BufReadPost', { buffer = buf, modeline = false })
-      api.nvim_exec_autocmds('BufEnter', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPost', { buf = buf, modeline = false })
+      api.nvim_exec_autocmds('BufEnter', { buf = buf, modeline = false })
 
       -- The plugin registers its BufEnter-only trigger NOW.
       _G.resonance.load({
@@ -110,7 +110,7 @@ test.run_suite('resonance.behavior.replay', {
       test.stub_pack()
       local l = live()
       local buf = api.nvim_create_buf(false, true)
-      local seen = recorder('BufReadPre', { group_name = 'ResonanceReplayOnce', buffer = buf })
+      local seen = recorder('BufReadPre', { group_name = 'ResonanceReplayOnce', buf = buf })
       local setup_ran = false
 
       _G.resonance.load({
@@ -119,7 +119,7 @@ test.run_suite('resonance.behavior.replay', {
         setup = function() setup_ran = true end,
       })
 
-      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
       vim.wait(100)
 
       -- The install must have succeeded, or the load aborted before the
@@ -163,10 +163,10 @@ test.run_suite('resonance.behavior.replay', {
       -- other plugin's BufReadPost handler: an `:e!` ran them twice.
       test.stub_pack()
       local buf = api.nvim_create_buf(false, true)
-      local seen = recorder('BufReadPost', { group_name = 'ResonanceReplayFired', buffer = buf })
+      local seen = recorder('BufReadPost', { group_name = 'ResonanceReplayFired', buf = buf })
       local setup_ran = false
 
-      api.nvim_exec_autocmds('BufReadPost', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPost', { buf = buf, modeline = false })
       test.assert_eq(count(seen), 1)
 
       _G.resonance.load({
@@ -176,7 +176,7 @@ test.run_suite('resonance.behavior.replay', {
       })
 
       -- A FileType load replays BufReadPost, which already ran here.
-      api.nvim_exec_autocmds('FileType', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('FileType', { buf = buf, modeline = false })
       vim.wait(100)
 
       test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
@@ -324,12 +324,12 @@ test.run_suite('resonance.behavior.replay', {
       local buf_a = api.nvim_create_buf(false, true)
       local buf_b = api.nvim_create_buf(false, true)
 
-      local seen_a = recorder('BufReadPost', { group_name = 'ResonanceReplayBufA', buffer = buf_a })
-      local seen_b = recorder('BufReadPost', { group_name = 'ResonanceReplayBufB', buffer = buf_b })
+      local seen_a = recorder('BufReadPost', { group_name = 'ResonanceReplayBufA', buf = buf_a })
+      local seen_b = recorder('BufReadPost', { group_name = 'ResonanceReplayBufB', buf = buf_b })
       local setup_ran = false
 
       -- Buffer A's read already happened.
-      api.nvim_exec_autocmds('BufReadPost', { buffer = buf_a, modeline = false })
+      api.nvim_exec_autocmds('BufReadPost', { buf = buf_a, modeline = false })
       test.assert_eq(count(seen_a), 1)
 
       _G.resonance.load({
@@ -339,7 +339,7 @@ test.run_suite('resonance.behavior.replay', {
       })
 
       -- Buffer B is a different buffer, so A's state must not apply to it.
-      api.nvim_exec_autocmds('BufNewFile', { buffer = buf_b, modeline = false })
+      api.nvim_exec_autocmds('BufNewFile', { buf = buf_b, modeline = false })
       vim.wait(100)
 
       test.assert_true(setup_ran, 'the plugin never loaded: the replay block was never reached')
@@ -361,14 +361,14 @@ test.run_suite('resonance.behavior.replay', {
       local group = scratch_group('ResonanceReplayDepth')
       api.nvim_create_autocmd('BufReadPre', {
         group = group,
-        buffer = buf,
+        buf = buf,
         nested = true,
         callback = function()
           depth = depth + 1
           if depth > max_depth then max_depth = depth end
           -- Re-enter the read pipeline, the way a picker opening a file does.
           if depth < 40 then
-            pcall(function() api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false }) end)
+            pcall(function() api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false }) end)
           end
         end,
       })
@@ -379,7 +379,7 @@ test.run_suite('resonance.behavior.replay', {
         setup = function() setup_ran = true end,
       })
 
-      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
       vim.wait(200)
 
       -- Without a successful install the load aborts before the replay

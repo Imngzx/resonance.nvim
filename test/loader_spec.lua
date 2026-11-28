@@ -219,8 +219,8 @@ test.run_suite('resonance.loader.init', {
       -- tables for the whole session.
       local api = vim.api
       local buf = api.nvim_create_buf(false, true)
-      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
-      api.nvim_exec_autocmds('BufEnter', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
+      api.nvim_exec_autocmds('BufEnter', { buf = buf, modeline = false })
 
       local live_loader = require('resonance.loader')
       test.assert_true(live_loader.has_fired('BufReadPre', buf),

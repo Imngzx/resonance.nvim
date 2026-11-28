@@ -318,28 +318,31 @@ function M.register_keys(config, load_now, name)
     elseif lhs then
       -- Preserve original opts for restoration (including buffer-local info)
       local restore_opts = vim.tbl_extend('keep', {}, opts)
-      -- opts.buffer can be true, meaning "the current buffer". The delete
-      -- API wants a buffer id, so true has to be resolved to one.
+      -- opts.buffer (deprecated in Nvim 0.12 in favor of opts.buf) is still
+      -- accepted from user specs, and normalized to opts.buf before calling
+      -- vim.keymap.set so Resonance itself never passes the deprecated key.
       --
       -- A buffer of false means the mapping is global, so it is not a
       -- buffer-local mapping at all. Treating it as one would make the
       -- lookup below ask for the keymap of a buffer that does not exist.
-      local target_buf = opts.buf or opts.buffer
+      local target_buf = opts.buf
+      if target_buf == nil then target_buf = opts.buffer end
+      if opts.buffer ~= nil then
+        opts = vim.tbl_extend('force', {}, opts, { buf = target_buf })
+        opts.buffer = nil
+        restore_opts.buf = target_buf
+        restore_opts.buffer = nil
+      end
       if target_buf == true or target_buf == 0 then
-        -- A buffer of 0 means the current buffer as well. It has to be
+        -- A buffer of 0 or true means the current buffer. It has to be
         -- resolved to an id here: the mapping is set against the buffer
         -- that is current now, so the teardown has to delete from that
         -- same buffer and not from whatever is current later.
         target_buf = api.nvim_get_current_buf()
         -- The resolved id has to go back into the options, so the keymap is
         -- set and deleted against the same buffer.
-        if opts.buffer ~= nil then
-          opts = vim.tbl_extend('force', {}, opts, { buffer = target_buf })
-          restore_opts = vim.tbl_extend('force', {}, restore_opts, { buffer = target_buf })
-        else
-          opts = vim.tbl_extend('force', {}, opts, { buf = target_buf })
-          restore_opts = vim.tbl_extend('force', {}, restore_opts, { buf = target_buf })
-        end
+        opts = vim.tbl_extend('force', {}, opts, { buf = target_buf })
+        restore_opts = vim.tbl_extend('force', {}, restore_opts, { buf = target_buf })
       end
       local is_buffer = type(target_buf) == 'number'
 

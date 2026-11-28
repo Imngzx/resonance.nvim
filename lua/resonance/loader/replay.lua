@@ -342,13 +342,13 @@ function M.after_load(ev, snap)
             local pattern = (ev.match ~= nil and ev.match ~= '') and ev.match or '*'
             fire_new_groups(name, { pattern = pattern }, ev.data, existing, nil)
           elseif buf and api.nvim_buf_is_valid(buf) then
-            fire_new_groups(name, { buffer = buf }, ev.data, existing, buf)
+            fire_new_groups(name, { buf = buf }, ev.data, existing, buf)
           end
         -- A predecessor is replayed only when it ran, or is running, for
         -- this buffer. When a plugin loads from BufReadPre, BufReadPost is
         -- still to come for this read and fires naturally.
         elseif buf and api.nvim_buf_is_valid(buf) and predecessor_ran(name, buf) then
-          fire_new_groups(name, { buffer = buf }, nil, existing, buf)
+          fire_new_groups(name, { buf = buf }, nil, existing, buf)
         end
       end
     end

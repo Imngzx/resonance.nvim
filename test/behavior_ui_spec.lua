@@ -349,7 +349,7 @@ test.run_suite('resonance.behavior.ui', {
       })
 
       local buf = api.nvim_create_buf(false, true)
-      api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
       vim.wait(300)
 
       -- Without a successful install the load aborts before the replay
@@ -390,7 +390,7 @@ test.run_suite('resonance.behavior.ui', {
       })
 
       local buf = api.nvim_create_buf(false, true)
-      local ok, err = pcall(api.nvim_exec_autocmds, 'BufReadPre', { buffer = buf, modeline = false })
+      local ok, err = pcall(api.nvim_exec_autocmds, 'BufReadPre', { buf = buf, modeline = false })
       vim.wait(300)
 
       -- Without a successful install the load aborts before the replay
@@ -420,7 +420,7 @@ test.run_suite('resonance.behavior.ui', {
 
       local buf = api.nvim_create_buf(false, true)
       local notices = capture_and_wait(function()
-        api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+        api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
       end, 1000)
 
       test.assert_true(noticed(notices, 'install-fails'),
@@ -445,7 +445,7 @@ test.run_suite('resonance.behavior.ui', {
 
       local buf = api.nvim_create_buf(false, true)
       capture_and_wait(function()
-        api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+        api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
       end, 1000)
 
       local state = l.loader._internal.plugin_state['install-not-loaded']
@@ -489,7 +489,7 @@ test.run_suite('resonance.behavior.ui', {
 
       local buf = api.nvim_create_buf(false, true)
       local notices = capture_and_wait(function()
-        api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+        api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
       end, 1000)
 
       test.assert_true(noticed(notices, 'install-missing-dir'),
@@ -589,10 +589,10 @@ test.run_suite('resonance.behavior.ui', {
 
       api.nvim_create_autocmd('BufReadPost', {
         group = group,
-        buffer = buf,
+        buf = buf,
         callback = function() end,
       })
-      api.nvim_exec_autocmds('BufReadPost', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPost', { buf = buf, modeline = false })
       vim.wait(100)
 
       test.assert_true(l.loader.has_fired('BufReadPost', buf))
@@ -624,7 +624,7 @@ test.run_suite('resonance.behavior.ui', {
         local name = events[i]
         api.nvim_create_autocmd(name, {
           group = group,
-          buffer = buf,
+          buf = buf,
           callback = function() counts[name] = counts[name] + 1 end,
         })
       end
@@ -634,7 +634,7 @@ test.run_suite('resonance.behavior.ui', {
       -- the buffer is set up as well), so the assertion is on the delta the
       -- replay causes, not on an absolute count.
       for i = 1, #events do
-        api.nvim_exec_autocmds(events[i], { buffer = buf, modeline = false })
+        api.nvim_exec_autocmds(events[i], { buf = buf, modeline = false })
       end
       vim.wait(100)
 

@@ -152,7 +152,7 @@ function M.recorder(event, opts)
   local group = opts.group or M.scratch_group(opts.group_name or 'ResonanceBehavior')
   api.nvim_create_autocmd(event, {
     group = group,
-    buffer = opts.buffer,
+    buf = opts.buf or opts.buffer,
     callback = function(args)
       seen[#seen + 1] = { event = args.event, buf = args.buf, match = args.match }
     end,

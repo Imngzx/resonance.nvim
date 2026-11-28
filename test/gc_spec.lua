@@ -123,7 +123,7 @@ test.run_suite('resonance.gc', {
       local events = { 'BufReadPre', 'BufReadPost', 'BufEnter', 'FileType' }
       local function fire_all(buf)
         for i = 1, #events do
-          api.nvim_exec_autocmds(events[i], { buffer = buf, modeline = false })
+          api.nvim_exec_autocmds(events[i], { buf = buf, modeline = false })
         end
       end
 
@@ -187,7 +187,7 @@ test.run_suite('resonance.gc', {
       local buf = api.nvim_create_buf(true, false)
       api.nvim_buf_set_name(buf, vim.fn.tempname() .. '-gc-replay.txt')
       api.nvim_set_current_buf(buf)
-      api.nvim_exec_autocmds('BufEnter', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufEnter', { buf = buf, modeline = false })
 
       -- Registered after the buffer's BufEnter: it has not seen it, so the
       -- replay owes it exactly one run.
@@ -195,7 +195,7 @@ test.run_suite('resonance.gc', {
       local group = api.nvim_create_augroup('ResonanceGcLateGroup', { clear = true })
       api.nvim_create_autocmd('BufEnter', {
         group = group,
-        buffer = buf,
+        buf = buf,
         callback = function() runs = runs + 1 end,
       })
 

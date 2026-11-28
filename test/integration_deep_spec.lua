@@ -37,7 +37,7 @@ test.run_suite('resonance.loader.deep', {
       local setup_ran = false
       vim.api.nvim_create_autocmd('BufReadPre', {
         group = group,
-        buffer = buf,
+        buf = buf,
         callback = function() fired = fired + 1 end,
       })
 
@@ -47,7 +47,7 @@ test.run_suite('resonance.loader.deep', {
         setup = function() setup_ran = true end,
       })
 
-      vim.api.nvim_exec_autocmds('BufReadPre', { buffer = buf, modeline = false })
+      vim.api.nvim_exec_autocmds('BufReadPre', { buf = buf, modeline = false })
       vim.wait(100)
 
       -- Without a successful install the load aborts before the replay
@@ -75,7 +75,7 @@ test.run_suite('resonance.loader.deep', {
 
       -- Buffer A: its read already happened.
       local buf_a = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_exec_autocmds('BufReadPost', { buffer = buf_a, modeline = false })
+      vim.api.nvim_exec_autocmds('BufReadPost', { buf = buf_a, modeline = false })
       test.assert_eq(counts[buf_a], 1)
 
       _G.resonance.load({
@@ -86,7 +86,7 @@ test.run_suite('resonance.loader.deep', {
 
       -- Buffer B: a brand new file, its read has not happened yet.
       local buf_b = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_exec_autocmds('BufNewFile', { buffer = buf_b, modeline = false })
+      vim.api.nvim_exec_autocmds('BufNewFile', { buf = buf_b, modeline = false })
       vim.wait(100)
 
       -- Without a successful install the load aborts before the replay

@@ -261,7 +261,7 @@ test.run_suite('resonance.behavior.triggers', {
       })
 
       local buf = api.nvim_create_buf(false, true)
-      api.nvim_exec_autocmds('BufReadPost', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufReadPost', { buf = buf, modeline = false })
       vim.wait(200)
 
       test.assert_true(ran, 'the primary BufReadPost event did not load the plugin')
@@ -300,7 +300,7 @@ test.run_suite('resonance.behavior.triggers', {
       })
 
       local buf = api.nvim_create_buf(false, true)
-      api.nvim_exec_autocmds('BufNewFile', { buffer = buf, modeline = false })
+      api.nvim_exec_autocmds('BufNewFile', { buf = buf, modeline = false })
       vim.wait(200)
 
       test.assert_true(ran_bread, 'the BufNewFile event did not load the plugin')

@@ -156,6 +156,8 @@ function M.open(ui_config)
   st.state.expanded = {}
   st.state.pack_details = {}
   st.state.pending_count = 0
+  st.state.fetch_done = 0
+  st.state.fetch_total = 0
   st.state.view_mode = 'list'
   st.state.icons = resolve_icons(ui_config.icons)
   local function load_commits_async()

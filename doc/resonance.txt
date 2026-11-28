@@ -472,7 +472,8 @@ with them set -- a bare dotfiles repository, for example -- still checks
 and checks out the plugin's own repository.
 
                                                     *resonance-resonate-config*
-`r` (Resonate) runs one `git fetch` per plugin. A fetch is mostly waiting
+`r` (Resonate) runs one `git fetch` per plugin, showing fetch progress
+(`done/total`) on the spinner line while checking. A fetch is mostly waiting
 on the network, so how many run at once sets how long the check takes.
 The limit goes in the `resonate` section of |resonance.setup()|: >lua
 

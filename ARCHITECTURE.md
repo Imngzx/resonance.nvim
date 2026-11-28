@@ -185,7 +185,8 @@ utils.lua: get_pack(), notify(), event normalization, git-file hash
   `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`.
 - **Rendering:** `render()` rebuilds the whole buffer from module-level
   tables that are reused across renders (`table.clear`). The spinner
-  rewrites only its own line every 100 ms.
+  rewrites only its own line every 100 ms (and as each fetch completes),
+  showing fetch progress (`done/total`) while Resonating.
 
 ## Flow 6: `import(mod)` (opt-in)
 

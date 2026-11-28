@@ -388,7 +388,8 @@ not wait.
    missing is read from the git files in chunks of 11 plugins.
 4. **Render.** `render.lua` rebuilds the whole buffer each time, reusing
    the same Lua tables (`table.clear`). While checking, the spinner
-   rewrites only its own line every 100 ms.
+   rewrites only its own line every 100 ms (and as each fetch finishes),
+   showing `Resonating (done/total)...`.
 
 Keys (`bind_keys`, `ui/init.lua:38`):
 

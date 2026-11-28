@@ -28,6 +28,15 @@ M.render_scheduled = false
 
 local SPINNER_FRAMES = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
 
+local function spinner_text()
+  local frame = SPINNER_FRAMES[st.state.spinner_frame]
+  local total = st.state.fetch_total or 0
+  if total > 0 then
+    return string_format('  %s Resonating (%d/%d)...', frame, st.state.fetch_done or 0, total)
+  end
+  return '  ' .. frame .. ' Resonating...'
+end
+
 local _spaces_cache
 _spaces_cache = setmetatable({}, {
   __index = function(t, n)
@@ -425,7 +434,7 @@ local function build_content()
     if st.state.checking then
       add('  Updates Available (0)', 'Title')
       st.state.spinner_line_idx = line_idx
-      add('  ' .. SPINNER_FRAMES[st.state.spinner_frame] .. ' Resonating...', 'DiagnosticInfo')
+      add(spinner_text(), 'DiagnosticInfo')
       nl()
     else
       add('  No pending updates.', 'Comment')
@@ -435,7 +444,7 @@ local function build_content()
     add(string_format('  Updates Available (%d)', p_idx), 'Title')
     st.state.spinner_line_idx = line_idx
     if st.state.checking then
-      add('  ' .. SPINNER_FRAMES[st.state.spinner_frame] .. ' Resonating...', 'DiagnosticInfo')
+      add(spinner_text(), 'DiagnosticInfo')
     end
     nl()
     for i = 1, p_idx do draw_plugin(pending_idx[i], true) end
@@ -536,7 +545,7 @@ function M.update_spinner()
 
   local text = string_format('  Updates Available (%d)', p_idx)
   local title_len = #text
-  text = text .. '  ' .. SPINNER_FRAMES[st.state.spinner_frame] .. ' Resonating...'
+  text = text .. spinner_text()
 
   vbo[buf].modifiable = true
   nvim_buf_set_lines(buf, row, row + 1, false, { text })

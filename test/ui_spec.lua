@@ -491,6 +491,170 @@ test.run_suite('resonance.ui', {
   },
 
   {
+    name = 'actions: check_updates_network tracks fetch progress and renders it on the spinner',
+    fn = function()
+      local held = {}
+      local u = live().utils
+      local orig_get_pack = u.get_pack
+      u.get_pack = function()
+        return { get = function() return {} end }
+      end
+
+      local ok, err = pcall(h.with_system, function(cmd, _, cb)
+        if cmd[1] == 'git' and cmd[2] == 'fetch' then
+          held[#held + 1] = cb
+        elseif cb then
+          cb(h.completed(0))
+        end
+      end, function(l)
+        local buf = vim.api.nvim_create_buf(false, true)
+        local win = vim.api.nvim_get_current_win()
+        local st = l.state.state
+        st.buf = buf
+        st.win = win
+        -- One disabled plugin (empty path) is excluded from fetch_total.
+        st.info = {
+          total = 3,
+          loaded = 0,
+          plugins = {
+            name = { 'disabled-plugin', 'plugin-a', 'plugin-b' },
+            type = { 'opt', 'opt', 'opt' },
+            path = { '', '/tmp', '/tmp' },
+            loaded = { false, true, false },
+            disabled = { true, false, false },
+            trigger = { 'none', 'event', 'cmd' },
+          },
+        }
+        st.checking = false
+
+        local function spinner_line()
+          local row = st.spinner_line_idx
+          if not row then return nil end
+          return vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1]
+        end
+
+        l.actions.check_updates_network()
+        test.assert_true(vim.wait(500, function() return #held == 2 end, 10),
+          'both fetches must start')
+        test.assert_eq(st.fetch_total, 2)
+        test.assert_eq(st.fetch_done, 0)
+        test.assert_contains(spinner_line() or '', 'Resonating (0/2)...')
+
+        -- Completing one fetch advances the counter and updates the spinner line.
+        held[1](h.completed(0))
+        test.assert_true(vim.wait(500, function()
+          local line = spinner_line()
+          return st.fetch_done == 1 and line ~= nil and line:find('Resonating (1/2)...', 1, true) ~= nil
+        end, 10), 'spinner line did not show 1/2: ' .. tostring(spinner_line()))
+
+        -- Completing the second finishes the check and resets the counters.
+        held[2](h.completed(0))
+        test.assert_true(vim.wait(1000, function() return not st.checking end, 10),
+          'the check did not finish')
+        test.assert_eq(st.fetch_done, 0)
+        test.assert_eq(st.fetch_total, 0)
+
+        st.win = nil
+        st.buf = nil
+        if vim.api.nvim_buf_is_valid(buf) then
+          vim.api.nvim_buf_delete(buf, { force = true })
+        end
+      end)
+      u.get_pack = orig_get_pack
+      if not ok then error(err, 0) end
+    end,
+  },
+
+  {
+    name = 'actions: check_updates_network updates progress from a real fast-event callback without E5560',
+    fn = function()
+      -- h.with_system invokes callbacks synchronously on the main loop, which
+      -- hides E5560 fast-event violations. Run a real vim.system (`git fetch`
+      -- on a throwaway repo) with an open UI buffer so run:on_complete executes
+      -- in a genuine libuv fast-event context.
+      local dir = h.make_git_repo()
+      local l = live()
+      local orig_get_pack = l.utils.get_pack
+      l.utils.get_pack = function()
+        return { get = function() return {} end }
+      end
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      local st = l.state.state
+      local finished, errmsg
+      local ok, err = pcall(function()
+        st.buf = buf
+        st.win = vim.api.nvim_get_current_win()
+        st.info = {
+          total = 1,
+          loaded = 0,
+          plugins = {
+            name = { 'fast-event-plugin' },
+            type = { 'opt' },
+            path = { dir },
+            loaded = { false },
+            disabled = { false },
+            trigger = { 'event' },
+          },
+        }
+        st.checking = false
+        vim.v.errmsg = ''
+
+        l.actions.check_updates_network()
+        finished = vim.wait(3000, function() return not st.checking end, 20)
+        -- Drain a tick so any error re-raised on vim.schedule by vim.async
+        -- lands in v:errmsg even if the check itself still finished.
+        vim.wait(50)
+        errmsg = vim.v.errmsg
+      end)
+
+      l.utils.get_pack = orig_get_pack
+      st.checking = false
+      st.win = nil
+      st.buf = nil
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+      vim.fn.delete(dir, 'rf')
+      if not ok then error(err, 0) end
+
+      test.assert_true(finished, 'check_updates_network stalled (fast-event error in on_complete)')
+      test.assert_eq(errmsg, '', 'uncaught fast-event error: ' .. tostring(errmsg))
+      test.assert_eq(st.fetch_done, 0)
+      test.assert_eq(st.fetch_total, 0)
+    end,
+  },
+
+  {
+    name = 'render: spinner omits the count when fetch_total is zero',
+    fn = function()
+      local l = live()
+      local buf = vim.api.nvim_create_buf(false, true)
+      local st = l.state.state
+      st.buf = buf
+      st.win = vim.api.nvim_get_current_win()
+      st.info = { total = 0, loaded = 0, plugins = { name = {}, type = {}, path = {}, loaded = {}, trigger = {} } }
+      st.checking = true
+      st.fetch_done = 0
+      st.fetch_total = 0
+
+      require('resonance.ui.render').render()
+      local row = st.spinner_line_idx
+      test.assert_not_nil(row)
+      local line = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1]
+      test.assert_contains(line, 'Resonating...')
+      test.assert_not_contains(line, 'Resonating (')
+
+      st.checking = false
+      st.win = nil
+      st.buf = nil
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end,
+  },
+
+  {
     name = 'actions: check_updates_network skips plugins without a path',
     fn = function()
       -- A plugin disabled via `cond = false` has no directory on disk. The

@@ -69,6 +69,8 @@ end
 ---@field spinner_frame integer
 ---@field spinner_line_idx? integer
 ---@field pending_count integer
+---@field fetch_done integer
+---@field fetch_total integer
 ---@field restore_cursor_name? string
 ---@field pack_details table<string, table>
 ---@field line_to_name table<number, string>
@@ -94,6 +96,8 @@ M.state = {
   spinner_frame = 1,
   spinner_line_idx = nil,
   pending_count = 0,
+  fetch_done = 0,
+  fetch_total = 0,
   line_to_name = {},
   name_to_line = {},
   restore_cursor_name = nil,
@@ -119,6 +123,8 @@ function M._reset()
   M.state.spinner_frame = 1
   M.state.spinner_line_idx = nil
   M.state.pending_count = 0
+  M.state.fetch_done = 0
+  M.state.fetch_total = 0
   for k in pairs(M.state.line_to_name) do M.state.line_to_name[k] = nil end
   for k in pairs(M.state.name_to_line) do M.state.name_to_line[k] = nil end
   M.state.restore_cursor_name = nil

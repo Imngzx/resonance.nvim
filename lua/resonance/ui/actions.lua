@@ -72,6 +72,8 @@ end
 
 local function finish_check()
   st.state.checking = false
+  st.state.fetch_done = 0
+  st.state.fetch_total = 0
   stop_spinner()
   render_mod.schedule_render()
 end
@@ -101,8 +103,8 @@ function M.check_updates_network()
   st.state.checking = true
   st.state.updates = {} -- Clear stale state
   st.state.pending_count = 0 -- Clear the count left over from a previous check
-  start_spinner()
-  render_mod.render()
+  st.state.fetch_done = 0
+  st.state.fetch_total = 0
 
   local info = st.state.info
   if not info or not info.plugins then
@@ -121,6 +123,10 @@ function M.check_updates_network()
     local path = paths[i]
     if path and path ~= '' then valid_total = valid_total + 1 end
   end
+  st.state.fetch_total = valid_total
+
+  start_spinner()
+  render_mod.render()
 
   -- Nothing to fetch. The check still started (the spinner is up), so the
   -- caller may report it, but it completes on the next tick.
@@ -160,6 +166,11 @@ function M.check_updates_network()
 
       run:on_complete(function(_)
         completed_fetches = completed_fetches + 1
+        st.state.fetch_done = completed_fetches
+        -- on_complete runs in a fast-event context (vim.system's on_exit), so
+        -- never call st.is_valid() / nvim_buf_is_valid() here; update_spinner
+        -- checks validity on the main loop.
+        if st.state.buf then schedule(render_mod.update_spinner) end
         if completed_fetches >= valid_total then
           schedule(function()
             if #timed_out > 0 then

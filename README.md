@@ -331,7 +331,7 @@ Resonance provides a clean, zero-hack API to retrieve plugin statistics and exac
 
 `startuptime` is a one-shot measurement: it is latched at `UIEnter`/`VimEnter` (or at the first `stats()` call, whichever comes first) and never changes afterwards. Placing this in your dashboard's render function therefore guarantees the most accurate startup time measurement.
 
-The plugin counts are read live on every call, because a plugin can load at any point -- after the first `stats()` call, or never.
+The plugin counts are read live on every call, because a plugin can load at any point -- after the first `stats()` call, or never. If your dashboard re-renders on window resize (such as `snacks.dashboard`), cache the first snapshot once `startuptime > 0` so the startup count stays fixed across redraws.
 
 ### The `stats()` API
 
@@ -349,19 +349,22 @@ local stats = require("resonance").stats()
 #### For snacks.nvim
 
 ```lua
+local startup_stats
+
 require("snacks").setup({
   dashboard = {
     sections = {
       { section = 'header' },
       { section = 'keys', gap = 1, padding = 1 },
       function()
-        local stats = require("resonance").stats()
-        local ms = string.format("%.2f ms", stats.startuptime)
+        startup_stats = startup_stats and startup_stats.startuptime > 0 and startup_stats
+          or require("resonance").stats()
+        local ms = string.format("%.2f ms", startup_stats.startuptime)
         return {
           align = 'center',
           text = {
             { "󱐋 ", hl = "Special" },
-            { stats.loaded .. " / " .. stats.count, hl = "Special" },
+            { startup_stats.loaded .. " / " .. startup_stats.count, hl = "Special" },
             { " plugins loaded in ", hl = "Comment" },
             { ms, hl = "Special" },
           },
@@ -378,14 +381,16 @@ require("snacks").setup({
 ```lua
 local alpha = require("alpha")
 local dashboard = require("alpha.themes.dashboard")
+local startup_stats
 
 -- ... (your header and buttons configuration) ...
 
 -- Dynamically generate the footer
 dashboard.section.footer.val = function()
-  local stats = require("resonance").stats()
-  local ms = string.format("%.2f ms", stats.startuptime)
-  return "󱐋 " .. stats.loaded .. " / " .. stats.count .. " plugins loaded in " .. ms
+  startup_stats = startup_stats and startup_stats.startuptime > 0 and startup_stats
+    or require("resonance").stats()
+  local ms = string.format("%.2f ms", startup_stats.startuptime)
+  return "󱐋 " .. startup_stats.loaded .. " / " .. startup_stats.count .. " plugins loaded in " .. ms
 end
 -- Optional: apply highlight group to footer
 dashboard.section.footer.opts.hl = "Comment"
@@ -397,14 +402,16 @@ alpha.setup(dashboard.opts)
 
 ```lua
 local starter = require("mini.starter")
+local startup_stats
 
 starter.setup({
   -- ... (your items and hooks) ...
 
   footer = function()
-    local stats = require("resonance").stats()
-    local ms = string.format("%.2f ms", stats.startuptime)
-    return "󱐋 " .. stats.loaded .. " / " .. stats.count .. " plugins loaded in " .. ms
+    startup_stats = startup_stats and startup_stats.startuptime > 0 and startup_stats
+      or require("resonance").stats()
+    local ms = string.format("%.2f ms", startup_stats.startuptime)
+    return "󱐋 " .. startup_stats.loaded .. " / " .. startup_stats.count .. " plugins loaded in " .. ms
   end
 })
 ```
